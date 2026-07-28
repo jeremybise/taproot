@@ -20,7 +20,9 @@
   ],
   "scripts": {
     "build": "tsc --build",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "//prepare": "npm runs this automatically after `npm install`. Without it, a fresh clone has no dist/ and the seed and migrate CLI scripts fail on their first import of @taproot/core.",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "arctic": "^3.7.0",
