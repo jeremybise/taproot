@@ -1,9 +1,13 @@
 import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  plugins: [react()],
   test: {
-    // Tests import from `src` as `.js` (NodeNext style), so Vitest needs to resolve TS sources.
-    include: ['packages/*/src/**/*.test.ts'],
+    include: ['packages/*/src/**/*.test.ts', 'packages/*/src/**/*.test.tsx'],
+    // Node by default — the core suites talk to a real database and never touch a DOM. Files that
+    // render React opt in with a `@vitest-environment jsdom` docblock, which is per-file and
+    // explicit (Vitest 4 removed `environmentMatchGlobs`).
     environment: 'node',
   },
 });

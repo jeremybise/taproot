@@ -1,10 +1,33 @@
-import { deleteField, fieldInputSchema, updateField } from '@taproot/core';
+import { deleteField, updateField } from '@taproot/core';
+import { z } from 'zod';
 
 import { handle, json, noContent, readJson } from '../_shared.js';
 
-// `type` is omitted: changing it would reinterpret every value already stored for the field.
-// `updateField` rejects it too; leaving it out of the schema means the API says so clearly.
-const patchSchema = fieldInputSchema.omit({ type: true, api_id: true }).partial();
+/**
+ * Written out explicitly rather than derived from `fieldInputSchema` with `.partial()`.
+ *
+ * `.partial()` makes keys optional but does **not** strip a `.default()`, so a PATCH that only
+ * renamed a field still arrived carrying `config: {}` — silently replacing the field's stored
+ * options with nothing. A select field errored loudly; a text field would have quietly lost its
+ * length limits and placeholder.
+ *
+ * `.strict()` then makes `type` and `api_id` an explicit error instead of being silently dropped,
+ * since both are immutable after creation and a caller sending them deserves to be told.
+ */
+const patchSchema = z
+  .object({
+    label: z.string().min(1).max(120).optional(),
+    help_text: z.string().max(500).nullish(),
+    required: z.boolean().optional(),
+    localized: z.boolean().optional(),
+    position: z.number().int().nonnegative().optional(),
+    // No `.default()` — absent must stay absent so `updateField` keeps the stored config.
+    config: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict(
+    "Only label, help_text, required, localized, position, and config can be changed. A field's " +
+      'type and api_id are fixed after creation.',
+  );
 
 export const PATCH = handle(
   async ({ context, taproot }) => {

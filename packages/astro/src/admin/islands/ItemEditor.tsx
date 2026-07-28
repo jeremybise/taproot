@@ -1,5 +1,7 @@
 import { useId, useState } from 'react';
-import { FIELD_TYPE_META, type ContentStatus, type FieldRow } from '@taproot/core';
+import type { ContentStatus, FieldRow } from '@taproot/core';
+
+import { FieldControl } from './fields/FieldControl.js';
 
 /**
  * The content item editor.
@@ -164,7 +166,7 @@ export default function ItemEditor({
           )}
 
           {fields.map((field) => (
-            <FieldInput
+            <FieldControl
               key={field.id}
               field={field}
               value={data[field.api_id]}
@@ -243,164 +245,4 @@ export default function ItemEditor({
       </aside>
     </form>
   );
-}
-
-function FieldInput({
-  field,
-  value,
-  errors,
-  onChange,
-}: {
-  field: FieldRow;
-  value: unknown;
-  errors?: string[];
-  onChange: (value: unknown) => void;
-}) {
-  const id = `field-${field.id}`;
-  const errorId = `${id}-error`;
-  const hintId = `${id}-hint`;
-  const config = JSON.parse(field.config || '{}') as Record<string, unknown>;
-
-  const describedBy = [field.help_text ? hintId : null, errors?.length ? errorId : null]
-    .filter(Boolean)
-    .join(' ');
-
-  const shared = {
-    id,
-    required: field.required === 1,
-    'aria-describedby': describedBy || undefined,
-    'aria-invalid': errors?.length ? (true as const) : undefined,
-    className: `mt-1.5 w-full rounded-md border bg-surface px-3 py-2 text-sm ${
-      errors?.length ? 'border-danger' : 'border-border-strong'
-    }`,
-  };
-
-  return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium">
-        {field.label}
-        {field.required === 1 && (
-          <span className="ml-1 text-danger" aria-hidden="true">
-            *
-          </span>
-        )}
-        {field.required === 1 && <span className="sr-only-focusable"> (required)</span>}
-      </label>
-
-      {field.help_text && (
-        <p id={hintId} className="mt-0.5 text-xs text-content-subtle">
-          {field.help_text}
-        </p>
-      )}
-
-      {renderControl()}
-
-      {errors?.length ? (
-        <p id={errorId} className="mt-1.5 text-sm text-danger">
-          {errors.join(' ')}
-        </p>
-      ) : null}
-    </div>
-  );
-
-  function renderControl() {
-    switch (field.type) {
-      case 'text':
-        return config.multiline ? (
-          <textarea
-            {...shared}
-            rows={4}
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value || null)}
-          />
-        ) : (
-          <input
-            {...shared}
-            type="text"
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value || null)}
-          />
-        );
-
-      case 'number':
-        return (
-          <input
-            {...shared}
-            type="number"
-            value={value === null || value === undefined ? '' : String(value)}
-            onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-          />
-        );
-
-      case 'boolean':
-        return (
-          <div className="mt-1.5 flex items-center gap-2">
-            <input
-              id={id}
-              type="checkbox"
-              checked={Boolean(value)}
-              aria-describedby={describedBy || undefined}
-              onChange={(e) => onChange(e.target.checked)}
-            />
-            <span className="text-sm text-content-muted">Enabled</span>
-          </div>
-        );
-
-      case 'date':
-        return (
-          <input
-            {...shared}
-            type={config.includeTime ? 'datetime-local' : 'date'}
-            value={toDateInputValue(value, Boolean(config.includeTime))}
-            onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
-          />
-        );
-
-      case 'select': {
-        const options = (config.options as { label: string; value: string }[] | undefined) ?? [];
-        return (
-          <select
-            {...shared}
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value || null)}
-          >
-            <option value="">— None —</option>
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        );
-      }
-
-      case 'richtext':
-        // Phase 1 swaps this for a real editor. A plain textarea still stores and round-trips the
-        // value correctly in the meantime, so no content is lost by using it now.
-        return (
-          <textarea
-            {...shared}
-            rows={8}
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value || null)}
-          />
-        );
-
-      default:
-        return (
-          <p className="mt-1.5 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-content-subtle">
-            The {FIELD_TYPE_META[field.type].label.toLowerCase()} editor arrives in Phase{' '}
-            {FIELD_TYPE_META[field.type].availableIn}. Values already stored for this field are kept
-            and are not modified by saving.
-          </p>
-        );
-    }
-  }
-}
-
-function toDateInputValue(value: unknown, includeTime: boolean): string {
-  if (typeof value !== 'string' || !value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return includeTime ? date.toISOString().slice(0, 16) : date.toISOString().slice(0, 10);
 }

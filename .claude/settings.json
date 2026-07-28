@@ -45,7 +45,10 @@
       "Bash(git -c user.email=noreply@anthropic.com -c user.name=Claude commit -q -m 'Phase 0: foundation *)",
       "Bash(grep -E \"\\\\.env$|\\\\.sqlite$\")",
       "Bash(node scripts/a11y-audit.mjs http://localhost:4399)",
-      "Bash(git -c user.email=noreply@anthropic.com -c user.name=Claude commit -q -m 'Add .gitattributes *)"
+      "Bash(git -c user.email=noreply@anthropic.com -c user.name=Claude commit -q -m 'Add .gitattributes *)",
+      "Bash(perl -0pi -e \"s|import \\\\{ useId, useState \\\\} from 'react';\\\\nimport \\\\{ FIELD_TYPE_META, type ContentStatus, type FieldRow \\\\} from '\\\\@taproot/core';|import { useId, useState } from 'react';\\\\nimport type { ContentStatus, FieldRow } from '\\\\@taproot/core';\\\\n\\\\nimport { FieldControl } from './fields/FieldControl.js';|\" packages/astro/src/admin/islands/ItemEditor.tsx)",
+      "Bash(perl -0pi -e \"s|            <FieldInput\\\\n|            <FieldControl\\\\n|\" packages/astro/src/admin/islands/ItemEditor.tsx)",
+      "Bash(grep -oE '\"\\\\[console.error\\\\] A tree hydrated.{0,1400}' .astro/dev.log)"
     ]
   }
 }

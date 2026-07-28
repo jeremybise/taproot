@@ -1,7 +1,8 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import FieldBuilder from '../../islands/FieldBuilder.tsx';
-import { getContentType } from '@taproot/core';
+import ContentTypeSettings from '../../islands/ContentTypeSettings.tsx';
+import { getContentType, listContentTypes } from '@taproot/core';
 import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -12,11 +13,15 @@ if (!canManageSchema(user)) return Astro.redirect('/admin');
 const contentType = await getContentType(taproot.db.db, Astro.params.id!);
 if (!contentType) return new Response('Content type not found', { status: 404 });
 
-const itemCount = await taproot.db.db
+// All types, so the relation field's target picker has something to choose from.
+const contentTypes = await listContentTypes(taproot.db.db);
+
+const itemCountRow = await taproot.db.db
   .selectFrom('content_items')
   .select((eb) => eb.fn.countAll<number>().as('n'))
   .where('content_type_id', '=', contentType.id)
   .executeTakeFirst();
+const itemCount = Number(itemCountRow?.n ?? 0);
 
 const created = Astro.url.searchParams.get('created') === '1';
 
@@ -56,23 +61,30 @@ const kindLabels: Record<string, string> = {
       }
       <div class="flex gap-1.5">
         <dt>Items:</dt>
-        <dd>{Number(itemCount?.n ?? 0)}</dd>
+        <dd>{itemCount}</dd>
       </div>
     </dl>
-    {
-      contentType.description && (
-        <p class="mt-3 max-w-prose text-sm text-content-muted">{contentType.description}</p>
-      )
-    }
   </header>
 
   <!--
-    Hydrated on load rather than on visible: this is the primary interaction on the page, and
-    deferring it would mean the buttons look ready before they respond.
+    Hydrated on load rather than on visible: the builder is the primary interaction on this page,
+    and deferring it would leave controls looking ready before they respond.
   -->
   <FieldBuilder
     client:load
     contentTypeId={contentType.id}
     initialFields={contentType.fields}
+    contentTypes={contentTypes}
+    itemCount={itemCount}
   />
+
+  <section aria-labelledby="settings-heading" class="mt-12 border-t border-border pt-8">
+    <h2 id="settings-heading" class="mb-1 text-base font-semibold">Settings</h2>
+    <p class="mb-4 max-w-prose text-sm text-content-muted">
+      The API id and kind are fixed after creation — code references the first, and every existing
+      item's URL was built from the second.
+    </p>
+
+    <ContentTypeSettings client:visible contentType={contentType} fields={contentType.fields} />
+  </section>
 </AdminLayout>

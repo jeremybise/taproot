@@ -230,6 +230,45 @@ describe('content types', () => {
     );
   });
 
+  it('keeps a field config when an update does not mention it', async () => {
+    // Regression: the API's PATCH schema derived from `fieldInputSchema.partial()` still carried
+    // `config`'s `.default({})`, so renaming a field wiped its stored options. A select errored
+    // loudly; a text field silently lost its length limits.
+    const { type } = await seedPageType();
+    const field = await createField(handle.db, type.id, {
+      api_id: 'status',
+      label: 'Status',
+      type: 'select',
+      required: false,
+      localized: false,
+      position: 1,
+      help_text: null,
+      config: { options: [{ label: 'Draft', value: 'draft' }], multiple: false },
+    });
+
+    const renamed = await updateField(handle.db, field.id, { label: 'Workflow status' });
+
+    expect(renamed.label).toBe('Workflow status');
+    expect(JSON.parse(renamed.config).options).toEqual([{ label: 'Draft', value: 'draft' }]);
+  });
+
+  it('replaces a field config when an update does provide one', async () => {
+    const { type } = await seedPageType();
+    const field = await createField(handle.db, type.id, {
+      api_id: 'note',
+      label: 'Note',
+      type: 'text',
+      required: false,
+      localized: false,
+      position: 1,
+      help_text: null,
+      config: { maxLength: 100 },
+    });
+
+    const updated = await updateField(handle.db, field.id, { config: { maxLength: 500 } });
+    expect(JSON.parse(updated.config).maxLength).toBe(500);
+  });
+
   it('rejects an invalid field config', async () => {
     const { type } = await seedPageType();
     await expect(
