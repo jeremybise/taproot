@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import type { ContentStatus, FieldRow } from '@taproot/core';
+import { slugify, type ContentStatus, type FieldRow } from '@taproot/core';
 
 import { FieldControl } from './fields/FieldControl.js';
 
@@ -52,6 +52,14 @@ export default function ItemEditor({
 }: Props) {
   const [title, setTitle] = useState(initial.title);
   const [slug, setSlug] = useState(initial.slug);
+  /**
+   * Whether the slug is following the title.
+   *
+   * New items start linked, so typing a title fills the slug in visibly rather than leaving the
+   * field blank and having one appear from nowhere after saving. Editing the slug by hand breaks
+   * the link, and an existing item never re-links — its URL is already published.
+   */
+  const [slugLinked, setSlugLinked] = useState(!itemId && !initial.slug);
   const [status, setStatus] = useState<ContentStatus>(initial.status);
   const [parentId, setParentId] = useState<string | null>(initial.parentId);
   const [data, setData] = useState<Record<string, unknown>>(initial.data);
@@ -131,7 +139,10 @@ export default function ItemEditor({
             id={`${formId}-title`}
             required
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              if (slugLinked) setSlug(slugify(e.target.value));
+            }}
             className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
           />
         </div>
@@ -147,9 +158,13 @@ export default function ItemEditor({
           <input
             id={`${formId}-slug`}
             value={slug}
-            onChange={(e) => setSlug(e.target.value)}
+            onChange={(e) => {
+              // Typing here takes manual control; the slug stops following the title.
+              setSlugLinked(false);
+              setSlug(e.target.value);
+            }}
             aria-describedby={`${formId}-slug-hint`}
-            placeholder="Derived from the title"
+            placeholder={slugify(title) || 'derived-from-the-title'}
             className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
           />
         </div>

@@ -48,7 +48,13 @@
       "Bash(git -c user.email=noreply@anthropic.com -c user.name=Claude commit -q -m 'Add .gitattributes *)",
       "Bash(perl -0pi -e \"s|import \\\\{ useId, useState \\\\} from 'react';\\\\nimport \\\\{ FIELD_TYPE_META, type ContentStatus, type FieldRow \\\\} from '\\\\@taproot/core';|import { useId, useState } from 'react';\\\\nimport type { ContentStatus, FieldRow } from '\\\\@taproot/core';\\\\n\\\\nimport { FieldControl } from './fields/FieldControl.js';|\" packages/astro/src/admin/islands/ItemEditor.tsx)",
       "Bash(perl -0pi -e \"s|            <FieldInput\\\\n|            <FieldControl\\\\n|\" packages/astro/src/admin/islands/ItemEditor.tsx)",
-      "Bash(grep -oE '\"\\\\[console.error\\\\] A tree hydrated.{0,1400}' .astro/dev.log)"
+      "Bash(grep -oE '\"\\\\[console.error\\\\] A tree hydrated.{0,1400}' .astro/dev.log)",
+      "Bash(perl -0pi -e 's|import \\\\{ FieldControl \\\\} from '\\\\''./fields/FieldControl.js'\\\\'';\\\\n||' '$F')",
+      "Bash(perl -0pi -e 's|  // The field as it would be stored, so the preview renders through exactly the same path as the\\\\n  // real editor rather than a parallel approximation of it\\\\.\\\\n  const previewField: FieldRow = \\\\{[^}]*\\\\} as FieldRow;\\\\n\\\\n||s' '$F')",
+      "Read(//Users/jeremybise/code/taproot/**)",
+      "Bash(perl -0pi -e \"s|import \\\\{ FieldControl \\\\} from './fields/FieldControl.js';\\\\n||\" packages/astro/src/admin/islands/FieldBuilder.tsx)",
+      "Bash(perl -0pi -e \"s|  // The field as it would be stored, so the preview renders through exactly the same path as the\\\\n  // real editor rather than a parallel approximation of it\\\\.\\\\n  const previewField: FieldRow = \\\\{.*?\\\\} as FieldRow;\\\\n\\\\n||s\" packages/astro/src/admin/islands/FieldBuilder.tsx)",
+      "Bash(rm -rf public/uploads)"
     ]
   }
 }

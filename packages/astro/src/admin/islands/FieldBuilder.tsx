@@ -6,7 +6,6 @@ import {
   type FieldType,
 } from '@taproot/core';
 
-import { FieldControl } from './fields/FieldControl.js';
 import { FieldConfigForm } from './fields/FieldConfigForm.js';
 import { FieldTypePicker } from './fields/FieldTypePicker.js';
 import { SortableFieldList } from './fields/SortableFieldList.js';
@@ -15,9 +14,12 @@ import { SortableFieldList } from './fields/SortableFieldList.js';
  * The visual content-type builder.
  *
  * Two panes: the field list on the left, and an editor on the right for whichever field is
- * selected (or a new one). The editor shows the type's own options form beside a **live preview**
- * rendered with the same `FieldControl` the real content editor uses — so what you configure is
- * literally what an author will see, not an approximation of it.
+ * selected (or a new one), showing that type's own options form.
+ *
+ * There was briefly a third pane previewing the field control itself. It was dropped — it ate
+ * horizontal space the options forms needed, and previewing a lone input is not what "preview"
+ * usefully means here. Previewing the *rendered page* is, and that lives on the content item
+ * editor where the page actually exists.
  */
 
 interface Props {
@@ -196,23 +198,6 @@ export default function FieldBuilder({
     }
   }
 
-  // The field as it would be stored, so the preview renders through exactly the same path as the
-  // real editor rather than a parallel approximation of it.
-  const previewField: FieldRow = {
-    id: draft.id ?? 'preview',
-    content_type_id: contentTypeId,
-    api_id: draft.api_id || toApiId(draft.label) || 'field',
-    label: draft.label,
-    type: draft.type,
-    help_text: draft.help_text || null,
-    position: 0,
-    required: draft.required ? 1 : 0,
-    localized: 0,
-    config: JSON.stringify(draft.config),
-    created_at: '',
-    updated_at: '',
-  } as FieldRow;
-
   const isNew = !draft.id;
   const showRequiredWarning = draft.required && itemCount > 0 && !isNewlyRequiredAlready();
 
@@ -240,9 +225,9 @@ export default function FieldBuilder({
         {/* Field list ---------------------------------------------------- */}
         <section aria-labelledby="field-list-heading" className="min-w-0">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 id="field-list-heading" className="text-base font-semibold">
-              Fields
-            </h2>
+            <h3 id="field-list-heading" className="text-base font-semibold">
+              All fields
+            </h3>
             <button
               type="button"
               onClick={startNewField}
@@ -261,18 +246,18 @@ export default function FieldBuilder({
           />
         </section>
 
-        {/* Editor + preview ---------------------------------------------- */}
+        {/* Field editor ---------------------------------------------------- */}
         <section aria-labelledby="field-editor-heading" className="min-w-0">
-          <h2
+          <h3
             id="field-editor-heading"
             ref={editorHeadingRef}
             tabIndex={-1}
             className="mb-3 text-base font-semibold"
           >
             {isNew ? 'Add a field' : `Edit “${draft.label || 'field'}”`}
-          </h2>
+          </h3>
 
-          <form onSubmit={save} className="grid gap-6 xl:grid-cols-2">
+          <form onSubmit={save}>
             <div className="min-w-0 space-y-5 rounded-lg border border-border bg-surface-raised p-5">
               <div>
                 <label htmlFor="field-label" className="block text-sm font-medium">
@@ -399,32 +384,6 @@ export default function FieldBuilder({
               </div>
             </div>
 
-            {/*
-              Live preview.
-
-              Deliberately not an aria-live region — it re-renders on every keystroke and would be
-              unlistenable. It is a labelled section a screen-reader user can navigate to on
-              demand; discrete events (added, removed, reordered) are announced separately.
-            */}
-            <section aria-labelledby="field-preview-heading" className="min-w-0">
-              <h3 id="field-preview-heading" className="text-sm font-medium text-content-muted">
-                Preview
-              </h3>
-              <p className="mt-0.5 text-xs text-content-subtle">
-                Exactly how this field appears to an editor.
-              </p>
-
-              <div className="mt-2 rounded-lg border border-border bg-surface-sunken p-5">
-                <FieldControl
-                  preview
-                  field={previewField}
-                  value={undefined}
-                  onChange={() => {
-                    /* inert in preview */
-                  }}
-                />
-              </div>
-            </section>
           </form>
         </section>
       </div>

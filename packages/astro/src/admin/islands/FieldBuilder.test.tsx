@@ -11,7 +11,7 @@ import FieldBuilder from './FieldBuilder.js';
  * Interaction tests for the content-type builder.
  *
  * The axe run in `scripts/a11y-audit.mjs` only sees server-rendered HTML, so the builder's
- * hydrated state — config forms, the live preview, the reorder controls — would otherwise go
+ * hydrated state — config forms, the field editor, the reorder controls — would otherwise go
  * unaudited. These tests cover that, and the behaviours most likely to regress silently.
  *
  * Not covered here: pointer dragging, which needs real pointer events and a layout engine. The
@@ -129,49 +129,6 @@ describe('config forms', () => {
 
     await user.click(screen.getByRole('button', { name: /remove/i }));
     expect(screen.queryByLabelText(/option label/i)).toBeNull();
-  });
-});
-
-describe('live preview', () => {
-  it('reflects the label as it is typed', async () => {
-    const user = userEvent.setup();
-    renderBuilder();
-
-    await user.type(screen.getByLabelText(/^label$/i), 'Deadline');
-
-    const preview = screen.getByRole('region', { name: /preview/i });
-    expect(within(preview).getByText('Deadline')).toBeTruthy();
-  });
-
-  it('renders the control for the chosen type', async () => {
-    const user = userEvent.setup();
-    renderBuilder();
-    await user.type(screen.getByLabelText(/^label$/i), 'Count');
-    await user.click(screen.getByRole('radio', { name: /^Number/ }));
-
-    const preview = screen.getByRole('region', { name: /preview/i });
-    expect(within(preview).getByRole('spinbutton')).toBeTruthy();
-  });
-
-  it('marks a required field in the preview for screen readers, not just visually', async () => {
-    const user = userEvent.setup();
-    renderBuilder();
-
-    await user.type(screen.getByLabelText(/^label$/i), 'Title');
-    await user.click(screen.getByLabelText(/^required$/i));
-
-    const preview = screen.getByRole('region', { name: /preview/i });
-    // The asterisk is aria-hidden; the word "required" is what a screen reader gets.
-    expect(within(preview).getByText(/\(required\)/i)).toBeTruthy();
-  });
-
-  it('shows an honest notice for field types whose editor is not built', async () => {
-    const user = userEvent.setup();
-    renderBuilder();
-    await user.click(screen.getByRole('radio', { name: /Blocks/ }));
-
-    const preview = screen.getByRole('region', { name: /preview/i });
-    expect(within(preview).getByText(/arrives in Phase 2/i)).toBeTruthy();
   });
 });
 

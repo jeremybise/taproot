@@ -237,7 +237,10 @@ export async function createItem(
   }
 
   const siblings = await siblingSlugs(db, contentType.id, parentId);
-  const slug = uniqueSlug(input.slug ?? slugify(input.title), siblings);
+  // `||` rather than `??`: an editor who leaves the slug blank sends an empty string, not
+  // undefined, and `??` would let it through to `uniqueSlug` — which slugifies it to nothing and
+  // falls back to the literal "item". Blank means "derive it from the title".
+  const slug = uniqueSlug(blankToUndefined(input.slug) || slugify(input.title), siblings);
   const path = resolveItemPath(contentType, parent?.path ?? null, slug);
 
   const timestamp = now();
@@ -315,7 +318,11 @@ export async function updateItem(
 
   const parentChanged =
     input.parentId !== undefined && (input.parentId ?? null) !== existing.parent_id;
-  const desiredSlug = input.slug !== undefined ? slugify(input.slug) : existing.slug;
+
+  // A blank slug on update means "leave it alone", not "regenerate". Regenerating would silently
+  // move the page and write a redirect every time someone saved with the field cleared.
+  const submittedSlug = blankToUndefined(input.slug);
+  const desiredSlug = submittedSlug ? slugify(submittedSlug) || existing.slug : existing.slug;
   const slugChanged = desiredSlug !== existing.slug;
 
   const statements: BatchStatement[] = [];
@@ -393,6 +400,17 @@ export async function deleteItem(handle: TaprootDb, id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+/**
+ * Treat a blank or whitespace-only string as absent.
+ *
+ * Forms submit empty strings where an API client would send nothing at all, and the two must mean
+ * the same thing to the services underneath.
+ */
+function blankToUndefined(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 /** Where an item's path comes from depends on its type's kind. */
 export function resolveItemPath(

@@ -328,6 +328,43 @@ describe('content items', () => {
     expect(b.path).toBe('/financial-aid/apply');
   });
 
+  it('derives the slug from the title when the field is left blank', async () => {
+    // Regression: the editor sends `slug: ''`, and `input.slug ?? slugify(title)` let the empty
+    // string through — slugifying to nothing and landing on the literal fallback "item".
+    const { type, fields } = await seedPageType();
+    const item = await createItem(handle, type, fields, {
+      contentTypeId: type.id,
+      title: 'test',
+      slug: '',
+    });
+
+    expect(item.slug).toBe('test');
+    expect(item.path).toBe('/test');
+  });
+
+  it('derives the slug when it is only whitespace', async () => {
+    const { type, fields } = await seedPageType();
+    const item = await createItem(handle, type, fields, {
+      contentTypeId: type.id,
+      title: 'Spring Open House',
+      slug: '   ',
+    });
+
+    expect(item.slug).toBe('spring-open-house');
+  });
+
+  it('keeps the existing slug when an update sends a blank one', async () => {
+    // Regenerating here would silently move the page and write a redirect on every save.
+    const { type, fields } = await seedPageType();
+    const item = await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Apply' });
+
+    const updated = await updateItem(handle, type, fields, item.id, { slug: '', title: 'Apply Now' });
+
+    expect(updated.slug).toBe('apply');
+    expect(updated.path).toBe('/apply');
+    expect(await getRedirect(handle.db, '/apply')).toBeUndefined();
+  });
+
   it('disambiguates a duplicate slug under the same parent', async () => {
     const { type, fields } = await seedPageType();
     const first = await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Apply' });

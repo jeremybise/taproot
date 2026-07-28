@@ -20,9 +20,18 @@ const withUrls = assets.map((asset) => ({
 }));
 
 const missingAlt = withUrls.filter((asset) => asset.isImage && !asset.alt_text).length;
+
+// The upload form posts to the API, which redirects back here with one of these.
+const uploaded = Astro.url.searchParams.get('uploaded');
+const uploadError = Astro.url.searchParams.get('error');
 ---
 
-<AdminLayout title="Media" user={user} breadcrumbs={[{ label: 'Media' }]}>
+<AdminLayout
+  title="Media"
+  user={user}
+  breadcrumbs={[{ label: 'Media' }]}
+  flash={uploaded ? `Uploaded ${uploaded}.` : null}
+>
   <header class="mb-6">
     <h1 class="text-2xl font-semibold tracking-tight">Media</h1>
     <p class="mt-1 text-sm text-content-muted">
@@ -30,6 +39,16 @@ const missingAlt = withUrls.filter((asset) => asset.isImage && !asset.alt_text).
       <code class="font-mono">{taproot.storage.name}</code> adapter
     </p>
   </header>
+
+  <div role="alert" aria-live="assertive">
+    {
+      uploadError && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {uploadError}
+        </p>
+      )
+    }
+  </div>
 
   {
     missingAlt > 0 && (

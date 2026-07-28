@@ -8,7 +8,7 @@ import {
   getChildren,
   normalizePath,
 } from '@taproot/core';
-import { getTaproot } from '@taproot/astro/runtime/guards';
+import { getTaproot, canEditContent } from '@taproot/astro/runtime/guards';
 
 export const prerender = false;
 
@@ -26,7 +26,17 @@ export const prerender = false;
 const taproot = getTaproot(Astro.locals);
 const path = normalizePath(`/${Astro.params.path ?? ''}`);
 
-const item = await getItemByPath(taproot.db.db, path);
+/**
+ * Preview mode.
+ *
+ * `?preview=1` renders unpublished content, but only for a signed-in user who could edit it
+ * anyway — the check is on the session, not on the query parameter, so the URL is not a way for
+ * anyone else to read drafts. Anonymous visitors get the published item or a 404 as usual.
+ */
+const previewRequested = Astro.url.searchParams.get('preview') === '1';
+const isPreview = previewRequested && canEditContent(taproot.user);
+
+const item = await getItemByPath(taproot.db.db, path, { publishedOnly: !isPreview });
 
 if (!item) {
   const redirect = await getRedirect(taproot.db.db, path);
@@ -34,6 +44,12 @@ if (!item) {
     return Astro.redirect(redirect.to, redirect.status === 302 ? 302 : 301);
   }
   return new Response('Not found', { status: 404 });
+}
+
+// Drafts must never be cached or indexed, even briefly.
+if (isPreview) {
+  Astro.response.headers.set('cache-control', 'no-store');
+  Astro.response.headers.set('x-robots-tag', 'noindex, nofollow');
 }
 
 const contentType = await getContentType(taproot.db.db, item.content_type_id);
@@ -57,7 +73,9 @@ const renderable = (contentType?.fields ?? [])
   .map((field) => ({ field, value: item.data[field.api_id] }))
   .filter((entry) => entry.value !== undefined && entry.value !== null && entry.value !== '');
 
-Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+if (!isPreview) {
+  Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+}
 ---
 
 <SiteLayout
@@ -65,6 +83,18 @@ Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
   description={item.seo.metaDescription ?? null}
   breadcrumbs={breadcrumbs}
 >
+  {
+    isPreview && item.status !== 'published' && (
+      <p
+        style="border:1px solid var(--accent);background:color-mix(in oklch, var(--accent) 12%, transparent);padding:0.75rem 1rem;border-radius:0.375rem;margin:1.5rem 0 0"
+        role="status"
+      >
+        <strong>Preview.</strong> This {item.status.replace('_', ' ')} content is not visible to
+        visitors.
+      </p>
+    )
+  }
+
   <article>
     <h1>{item.title}</h1>
 

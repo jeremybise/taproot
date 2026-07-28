@@ -39,20 +39,41 @@ const saved = Astro.url.searchParams.get('saved') === '1';
   breadcrumbs={[{ label: 'Content', href: '/admin/content' }, { label: item.title }]}
   flash={saved ? 'Content item created.' : null}
 >
-  <header class="mb-6">
-    <h1 class="text-2xl font-semibold tracking-tight">{item.title}</h1>
-    <p class="mt-1 text-sm text-content-muted">
-      {contentType.name} ·
-      {
-        item.status === 'published' ? (
-          <a href={item.path} class="font-mono hover:underline">
-            {item.path}
-          </a>
-        ) : (
-          <code class="font-mono">{item.path}</code>
-        )
-      }
-    </p>
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">{item.title}</h1>
+      <p class="mt-1 text-sm text-content-muted">
+        {contentType.name} ·
+        {
+          item.status === 'published' ? (
+            <a href={item.path} class="font-mono hover:underline">
+              {item.path}
+            </a>
+          ) : (
+            <code class="font-mono">{item.path}</code>
+          )
+        }
+      </p>
+    </div>
+
+    {
+      /*
+        Singletons have no routable path of their own, so there is nothing to preview.
+        `?preview=1` renders unpublished content, but only for a signed-in editor — the public
+        route checks the session, not the parameter.
+      */
+      contentType.kind !== 'singleton' && (
+        <a
+          href={`${item.path}?preview=1`}
+          target="_blank"
+          rel="noopener"
+          class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+        >
+          Preview page
+          <span class="sr-only-focusable"> (opens in a new tab)</span>
+        </a>
+      )
+    }
   </header>
 
   <ItemEditor

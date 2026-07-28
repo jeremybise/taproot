@@ -27,15 +27,25 @@ export const POST = handle(
     const form = await context.request.formData();
     const file = form.get('file');
 
-    if (!(file instanceof File)) {
-      return apiError(422, 'Send a file in a multipart form field named "file".');
+    /**
+     * The media library's upload form is a plain HTML form, so a browser follows this response.
+     * Returning JSON meant a successful upload dumped `{"media":{...}}` on screen instead of
+     * going back to the library. Programmatic callers still get JSON; browsers get a redirect.
+     */
+    const isBrowserForm = (context.request.headers.get('accept') ?? '').includes('text/html');
+    const backToLibrary = (params: Record<string, string>) =>
+      context.redirect(`/admin/media?${new URLSearchParams(params)}`, 303);
+
+    if (!(file instanceof File) || file.size === 0) {
+      const message = 'Choose a file to upload.';
+      return isBrowserForm ? backToLibrary({ error: message }) : apiError(422, message);
     }
 
     if (file.size > MAX_UPLOAD_BYTES) {
-      return apiError(
-        413,
-        `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`,
-      );
+      const message =
+        `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is ` +
+        `${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`;
+      return isBrowserForm ? backToLibrary({ error: message }) : apiError(413, message);
     }
 
     const id = newId();
@@ -70,6 +80,10 @@ export const POST = handle(
     };
 
     await taproot.db.db.insertInto('media').values(row).execute();
+
+    if (isBrowserForm) {
+      return backToLibrary({ uploaded: file.name });
+    }
 
     return json({ media: { ...row, url: taproot.storage.publicUrl(stored.key) } }, { status: 201 });
   },
