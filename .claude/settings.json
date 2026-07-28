@@ -43,7 +43,9 @@
       "Bash(perl -0pi -e 's|\"dev\": \"npm run dev --workspace=apps/web\"|\"dev\": \"npm run dev --workspace=\\\\@taproot/web\"|; s|\"build\": \"npm run build --workspace=\\\\@taproot/core \\\\&\\\\& npm run build --workspace=apps/web\"|\"build\": \"npm run build --workspace=\\\\@taproot/core \\\\&\\\\& npm run build --workspace=\\\\@taproot/web\"|' package.json)",
       "Bash(git add *)",
       "Bash(git -c user.email=noreply@anthropic.com -c user.name=Claude commit -q -m 'Phase 0: foundation *)",
-      "Bash(grep -E \"\\\\.env$|\\\\.sqlite$\")"
+      "Bash(grep -E \"\\\\.env$|\\\\.sqlite$\")",
+      "Bash(node scripts/a11y-audit.mjs http://localhost:4399)",
+      "Bash(git -c user.email=noreply@anthropic.com -c user.name=Claude commit -q -m 'Add .gitattributes *)"
     ]
   }
 }
