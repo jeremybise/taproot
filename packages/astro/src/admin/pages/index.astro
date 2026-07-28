@@ -1,0 +1,138 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import { listContentTypes } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const db = taproot.db.db;
+const contentTypes = await listContentTypes(db);
+
+const [itemCount, publishedCount, mediaCount, redirectCount] = await Promise.all([
+  db.selectFrom('content_items').select((eb) => eb.fn.countAll<number>().as('n')).executeTakeFirst(),
+  db
+    .selectFrom('content_items')
+    .select((eb) => eb.fn.countAll<number>().as('n'))
+    .where('status', '=', 'published')
+    .executeTakeFirst(),
+  db.selectFrom('media').select((eb) => eb.fn.countAll<number>().as('n')).executeTakeFirst(),
+  db.selectFrom('redirects').select((eb) => eb.fn.countAll<number>().as('n')).executeTakeFirst(),
+]);
+
+const recent = await db
+  .selectFrom('content_items')
+  .innerJoin('content_types', 'content_types.id', 'content_items.content_type_id')
+  .select([
+    'content_items.id as id',
+    'content_items.title as title',
+    'content_items.path as path',
+    'content_items.status as status',
+    'content_items.updated_at as updated_at',
+    'content_types.name as type_name',
+  ])
+  .orderBy('content_items.updated_at', 'desc')
+  .limit(8)
+  .execute();
+
+const stats = [
+  { label: 'Content items', value: Number(itemCount?.n ?? 0) },
+  { label: 'Published', value: Number(publishedCount?.n ?? 0) },
+  { label: 'Media assets', value: Number(mediaCount?.n ?? 0) },
+  { label: 'Redirects', value: Number(redirectCount?.n ?? 0) },
+];
+---
+
+<AdminLayout title="Dashboard" user={user}>
+  <header class="mb-8">
+    <h1 class="text-2xl font-semibold tracking-tight">Dashboard</h1>
+    <p class="mt-1 text-sm text-content-muted">
+      Signed in as {user.name} ({user.role}).
+    </p>
+  </header>
+
+  <section aria-labelledby="stats-heading" class="mb-10">
+    <h2 id="stats-heading" class="sr-only-focusable">At a glance</h2>
+    <dl class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {
+        stats.map((stat) => (
+          <div class="rounded-lg border border-border bg-surface-raised px-4 py-3">
+            <dt class="text-xs font-medium uppercase tracking-wide text-content-subtle">
+              {stat.label}
+            </dt>
+            <dd class="mt-1 text-2xl font-semibold tabular-nums">{stat.value}</dd>
+          </div>
+        ))
+      }
+    </dl>
+  </section>
+
+  {
+    contentTypes.length === 0 && (
+      <section class="mb-10 rounded-lg border border-border bg-surface-raised p-6">
+        <h2 class="text-base font-semibold">No content types yet</h2>
+        <p class="mt-1.5 max-w-prose text-sm text-content-muted">
+          A content type defines the fields a piece of content has — a Page, an Event, a Staff
+          Profile. Create one to start adding content.
+        </p>
+        {canManageSchema(user) ? (
+          <a
+            href="/admin/types/new"
+            class="mt-4 inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+          >
+            Create a content type
+          </a>
+        ) : (
+          <p class="mt-4 text-sm text-content-subtle">Ask an administrator to create one.</p>
+        )}
+      </section>
+    )
+  }
+
+  <section aria-labelledby="recent-heading">
+    <h2 id="recent-heading" class="mb-3 text-base font-semibold">Recently updated</h2>
+
+    {
+      recent.length === 0 ? (
+        <p class="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-content-muted">
+          Nothing has been edited yet.
+        </p>
+      ) : (
+        <div class="overflow-x-auto rounded-lg border border-border">
+          <table class="w-full text-left text-sm">
+            <caption class="sr-only-focusable">
+              Content items, most recently updated first
+            </caption>
+            <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+              <tr>
+                <th scope="col" class="px-4 py-2.5 font-medium">Title</th>
+                <th scope="col" class="px-4 py-2.5 font-medium">Type</th>
+                <th scope="col" class="px-4 py-2.5 font-medium">Path</th>
+                <th scope="col" class="px-4 py-2.5 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((item) => (
+                <tr class="border-t border-border">
+                  <th scope="row" class="px-4 py-2.5 font-medium">
+                    <a href={`/admin/content/${item.id}`} class="hover:underline">
+                      {item.title}
+                    </a>
+                  </th>
+                  <td class="px-4 py-2.5 text-content-muted">{item.type_name}</td>
+                  <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{item.path}</td>
+                  <td class="px-4 py-2.5">
+                    <span class="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
+                      {item.status.replace('_', ' ')}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+  </section>
+</AdminLayout>

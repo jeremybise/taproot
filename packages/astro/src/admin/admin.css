@@ -1,0 +1,125 @@
+@import 'tailwindcss';
+
+/*
+ * Tailwind 4 discovers classes by scanning source files. This package's routes are injected from
+ * node_modules, which is outside the host app's default scan roots, so the sources are declared
+ * explicitly here.
+ */
+@source '../**/*.{astro,tsx,ts}';
+
+/*
+ * Design tokens.
+ *
+ * Every colour is expressed as a semantic role rather than a raw hue, so the light and dark
+ * palettes stay in sync and a future theming pass has one place to change.
+ */
+@theme {
+  --color-surface: oklch(99% 0 0);
+  --color-surface-raised: oklch(100% 0 0);
+  --color-surface-sunken: oklch(97% 0.003 250);
+  --color-border: oklch(90% 0.005 250);
+  --color-border-strong: oklch(64% 0.008 250);
+
+  --color-content: oklch(25% 0.01 250);
+  --color-content-muted: oklch(50% 0.012 250);
+  --color-content-subtle: oklch(54% 0.012 250);
+
+  --color-accent: oklch(52% 0.15 155);
+  --color-accent-hover: oklch(46% 0.15 155);
+  --color-accent-content: oklch(99% 0 0);
+  --color-accent-subtle: oklch(95% 0.04 155);
+
+  --color-danger: oklch(52% 0.19 25);
+  --color-danger-hover: oklch(46% 0.19 25);
+  --color-danger-content: oklch(99% 0 0);
+  --color-danger-subtle: oklch(96% 0.03 25);
+
+  --color-warning: oklch(62% 0.14 75);
+  --color-warning-subtle: oklch(96% 0.04 75);
+
+  --color-focus: oklch(55% 0.19 250);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-surface: oklch(21% 0.008 250);
+    --color-surface-raised: oklch(25% 0.009 250);
+    --color-surface-sunken: oklch(17% 0.008 250);
+    --color-border: oklch(32% 0.01 250);
+    --color-border-strong: oklch(53% 0.012 250);
+
+    --color-content: oklch(95% 0.004 250);
+    --color-content-muted: oklch(74% 0.01 250);
+    --color-content-subtle: oklch(64% 0.012 250);
+
+    --color-accent: oklch(70% 0.15 155);
+    --color-accent-hover: oklch(76% 0.15 155);
+    --color-accent-content: oklch(18% 0.02 155);
+    --color-accent-subtle: oklch(28% 0.05 155);
+
+    --color-danger: oklch(66% 0.18 25);
+    --color-danger-hover: oklch(72% 0.18 25);
+    --color-danger-content: oklch(18% 0.02 25);
+    --color-danger-subtle: oklch(28% 0.06 25);
+
+    --color-warning: oklch(75% 0.13 75);
+    --color-warning-subtle: oklch(30% 0.05 75);
+
+    --color-focus: oklch(72% 0.16 250);
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-content);
+    font-family: var(--font-sans);
+  }
+
+  /*
+   * A single, always-visible focus indicator.
+   *
+   * `:focus-visible` rather than `:focus` so pointer users do not get rings on click, and a
+   * 2px offset ring that meets the 3:1 contrast requirement of WCAG 2.1 SC 1.4.11 against both
+   * the light and dark surfaces.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Respect a user's reduced-motion preference rather than animating regardless. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Visually hidden but available to screen readers — used for skip links and live regions. */
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}

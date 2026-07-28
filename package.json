@@ -1,0 +1,44 @@
+{
+  "name": "taproot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A DB-backed, Astro-native CMS",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@taproot/web",
+    "build": "npm run build --workspace=@taproot/core && npm run build --workspace=@taproot/web",
+    "build:core": "npm run build --workspace=@taproot/core",
+    "db:migrate": "npm run db:migrate --workspace=@taproot/web",
+    "db:migrate:remote": "npm run db:migrate:remote --workspace=@taproot/web",
+    "db:seed": "npm run db:seed --workspace=@taproot/web",
+    "db:reset": "npm run db:reset --workspace=@taproot/web",
+    "preview": "npm run preview --workspace=@taproot/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --build --force",
+    "a11y": "node scripts/a11y-audit.mjs && node scripts/a11y-contrast.mjs",
+    "a11y:axe": "node scripts/a11y-audit.mjs",
+    "a11y:contrast": "node scripts/a11y-contrast.mjs",
+    "deploy": "npm run deploy --workspace=@taproot/web"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "axe-core": "^4.12.1",
+    "jsdom": "^30.0.0",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.10"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260722.1": true,
+    "fsevents@2.3.3": true
+  }
+}

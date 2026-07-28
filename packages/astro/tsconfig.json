@@ -1,0 +1,14 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    // This package is consumed as source through Vite, so it resolves the same way its host does.
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "types": ["astro/client"],
+    "strictNullChecks": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist"]
+}

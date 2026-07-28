@@ -1,0 +1,106 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import {
+  ancestorPaths,
+  getContentType,
+  getItemByPath,
+  getRedirect,
+  getChildren,
+  normalizePath,
+} from '@taproot/core';
+import { getTaproot } from '@taproot/astro/runtime/guards';
+
+export const prerender = false;
+
+/**
+ * The public catch-all route.
+ *
+ * Resolution order matters:
+ *   1. One indexed lookup on `content_items.path`.
+ *   2. If nothing matches, check the redirect table — this is what makes moved pages keep working.
+ *   3. Otherwise 404.
+ *
+ * Because content is served from the database rather than a static build, publishing takes effect
+ * on the next request; there is no rebuild step between an editor saving and a visitor seeing it.
+ */
+const taproot = getTaproot(Astro.locals);
+const path = normalizePath(`/${Astro.params.path ?? ''}`);
+
+const item = await getItemByPath(taproot.db.db, path);
+
+if (!item) {
+  const redirect = await getRedirect(taproot.db.db, path);
+  if (redirect) {
+    return Astro.redirect(redirect.to, redirect.status === 302 ? 302 : 301);
+  }
+  return new Response('Not found', { status: 404 });
+}
+
+const contentType = await getContentType(taproot.db.db, item.content_type_id);
+const children = await getChildren(taproot.db.db, item.id);
+const publishedChildren = children.filter((child) => child.status === 'published');
+
+// Build breadcrumbs from the materialised path — no extra tree walk needed.
+const crumbs = await Promise.all(
+  ancestorPaths(item.path).map(async (ancestorPath) => {
+    const ancestor = await getItemByPath(taproot.db.db, ancestorPath);
+    return ancestor ? { label: ancestor.title, href: ancestor.path } : null;
+  }),
+);
+
+const breadcrumbs = [{ label: 'Home', href: '/' }, ...crumbs.filter((c) => c !== null)];
+
+// Render fields in the order the content type defines them, so the page follows the schema rather
+// than JSON key order.
+const renderable = (contentType?.fields ?? [])
+  .filter((field) => ['text', 'richtext', 'number', 'date', 'select', 'boolean'].includes(field.type))
+  .map((field) => ({ field, value: item.data[field.api_id] }))
+  .filter((entry) => entry.value !== undefined && entry.value !== null && entry.value !== '');
+
+Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+---
+
+<SiteLayout
+  title={item.seo.metaTitle ?? item.title}
+  description={item.seo.metaDescription ?? null}
+  breadcrumbs={breadcrumbs}
+>
+  <article>
+    <h1>{item.title}</h1>
+
+    {
+      renderable.map(({ field, value }) => (
+        <section>
+          {field.type === 'richtext' ? (
+            <div set:html={String(value)} />
+          ) : field.type === 'boolean' ? (
+            <p>
+              <strong>{field.label}:</strong> {value ? 'Yes' : 'No'}
+            </p>
+          ) : field.type === 'text' && field.api_id === 'body' ? (
+            <p style="white-space:pre-wrap">{String(value)}</p>
+          ) : (
+            <p>
+              <strong>{field.label}:</strong> {String(value)}
+            </p>
+          )}
+        </section>
+      ))
+    }
+
+    {
+      publishedChildren.length > 0 && (
+        <nav aria-labelledby="subpages">
+          <h2 id="subpages">In this section</h2>
+          <ul>
+            {publishedChildren.map((child) => (
+              <li>
+                <a href={child.path}>{child.title}</a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )
+    }
+  </article>
+</SiteLayout>

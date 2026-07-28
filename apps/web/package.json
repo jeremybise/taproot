@@ -1,0 +1,28 @@
+{
+  "name": "@taproot/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Demo campus site running the Taproot CMS",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro build && wrangler dev",
+    "astro": "astro",
+    "db:migrate": "node --experimental-strip-types ./scripts/migrate.ts",
+    "db:migrate:remote": "node --experimental-strip-types ./scripts/migrate.ts --remote",
+    "db:seed": "node --experimental-strip-types ./scripts/seed.ts",
+    "db:reset": "node --experimental-strip-types ./scripts/reset.ts",
+    "deploy": "astro build && wrangler deploy"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^14.1.5",
+    "@astrojs/node": "^11.0.3",
+    "@taproot/astro": "*",
+    "@taproot/core": "*",
+    "astro": "^7.1.4"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  }
+}

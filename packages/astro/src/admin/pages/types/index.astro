@@ -1,0 +1,72 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listContentTypes } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageSchema(user)) return Astro.redirect('/admin');
+
+const contentTypes = await listContentTypes(taproot.db.db);
+
+const counts = await taproot.db.db
+  .selectFrom('fields')
+  .select(['content_type_id'])
+  .select((eb) => eb.fn.countAll<number>().as('n'))
+  .groupBy('content_type_id')
+  .execute();
+
+const fieldCount = new Map(counts.map((row) => [row.content_type_id, Number(row.n)]));
+
+const kindLabels: Record<string, string> = {
+  page: 'Page — nests under a parent',
+  collection: 'Collection — flat, type-prefixed URL',
+  singleton: 'Singleton — exactly one item',
+};
+---
+
+<AdminLayout title="Content types" user={user} breadcrumbs={[{ label: 'Content types' }]}>
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Content types</h1>
+      <p class="mt-1 max-w-prose text-sm text-content-muted">
+        A content type defines the fields its content items have.
+      </p>
+    </div>
+    <a
+      href="/admin/types/new"
+      class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+    >
+      New content type
+    </a>
+  </header>
+
+  {
+    contentTypes.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No content types yet.
+      </p>
+    ) : (
+      <ul class="space-y-2">
+        {contentTypes.map((type) => (
+          <li>
+            <a
+              href={`/admin/types/${type.id}`}
+              class="block rounded-lg border border-border bg-surface-raised px-4 py-3 transition-colors hover:border-border-strong"
+            >
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <span class="font-medium">{type.name}</span>
+                <code class="font-mono text-xs text-content-subtle">{type.api_id}</code>
+              </div>
+              <p class="mt-1 text-sm text-content-muted">
+                {kindLabels[type.kind]} · {fieldCount.get(type.id) ?? 0}
+                {(fieldCount.get(type.id) ?? 0) === 1 ? ' field' : ' fields'}
+              </p>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</AdminLayout>

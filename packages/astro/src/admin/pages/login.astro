@@ -1,0 +1,144 @@
+---
+import '../admin.css';
+import { getConfiguredProviders } from '@taproot/core';
+import { getTaproot } from '../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+
+// Already signed in — no reason to show the form again.
+if (taproot.user) return Astro.redirect('/admin');
+
+const error = Astro.url.searchParams.get('error');
+const next = Astro.url.searchParams.get('next') ?? '/admin';
+const providers = getConfiguredProviders(taproot.auth);
+const devAuth = taproot.auth.devCredentialsEnabled;
+
+const providerLabels: Record<string, string> = {
+  google: 'Google',
+  github: 'GitHub',
+  microsoft: 'Microsoft',
+};
+
+// Only ever redirect to a path on this site.
+const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/admin';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Sign in · Taproot</title>
+  </head>
+  <body class="min-h-screen bg-surface-sunken text-content">
+    <main class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+      <div class="rounded-xl border border-border bg-surface-raised p-8 shadow-sm">
+        <h1 class="flex items-center gap-2 text-xl font-semibold tracking-tight">
+          <span aria-hidden="true" class="text-accent">◆</span>
+          Sign in to Taproot
+        </h1>
+
+        <!-- Errors are announced, not just shown. -->
+        <div role="alert" aria-live="assertive">
+          {
+            error && (
+              <p class="mt-5 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+                {error}
+              </p>
+            )
+          }
+        </div>
+
+        {
+          providers.length > 0 && (
+            <ul class="mt-6 space-y-2">
+              {providers.map((provider) => (
+                <li>
+                  <a
+                    href={`/api/taproot/auth/${provider}`}
+                    class="block w-full rounded-md border border-border-strong px-4 py-2.5 text-center text-sm font-medium transition-colors hover:bg-surface-sunken"
+                  >
+                    Continue with {providerLabels[provider] ?? provider}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+
+        {
+          devAuth && providers.length > 0 && (
+            <div class="my-6 flex items-center gap-3" aria-hidden="true">
+              <span class="h-px flex-1 bg-border" />
+              <span class="text-xs uppercase tracking-wide text-content-subtle">or</span>
+              <span class="h-px flex-1 bg-border" />
+            </div>
+          )
+        }
+
+        {
+          devAuth && (
+            <>
+              <form method="post" action="/api/taproot/auth/login" class="mt-6 space-y-4">
+                <input type="hidden" name="redirectTo" value={safeNext} />
+
+                <div>
+                  <label for="email" class="block text-sm font-medium">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    autocomplete="username"
+                    autofocus
+                    class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label for="password" class="block text-sm font-medium">
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    required
+                    autocomplete="current-password"
+                    class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  class="w-full rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+                >
+                  Sign in
+                </button>
+              </form>
+
+              <p class="mt-5 rounded-md border border-warning bg-warning-subtle px-3 py-2.5 text-xs">
+                <strong class="font-semibold">Development sign-in is enabled.</strong> Password
+                authentication is local-only — the app refuses to start with it enabled outside
+                development. Seeded account:
+                <code class="font-mono">admin@example.com</code> /
+                <code class="font-mono">taproot</code>
+              </p>
+            </>
+          )
+        }
+
+        {
+          providers.length === 0 && !devAuth && (
+            <p class="mt-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+              No sign-in method is configured. Set <code class="font-mono">TAPROOT_DEV_AUTH=1</code> in
+              development, or configure an OAuth provider — see <code class="font-mono">DEPLOYMENT.md</code>.
+            </p>
+          )
+        }
+      </div>
+    </main>
+  </body>
+</html>

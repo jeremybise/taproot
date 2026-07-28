@@ -1,0 +1,32 @@
+node_modules/
+dist/
+.astro/
+.wrangler/
+.vercel/
+.netlify/
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Local dev database (created by db:migrate / db:seed)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+data/
+
+# Locally uploaded media (production uses R2/S3)
+apps/web/public/uploads/
+
+# Build info
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

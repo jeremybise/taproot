@@ -1,0 +1,78 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import FieldBuilder from '../../islands/FieldBuilder.tsx';
+import { getContentType } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageSchema(user)) return Astro.redirect('/admin');
+
+const contentType = await getContentType(taproot.db.db, Astro.params.id!);
+if (!contentType) return new Response('Content type not found', { status: 404 });
+
+const itemCount = await taproot.db.db
+  .selectFrom('content_items')
+  .select((eb) => eb.fn.countAll<number>().as('n'))
+  .where('content_type_id', '=', contentType.id)
+  .executeTakeFirst();
+
+const created = Astro.url.searchParams.get('created') === '1';
+
+const kindLabels: Record<string, string> = {
+  page: 'Page — nests under a parent',
+  collection: 'Collection — flat, type-prefixed URL',
+  singleton: 'Singleton — exactly one item',
+};
+---
+
+<AdminLayout
+  title={contentType.name}
+  user={user}
+  breadcrumbs={[{ label: 'Content types', href: '/admin/types' }, { label: contentType.name }]}
+  flash={created ? `Created the ${contentType.name} content type. Add its fields below.` : null}
+>
+  <header class="mb-8">
+    <h1 class="text-2xl font-semibold tracking-tight">{contentType.name}</h1>
+    <dl class="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-content-muted">
+      <div class="flex gap-1.5">
+        <dt>API id:</dt>
+        <dd><code class="font-mono">{contentType.api_id}</code></dd>
+      </div>
+      <div class="flex gap-1.5">
+        <dt>Kind:</dt>
+        <dd>{kindLabels[contentType.kind]}</dd>
+      </div>
+      {
+        contentType.url_prefix && (
+          <div class="flex gap-1.5">
+            <dt>URL prefix:</dt>
+            <dd>
+              <code class="font-mono">/{contentType.url_prefix}</code>
+            </dd>
+          </div>
+        )
+      }
+      <div class="flex gap-1.5">
+        <dt>Items:</dt>
+        <dd>{Number(itemCount?.n ?? 0)}</dd>
+      </div>
+    </dl>
+    {
+      contentType.description && (
+        <p class="mt-3 max-w-prose text-sm text-content-muted">{contentType.description}</p>
+      )
+    }
+  </header>
+
+  <!--
+    Hydrated on load rather than on visible: this is the primary interaction on the page, and
+    deferring it would mean the buttons look ready before they respond.
+  -->
+  <FieldBuilder
+    client:load
+    contentTypeId={contentType.id}
+    initialFields={contentType.fields}
+  />
+</AdminLayout>

@@ -1,0 +1,75 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import ItemEditor from '../../islands/ItemEditor.tsx';
+import { getContentType, getItem, listItems } from '@taproot/core';
+import {
+  getTaproot,
+  loginRedirect,
+  canEditContent,
+  canPublishContent,
+} from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canEditContent(user)) return Astro.redirect('/admin');
+
+const item = await getItem(taproot.db.db, Astro.params.id!);
+if (!item) return new Response('Content item not found', { status: 404 });
+
+const contentType = await getContentType(taproot.db.db, item.content_type_id);
+if (!contentType) return new Response('Content type not found', { status: 404 });
+
+let parents: { id: string; title: string; path: string }[] = [];
+if (contentType.kind === 'page') {
+  const { items } = await listItems(taproot.db.db, { contentTypeId: contentType.id, limit: 200 });
+  // An item cannot be its own parent, and cannot be moved under its own descendants — the server
+  // rejects that too, but filtering here keeps the invalid option out of the menu entirely.
+  parents = items
+    .filter((candidate) => candidate.id !== item.id && !candidate.path.startsWith(`${item.path}/`))
+    .map((candidate) => ({ id: candidate.id, title: candidate.title, path: candidate.path }));
+}
+
+const saved = Astro.url.searchParams.get('saved') === '1';
+---
+
+<AdminLayout
+  title={item.title}
+  user={user}
+  breadcrumbs={[{ label: 'Content', href: '/admin/content' }, { label: item.title }]}
+  flash={saved ? 'Content item created.' : null}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">{item.title}</h1>
+    <p class="mt-1 text-sm text-content-muted">
+      {contentType.name} ·
+      {
+        item.status === 'published' ? (
+          <a href={item.path} class="font-mono hover:underline">
+            {item.path}
+          </a>
+        ) : (
+          <code class="font-mono">{item.path}</code>
+        )
+      }
+    </p>
+  </header>
+
+  <ItemEditor
+    client:load
+    itemId={item.id}
+    contentTypeId={contentType.id}
+    contentTypeName={contentType.name}
+    fields={contentType.fields}
+    initial={{
+      title: item.title,
+      slug: item.slug,
+      status: item.status,
+      parentId: item.parent_id,
+      data: item.data,
+    }}
+    parents={parents}
+    canPublish={canPublishContent(user)}
+    isHierarchical={contentType.kind === 'page'}
+  />
+</AdminLayout>

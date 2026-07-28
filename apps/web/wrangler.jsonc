@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "taproot-web",
+
+  // No `main` or `assets` here on purpose. @astrojs/cloudflare v14 builds the Worker through
+  // @cloudflare/vite-plugin, which supplies its own entry (`virtual:cloudflare/worker-entry`) and
+  // wires up the asset directory. Pointing `main` at ./dist by hand makes `astro dev` fail before
+  // it starts, because that file does not exist until after a build.
+  "compatibility_date": "2026-07-01",
+
+  // Gives the Worker the Node built-ins Astro's server runtime expects.
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true
+  },
+
+  // --- D1 -------------------------------------------------------------------
+  // `database_id` is a placeholder until you run `wrangler d1 create taproot`.
+  // The binding name `DB` is what @taproot/core looks for — see dbConfigFromEnv.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "taproot",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+
+  // --- R2 -------------------------------------------------------------------
+  // The binding name `MEDIA` is what storageFromEnv looks for.
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "taproot-media"
+    }
+  ],
+
+  "vars": {
+    "NODE_ENV": "production"
+  }
+}

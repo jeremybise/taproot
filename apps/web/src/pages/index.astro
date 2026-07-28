@@ -1,0 +1,42 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { listItems } from '@taproot/core';
+import { getTaproot } from '@taproot/astro/runtime/guards';
+
+export const prerender = false;
+
+const taproot = getTaproot(Astro.locals);
+const { items } = await listItems(taproot.db.db, { status: 'published', limit: 100 });
+
+// Top-level published pages become the site's front-page navigation.
+const topLevel = items.filter((item) => item.depth === 0 && item.parent_id === null);
+---
+
+<SiteLayout title="Home">
+  <h1>Riverbend College</h1>
+  <p>
+    A demo site running on Taproot. Everything below is stored in the database and served at request
+    time — editing a page in the <a href="/admin">admin</a> changes what you see here immediately, with
+    no rebuild.
+  </p>
+
+  {
+    topLevel.length === 0 ? (
+      <p>
+        No published content yet. Run <code>npm run db:seed</code>, or create something in the{' '}
+        <a href="/admin">admin</a>.
+      </p>
+    ) : (
+      <nav aria-labelledby="sections">
+        <h2 id="sections">Sections</h2>
+        <ul>
+          {topLevel.map((item) => (
+            <li>
+              <a href={item.path}>{item.title}</a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    )
+  }
+</SiteLayout>

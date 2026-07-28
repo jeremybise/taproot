@@ -1,0 +1,138 @@
+---
+interface Props {
+  title: string;
+  description?: string | null;
+  breadcrumbs?: { label: string; href: string }[];
+}
+
+const { title, description, breadcrumbs = [] } = Astro.props;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · Riverbend College</title>
+    {description && <meta name="description" content={description} />}
+    <style is:global>
+      :root {
+        --ink: #1a1d1b;
+        --paper: #fbfaf8;
+        --muted: #5c625e;
+        --rule: #e0ded9;
+        --accent: #2f6b4f;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #eceae6;
+          --paper: #16181a;
+          --muted: #a2a8a4;
+          --rule: #2e3234;
+          --accent: #7fc9a2;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      .wrap {
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+      }
+      a {
+        color: var(--accent);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .skip:not(:focus) {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+      header.site {
+        border-bottom: 1px solid var(--rule);
+        padding: 1.25rem 0;
+      }
+      header.site a.brand {
+        font-weight: 600;
+        text-decoration: none;
+        color: var(--ink);
+      }
+      nav.crumbs {
+        font-size: 0.875rem;
+        color: var(--muted);
+        margin: 1.5rem 0 0;
+      }
+      nav.crumbs ol {
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin: 0;
+        padding: 0;
+      }
+      main {
+        padding: 0 0 4rem;
+      }
+      h1 {
+        font-size: 2rem;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+        margin: 1.5rem 0 0.5rem;
+      }
+      footer.site {
+        border-top: 1px solid var(--rule);
+        padding: 1.5rem 0;
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <a href="#main" class="skip">Skip to main content</a>
+
+    <header class="site">
+      <div class="wrap">
+        <a href="/" class="brand">Riverbend College</a>
+      </div>
+    </header>
+
+    <div class="wrap">
+      {
+        breadcrumbs.length > 0 && (
+          <nav class="crumbs" aria-label="Breadcrumb">
+            <ol>
+              {breadcrumbs.map((crumb, index) => (
+                <li>
+                  {index > 0 && <span aria-hidden="true">/ </span>}
+                  <a href={crumb.href}>{crumb.label}</a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )
+      }
+
+      <main id="main">
+        <slot />
+      </main>
+    </div>
+
+    <footer class="site">
+      <div class="wrap">
+        Demo site for Taproot · <a href="/admin">Admin</a>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,132 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listContentTypes, listItems } from '@taproot/core';
+import { getTaproot, loginRedirect, canEditContent } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const params = Astro.url.searchParams;
+const typeFilter = params.get('type') ?? '';
+const search = params.get('q') ?? '';
+
+const contentTypes = await listContentTypes(taproot.db.db);
+const { items, total } = await listItems(taproot.db.db, {
+  contentTypeId: typeFilter || undefined,
+  search: search || undefined,
+  limit: 100,
+});
+
+const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
+---
+
+<AdminLayout title="Content" user={user} breadcrumbs={[{ label: 'Content' }]}>
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Content</h1>
+      <p class="mt-1 text-sm text-content-muted">
+        {total} {total === 1 ? 'item' : 'items'}
+      </p>
+    </div>
+    {
+      canEditContent(user) && contentTypes.length > 0 && (
+        <a
+          href="/admin/content/new"
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          New content item
+        </a>
+      )
+    }
+  </header>
+
+  <form method="get" class="mb-6 flex flex-wrap items-end gap-3">
+    <div class="min-w-48 flex-1">
+      <label for="q" class="block text-sm font-medium">Search</label>
+      <input
+        id="q"
+        name="q"
+        type="search"
+        value={search}
+        placeholder="Title or path"
+        class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      />
+    </div>
+
+    <div>
+      <label for="type" class="block text-sm font-medium">Content type</label>
+      <select
+        id="type"
+        name="type"
+        class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      >
+        <option value="">All types</option>
+        {
+          contentTypes.map((type) => (
+            <option value={type.id} selected={type.id === typeFilter}>
+              {type.name}
+            </option>
+          ))
+        }
+      </select>
+    </div>
+
+    <button
+      type="submit"
+      class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+    >
+      Filter
+    </button>
+  </form>
+
+  {
+    contentTypes.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        Create a content type before adding content.
+      </p>
+    ) : items.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        {search || typeFilter ? 'No content matches that filter.' : 'No content items yet.'}
+      </p>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only-focusable">Content items, ordered by path</caption>
+          <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 font-medium">Title</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Type</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Path</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr class="border-t border-border">
+                <th scope="row" class="px-4 py-2.5 font-medium">
+                  {/* Indentation communicates hierarchy visually; the path column carries it
+                      non-visually so the tree is not conveyed by appearance alone. */}
+                  <span style={`padding-left:${item.depth * 1.25}rem`} class="inline-block">
+                    <a href={`/admin/content/${item.id}`} class="hover:underline">
+                      {item.title}
+                    </a>
+                  </span>
+                </th>
+                <td class="px-4 py-2.5 text-content-muted">
+                  {typeNames.get(item.content_type_id) ?? '—'}
+                </td>
+                <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{item.path}</td>
+                <td class="px-4 py-2.5">
+                  <span class="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
+                    {item.status.replace('_', ' ')}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</AdminLayout>

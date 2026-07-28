@@ -1,0 +1,65 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const redirects = await taproot.db.db
+  .selectFrom('redirects')
+  .selectAll()
+  .orderBy('created_at', 'desc')
+  .limit(200)
+  .execute();
+
+const autoCount = redirects.filter((r) => r.source === 'auto').length;
+---
+
+<AdminLayout title="Redirects" user={user} breadcrumbs={[{ label: 'Redirects' }]}>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Redirects</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      {autoCount} of {redirects.length} were created automatically when content moved. Renaming or
+      re-parenting a page writes these without anyone having to remember.
+    </p>
+  </header>
+
+  {
+    redirects.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No redirects yet. They appear here as soon as a page's slug or parent changes.
+      </p>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only-focusable">Redirects, newest first</caption>
+          <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 font-medium">From</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">To</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Status</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {redirects.map((redirect) => (
+              <tr class="border-t border-border">
+                <th scope="row" class="px-4 py-2.5 font-mono text-xs font-normal">
+                  {redirect.from_path}
+                </th>
+                <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{redirect.to_path}</td>
+                <td class="px-4 py-2.5 tabular-nums">{redirect.status_code}</td>
+                <td class="px-4 py-2.5">
+                  <span class="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
+                    {redirect.source}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</AdminLayout>

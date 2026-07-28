@@ -1,0 +1,133 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const assets = await taproot.db.db
+  .selectFrom('media')
+  .selectAll()
+  .orderBy('created_at', 'desc')
+  .limit(100)
+  .execute();
+
+const withUrls = assets.map((asset) => ({
+  ...asset,
+  url: taproot.storage.publicUrl(asset.storage_key),
+  isImage: asset.mime_type.startsWith('image/'),
+}));
+
+const missingAlt = withUrls.filter((asset) => asset.isImage && !asset.alt_text).length;
+---
+
+<AdminLayout title="Media" user={user} breadcrumbs={[{ label: 'Media' }]}>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Media</h1>
+    <p class="mt-1 text-sm text-content-muted">
+      {assets.length} {assets.length === 1 ? 'asset' : 'assets'} · stored via the{' '}
+      <code class="font-mono">{taproot.storage.name}</code> adapter
+    </p>
+  </header>
+
+  {
+    missingAlt > 0 && (
+      <p class="mb-6 rounded-md border border-warning bg-warning-subtle px-4 py-3 text-sm">
+        <strong class="font-semibold">
+          {missingAlt} {missingAlt === 1 ? 'image is' : 'images are'} missing alt text.
+        </strong>{' '}
+        Alt text feeds the accessibility checker arriving in Phase 4, and is needed for the site to
+        meet WCAG 1.1.1.
+      </p>
+    )
+  }
+
+  {
+    canUploadMedia(user) && (
+      <form
+        method="post"
+        action="/api/taproot/media"
+        enctype="multipart/form-data"
+        class="mb-8 max-w-xl space-y-4 rounded-lg border border-border bg-surface-raised p-5"
+      >
+        <h2 class="text-base font-semibold">Upload an asset</h2>
+
+        <div>
+          <label for="file" class="block text-sm font-medium">
+            File
+          </label>
+          <input
+            id="file"
+            name="file"
+            type="file"
+            required
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div>
+          <label for="alt" class="block text-sm font-medium">
+            Alt text
+          </label>
+          <p id="alt-hint" class="mt-0.5 text-xs text-content-subtle">
+            Describe what the image conveys. Leave blank only if it is purely decorative.
+          </p>
+          <input
+            id="alt"
+            name="alt"
+            aria-describedby="alt-hint"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          />
+        </div>
+
+        <button
+          type="submit"
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          Upload
+        </button>
+      </form>
+    )
+  }
+
+  {
+    withUrls.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No media uploaded yet.
+      </p>
+    ) : (
+      <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        {withUrls.map((asset) => (
+          <li class="overflow-hidden rounded-lg border border-border bg-surface-raised">
+            <div class="flex aspect-4/3 items-center justify-center bg-surface-sunken">
+              {asset.isImage ? (
+                /* Decorative in this grid: the filename below is the accessible name, so
+                   repeating it as alt would make screen readers announce it twice. */
+                <img src={asset.url} alt="" class="h-full w-full object-cover" loading="lazy" />
+              ) : (
+                <span class="text-xs text-content-subtle">{asset.mime_type}</span>
+              )}
+            </div>
+            <div class="px-3 py-2.5">
+              <p class="truncate text-sm font-medium" title={asset.filename}>
+                {asset.filename}
+              </p>
+              <p class="mt-0.5 text-xs text-content-subtle">
+                {(asset.size_bytes / 1024).toFixed(0)} KB
+              </p>
+              {asset.isImage && !asset.alt_text && (
+                <p class="mt-1 text-xs text-warning">Missing alt text</p>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  <p class="mt-8 max-w-prose text-sm text-content-subtle">
+    The hotspot and crop editor — a focal point plus multiple aspect-ratio previews — is the next
+    increment on the media library in Phase 1. The data model for it already exists on every asset.
+  </p>
+</AdminLayout>

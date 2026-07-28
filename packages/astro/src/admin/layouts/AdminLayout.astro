@@ -1,0 +1,160 @@
+---
+import '../admin.css';
+import type { User } from '@taproot/core';
+import { canManageSchema } from '../../runtime/guards.js';
+
+interface Props {
+  title: string;
+  user: User;
+  /** Breadcrumb trail, most general first. The final entry is rendered as the current page. */
+  breadcrumbs?: { label: string; href?: string }[];
+  /** Announced to screen readers on load — used for save confirmations after a redirect. */
+  flash?: string | null;
+}
+
+const { title, user, breadcrumbs = [], flash = null } = Astro.props;
+const path = Astro.url.pathname;
+
+const nav = [
+  { href: '/admin', label: 'Dashboard', exact: true },
+  { href: '/admin/content', label: 'Content' },
+  { href: '/admin/media', label: 'Media' },
+  ...(canManageSchema(user) ? [{ href: '/admin/types', label: 'Content types' }] : []),
+  { href: '/admin/redirects', label: 'Redirects' },
+  { href: '/admin/settings', label: 'Settings' },
+];
+
+const isCurrent = (item: (typeof nav)[number]) =>
+  item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{title} · Taproot</title>
+  </head>
+  <body class="min-h-screen bg-surface text-content">
+    <!--
+      A skip link is the cheapest large a11y win in an app with a persistent sidebar: without it,
+      keyboard users tab through every nav item on every page before reaching the content.
+    -->
+    <a
+      href="#main"
+      class="sr-only-focusable absolute left-4 top-4 z-50 rounded-md bg-accent px-4 py-2 text-accent-content font-medium"
+    >
+      Skip to main content
+    </a>
+
+    <div class="flex min-h-screen">
+      <!--
+        Sidebar.
+
+        A <header> rather than a <div>: it is the banner landmark, which is what puts the brand
+        link and the account block inside a landmark. With a plain div, axe's `region` rule flags
+        them — content outside any landmark is content a screen-reader user cannot jump to.
+      -->
+      <header class="w-60 shrink-0 border-r border-border bg-surface-sunken">
+        <div class="sticky top-0 flex h-screen flex-col">
+          <div class="px-5 py-5">
+            <a href="/admin" class="flex items-center gap-2 text-lg font-semibold tracking-tight">
+              <span aria-hidden="true" class="text-accent">◆</span>
+              Taproot
+            </a>
+          </div>
+
+          <nav aria-label="Main" class="flex-1 px-3">
+            <ul class="space-y-0.5">
+              {
+                nav.map((item) => {
+                  const current = isCurrent(item);
+                  return (
+                    <li>
+                      <a
+                        href={item.href}
+                        aria-current={current ? 'page' : undefined}
+                        class:list={[
+                          'block rounded-md px-3 py-2 text-sm transition-colors',
+                          current
+                            ? 'bg-accent-subtle font-medium text-content'
+                            : 'text-content-muted hover:bg-surface-raised hover:text-content',
+                        ]}
+                      >
+                        {item.label}
+                      </a>
+                    </li>
+                  );
+                })
+              }
+            </ul>
+          </nav>
+
+          <div class="border-t border-border px-3 py-3">
+            <div class="px-2 py-1.5">
+              <p class="truncate text-sm font-medium">{user.name}</p>
+              <p class="truncate text-xs text-content-subtle">
+                {user.email} · <span class="capitalize">{user.role}</span>
+              </p>
+            </div>
+            <form method="post" action="/api/taproot/auth/logout">
+              <button
+                type="submit"
+                class="mt-1 w-full rounded-md px-3 py-2 text-left text-sm text-content-muted transition-colors hover:bg-surface-raised hover:text-content"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main ---------------------------------------------------------- -->
+      <div class="min-w-0 flex-1">
+        <main id="main" class="mx-auto max-w-5xl px-8 py-8">
+          {
+            breadcrumbs.length > 0 && (
+              <nav aria-label="Breadcrumb" class="mb-4">
+                <ol class="flex flex-wrap items-center gap-1.5 text-sm text-content-muted">
+                  {breadcrumbs.map((crumb, index) => {
+                    const last = index === breadcrumbs.length - 1;
+                    return (
+                      <li class="flex items-center gap-1.5">
+                        {index > 0 && <span aria-hidden="true">/</span>}
+                        {crumb.href && !last ? (
+                          <a href={crumb.href} class="hover:text-content hover:underline">
+                            {crumb.label}
+                          </a>
+                        ) : (
+                          <span aria-current={last ? 'page' : undefined} class="text-content">
+                            {crumb.label}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </nav>
+            )
+          }
+
+          <!--
+            Flash messages land in a live region so a save confirmation is announced after the
+            post-redirect page load, not just shown visually.
+          -->
+          <div role="status" aria-live="polite">
+            {
+              flash && (
+                <p class="mb-6 rounded-md border border-accent bg-accent-subtle px-4 py-3 text-sm">
+                  {flash}
+                </p>
+              )
+            }
+          </div>
+
+          <slot />
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

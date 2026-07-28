@@ -1,0 +1,82 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import ItemEditor from '../../islands/ItemEditor.tsx';
+import { getContentType, listContentTypes, listItems } from '@taproot/core';
+import {
+  getTaproot,
+  loginRedirect,
+  canEditContent,
+  canPublishContent,
+} from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canEditContent(user)) return Astro.redirect('/admin');
+
+const contentTypes = await listContentTypes(taproot.db.db);
+const selectedId = Astro.url.searchParams.get('type');
+
+// Pick a type first if one was not chosen; the editor cannot render fields without it.
+const contentType = selectedId ? await getContentType(taproot.db.db, selectedId) : undefined;
+
+let parents: { id: string; title: string; path: string }[] = [];
+if (contentType?.kind === 'page') {
+  const { items } = await listItems(taproot.db.db, {
+    contentTypeId: contentType.id,
+    limit: 200,
+  });
+  parents = items.map((item) => ({ id: item.id, title: item.title, path: item.path }));
+}
+---
+
+<AdminLayout
+  title="New content item"
+  user={user}
+  breadcrumbs={[{ label: 'Content', href: '/admin/content' }, { label: 'New' }]}
+>
+  {
+    !contentType ? (
+      <>
+        <h1 class="mb-2 text-2xl font-semibold tracking-tight">New content item</h1>
+        <p class="mb-6 text-sm text-content-muted">Choose the type of content to create.</p>
+
+        {contentTypes.length === 0 ? (
+          <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+            No content types exist yet.
+          </p>
+        ) : (
+          <ul class="max-w-xl space-y-2">
+            {contentTypes.map((type) => (
+              <li>
+                <a
+                  href={`/admin/content/new?type=${type.id}`}
+                  class="block rounded-lg border border-border bg-surface-raised px-4 py-3 transition-colors hover:border-border-strong"
+                >
+                  <span class="font-medium">{type.name}</span>
+                  {type.description && (
+                    <p class="mt-0.5 text-sm text-content-muted">{type.description}</p>
+                  )}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </>
+    ) : (
+      <>
+        <h1 class="mb-6 text-2xl font-semibold tracking-tight">New {contentType.name}</h1>
+        <ItemEditor
+          client:load
+          contentTypeId={contentType.id}
+          contentTypeName={contentType.name}
+          fields={contentType.fields}
+          initial={{ title: '', slug: '', status: 'draft', parentId: null, data: {} }}
+          parents={parents}
+          canPublish={canPublishContent(user)}
+          isHierarchical={contentType.kind === 'page'}
+        />
+      </>
+    )
+  }
+</AdminLayout>

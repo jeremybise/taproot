@@ -1,0 +1,37 @@
+---
+/**
+ * Renders a block field's contents.
+ *
+ * Phase 2 stub. The block registry, the region model, and the starter block presets (hero, CTA,
+ * gallery, rich text, staff card) all land with the Blocks phase; this exists now so the component
+ * name and import path are stable and host templates written in Phase 1 do not have to change.
+ *
+ * Unknown block types render nothing in production rather than throwing — a single bad block
+ * should not take down the page around it — and surface a visible placeholder in development so
+ * the problem is not silent while building.
+ */
+interface Block {
+  type: string;
+  [key: string]: unknown;
+}
+
+interface Props {
+  blocks?: Block[];
+}
+
+const { blocks = [] } = Astro.props;
+const isDev = import.meta.env.DEV;
+---
+
+{
+  blocks.map((block) =>
+    isDev ? (
+      <div
+        data-taproot-block={block.type}
+        style="border:1px dashed currentColor;padding:0.75rem;margin:0.5rem 0;opacity:0.7"
+      >
+        <code>{block.type}</code> — block rendering arrives in Phase 2
+      </div>
+    ) : null,
+  )
+}
