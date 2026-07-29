@@ -4,6 +4,7 @@ import {
   createItem,
   createMenu,
   createMenuItem,
+  createReusableBlock,
   createTaxonomy,
   createTerm,
   createUser,
@@ -891,6 +892,60 @@ if (!bannerExists) {
     userId: admin.id,
     data: { enabled: false, message: '', severity: 'info' },
   });
+}
+
+// --- Reusable block ---------------------------------------------------------
+//
+// One library entry, referenced from two pages, so the feature is visible on a fresh clone: edit
+// it once and both pages change. An ordinary block would have to be edited twice.
+
+const existingReusable = await handle.db
+  .selectFrom('reusable_blocks')
+  .select('id')
+  .where('name', '=', 'Visit prompt')
+  .executeTakeFirst();
+
+const visitPrompt =
+  existingReusable ??
+  (await createReusableBlock(handle.db, callToAction.fields, {
+    name: 'Visit prompt',
+    description: 'The standard nudge to book a campus tour. Used across admissions pages.',
+    blockType: 'call_to_action',
+    data: {
+      text: 'Seeing the place is the fastest way to decide.',
+      link_label: 'Book a campus visit',
+      link_href: '/visit',
+    },
+    userId: admin.id,
+  }));
+
+if (!existingReusable) console.log('  reusable block "Visit prompt" (created)');
+
+// Reference it from two published pages. Written directly rather than through `updateItem` because
+// `ensureItem` has already returned early for an existing row, and this has to run either way.
+for (const path of ['/admissions', '/financial-aid']) {
+  const target = await handle.db
+    .selectFrom('content_items')
+    .select(['id', 'data'])
+    .where('path', '=', path)
+    .executeTakeFirst();
+
+  if (!target) continue;
+
+  const data = JSON.parse(target.data) as Record<string, unknown>;
+  const sections = Array.isArray(data.sections) ? (data.sections as { ref?: string }[]) : [];
+  if (sections.some((block) => block.ref === visitPrompt.id)) continue;
+
+  data.sections = [
+    ...sections,
+    { id: newId(), type: 'call_to_action', data: {}, ref: visitPrompt.id },
+  ];
+
+  await handle.db
+    .updateTable('content_items')
+    .set({ data: JSON.stringify(data), updated_at: now() })
+    .where('id', '=', target.id)
+    .execute();
 }
 
 // Give Events a default social card but leave Pages without one, so both sides of the fallback

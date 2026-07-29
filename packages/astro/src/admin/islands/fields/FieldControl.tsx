@@ -1,6 +1,10 @@
 import { FIELD_TYPE_META, type BlockInstance, type FieldRow } from '@taproot/core';
 
-import { BlockListEditor, type BlockTypeOption } from './BlockListEditor.js';
+import {
+  BlockListEditor,
+  type BlockTypeOption,
+  type ReusableBlockOption,
+} from './BlockListEditor.js';
 import { RichTextEditor } from './RichTextEditor.js';
 
 /**
@@ -44,6 +48,10 @@ export interface FieldControlProps {
   blockTypes?: BlockTypeOption[];
   /** Media assets selectable by a `media` field, resolved server-side with their public URLs. */
   media?: { id: string; filename: string; url: string }[];
+  /** Library entries placeable into a `block` field. */
+  reusableBlocks?: ReusableBlockOption[];
+  /** Whether this user may promote a block into the shared library. */
+  canPromote?: boolean;
   /**
    * Preview mode: inputs are inert and ids are namespaced so a preview rendered next to the real
    * editor cannot collide with it or steal its label associations.
@@ -67,6 +75,8 @@ export function FieldControl({
   termsByTaxonomy,
   blockTypes,
   media,
+  reusableBlocks,
+  canPromote = false,
   preview = false,
   idPrefix,
 }: FieldControlProps) {
@@ -399,6 +409,11 @@ export function FieldControl({
             maxBlocks={numberOr(config.maxBlocks, undefined)}
             termsByTaxonomy={termsByTaxonomy}
             media={media}
+            reusableBlocks={(reusableBlocks ?? []).filter(
+              (entry) =>
+                available.some((blockType) => blockType.api_id === entry.block_type),
+            )}
+            canPromote={canPromote}
             labelledBy={labelId}
             disabled={preview}
           />

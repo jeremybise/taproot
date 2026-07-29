@@ -11,6 +11,7 @@ import {
   itemIdsInTermBranch,
   listItems,
   normalizePath,
+  resolveItemBlocks,
   resolveSeo,
 } from '@taproot/core';
 import { getTaproot, canEditContent } from '@taproot/astro/runtime/guards';
@@ -145,6 +146,18 @@ const renderable = (contentType?.fields ?? [])
  */
 const blockFields = (contentType?.fields ?? []).filter((field) => field.type === 'block');
 
+/**
+ * Reusable blocks are resolved here, not stored on the page.
+ *
+ * A page that references a library entry stores only the reference, so its content has to be
+ * fetched at render. Doing it in core rather than in this template means the admin editor resolves
+ * the same way — a preview showing different shared content from the live page would be a preview
+ * of something that does not exist.
+ */
+const blockData = item
+  ? await resolveItemBlocks(taproot.db.db, contentType?.fields ?? [], item.data)
+  : {};
+
 if (!isPreview) {
   Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
 }
@@ -250,7 +263,7 @@ const noIndex = isPreview || seo?.noIndex === true;
 
     {
       blockFields.map((field) => (
-        <BlockRenderer blocks={item!.data[field.api_id]} components={BLOCK_COMPONENTS} />
+        <BlockRenderer blocks={blockData[field.api_id]} components={BLOCK_COMPONENTS} />
       ))
     }
 

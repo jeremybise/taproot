@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronUp, GripVertical, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, GripVertical, Library, Link2Off, Trash2 } from 'lucide-react';
 import { newId, type BlockInstance, type ContentTypeRow, type FieldRow } from '@taproot/core';
 
 import { FieldControl, type TermOption } from './FieldControl.js';
@@ -40,6 +40,14 @@ export interface BlockTypeOption extends ContentTypeRow {
   fields: FieldRow[];
 }
 
+/** A library entry, as offered in the "From the library" list. */
+export interface ReusableBlockOption {
+  id: string;
+  name: string;
+  block_type: string;
+  data: Record<string, unknown>;
+}
+
 interface Props {
   value: BlockInstance[];
   onChange: (blocks: BlockInstance[]) => void;
@@ -49,6 +57,10 @@ interface Props {
   termsByTaxonomy?: Record<string, TermOption[]>;
   /** Passed through so a block's own media field works exactly as a page's does. */
   media?: { id: string; filename: string; url: string }[];
+  /** Library entries placeable in this field, already filtered to allowed block types. */
+  reusableBlocks?: ReusableBlockOption[];
+  /** Promoting to the library needs the editor role, so the control is hidden below it. */
+  canPromote?: boolean;
   labelledBy: string;
   disabled?: boolean;
 }
@@ -60,11 +72,14 @@ export function BlockListEditor({
   maxBlocks,
   termsByTaxonomy,
   media,
+  reusableBlocks = [],
+  canPromote = false,
   labelledBy,
   disabled = false,
 }: Props) {
   const id = useId();
   const [status, setStatus] = useState('');
+  const [promoting, setPromoting] = useState<string | null>(null);
   /** Blocks collapse to a summary row once there are several; a page can hold a lot of them. */
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -112,10 +127,74 @@ export function BlockListEditor({
     setStatus(`${blockType.name} added at position ${value.length + 1}.`);
   }
 
+  function addReference(entry: ReusableBlockOption) {
+    onChange([...value, { id: newId(), type: entry.block_type, data: {}, ref: entry.id }]);
+    setStatus(`${entry.name} added from the library at position ${value.length + 1}.`);
+  }
+
   function remove(index: number) {
     const block = value[index]!;
     onChange(value.filter((_, i) => i !== index));
     setStatus(`${byApiId.get(block.type)?.name ?? block.type} removed.`);
+  }
+
+  /**
+   * Promote a block into the library, then replace it with a reference to the new entry.
+   *
+   * Replacing rather than leaving a copy behind is the point: if the block stayed as content, the
+   * page would keep its own version and the library entry would drift away from it — and nobody
+   * would find out until the two disagreed on a page nobody had reopened.
+   */
+  async function promote(index: number) {
+    const block = value[index]!;
+    const name = window.prompt(
+      'Name this reusable block. Editors will find it in the library by this name.',
+      byApiId.get(block.type)?.name ?? block.type,
+    );
+    if (!name?.trim()) return;
+
+    setPromoting(block.id);
+    try {
+      const response = await fetch('/api/taproot/reusable-blocks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), blockType: block.type, data: block.data }),
+      });
+
+      const body = (await response.json().catch(() => null)) as {
+        reusableBlock?: { id: string; name: string };
+        error?: string;
+      } | null;
+
+      if (!response.ok || !body?.reusableBlock) {
+        setStatus(body?.error ?? `Could not save to the library (${response.status}).`);
+        return;
+      }
+
+      onChange(
+        value.map((entry, i) =>
+          i === index ? { ...entry, data: {}, ref: body.reusableBlock!.id } : entry,
+        ),
+      );
+      setStatus(`Saved to the library as "${body.reusableBlock.name}". This page now references it.`);
+    } catch {
+      setStatus('Could not reach the server. Nothing was saved to the library.');
+    } finally {
+      setPromoting(null);
+    }
+  }
+
+  /** Detach a reference, copying today's library content back onto the page as ordinary content. */
+  function detach(index: number) {
+    const block = value[index]!;
+    const entry = reusableBlocks.find((candidate) => candidate.id === block.ref);
+
+    onChange(
+      value.map((current, i) =>
+        i === index ? { id: current.id, type: current.type, data: entry?.data ?? {} } : current,
+      ),
+    );
+    setStatus('Detached from the library. This page now has its own copy.');
   }
 
   function update(index: number, data: Record<string, unknown>) {
@@ -167,10 +246,15 @@ export function BlockListEditor({
           disabled={disabled}
           termsByTaxonomy={termsByTaxonomy}
           media={media}
+          reusable={block.ref ? reusableBlocks.find((e) => e.id === block.ref) : undefined}
+          canPromote={canPromote && !disabled}
+          promoting={promoting === block.id}
           onToggle={() => toggleCollapsed(block.id)}
           onMoveUp={() => move(index, index - 1)}
           onMoveDown={() => move(index, index + 1)}
           onRemove={() => remove(index)}
+          onPromote={() => promote(index)}
+          onDetach={() => detach(index)}
           onChange={(data) => update(index, data)}
         />
       ))}
@@ -236,6 +320,32 @@ export function BlockListEditor({
                   </button>
                 ))}
               </div>
+
+              {reusableBlocks.length > 0 && (
+                <>
+                  <p id={`${id}-library`} className="mt-3 text-xs font-medium text-content-subtle">
+                    From the library
+                  </p>
+                  {/*
+                    Listed apart from the block types because placing one is a different decision:
+                    it puts shared content on this page, and editing it later changes every other
+                    page that uses it too.
+                  */}
+                  <div aria-labelledby={`${id}-library`} className="mt-1.5 flex flex-wrap gap-2">
+                    {reusableBlocks.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => addReference(entry)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-accent bg-accent-subtle px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+                      >
+                        <Library aria-hidden="true" size={14} />
+                        {entry.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </fieldset>
           )}
         </div>
@@ -254,10 +364,16 @@ interface RowProps {
   disabled: boolean;
   termsByTaxonomy?: Record<string, TermOption[]>;
   media?: { id: string; filename: string; url: string }[];
+  /** The library entry this block references, when it is a reference rather than page content. */
+  reusable?: ReusableBlockOption;
+  canPromote: boolean;
+  promoting: boolean;
   onToggle: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemove: () => void;
+  onPromote: () => void;
+  onDetach: () => void;
   onChange: (data: Record<string, unknown>) => void;
 }
 
@@ -271,10 +387,15 @@ function BlockRow({
   disabled,
   termsByTaxonomy,
   media,
+  reusable,
+  canPromote,
+  promoting,
   onToggle,
   onMoveUp,
   onMoveDown,
   onRemove,
+  onPromote,
+  onDetach,
   onChange,
 }: RowProps) {
   // Hooks must run unconditionally, so the sortable is set up even when dragging is off.
@@ -347,7 +468,7 @@ function BlockRow({
             ) : (
               <ChevronUp aria-hidden="true" size={14} />
             )}
-            <span className="truncate">{name}</span>
+            <span className="truncate">{reusable ? reusable.name : name}</span>
             {/*
               A text node *between* the spans, not inside either of them. Accessible-name
               computation trims each element's own text, so a leading space inside the second span
@@ -355,6 +476,7 @@ function BlockRow({
             */}
             {' '}
             <span className="text-xs font-normal text-content-subtle">
+              {reusable ? `shared ${name}, ` : ''}
               {index + 1} of {total}
             </span>
           </button>
@@ -362,6 +484,30 @@ function BlockRow({
 
         {!disabled && (
           <>
+            {reusable ? (
+              <button
+                type="button"
+                onClick={onDetach}
+                aria-label={`Detach ${reusable.name} from the library`}
+                title="Detach from the library — this page keeps its own copy"
+                className="rounded border border-border-strong px-1.5 py-1 transition-colors hover:bg-surface-sunken"
+              >
+                <Link2Off aria-hidden="true" size={14} />
+              </button>
+            ) : (
+              canPromote && (
+                <button
+                  type="button"
+                  onClick={onPromote}
+                  disabled={promoting}
+                  aria-label={`Save ${name} to the library`}
+                  title="Save to the library so other pages can use it"
+                  className="rounded border border-border-strong px-1.5 py-1 transition-colors hover:bg-surface-sunken disabled:opacity-40"
+                >
+                  <Library aria-hidden="true" size={14} />
+                </button>
+              )
+            )}
             <button
               type="button"
               onClick={onMoveUp}
@@ -393,6 +539,22 @@ function BlockRow({
       </div>
 
       <div id={panelId} hidden={collapsed} className="space-y-4 px-4 py-3">
+        {/*
+          A referenced block is shown but not edited here. Its content belongs to the library, so
+          an input on this page would either edit every other page that uses it — a surprise from a
+          screen that looks like it is editing one page — or quietly not save at all.
+        */}
+        {reusable && (
+          <p className="rounded-md border border-accent bg-accent-subtle px-3 py-2 text-xs">
+            Shared content from the library. Editing it changes every page that uses it, so it is
+            edited in one place:{' '}
+            <a href={`/admin/blocks/${reusable.id}`} className="font-medium underline">
+              open “{reusable.name}”
+            </a>
+            .
+          </p>
+        )}
+
         {blockType.fields.length === 0 ? (
           <p className="text-sm text-content-subtle">This block type has no fields yet.</p>
         ) : (
@@ -400,10 +562,10 @@ function BlockRow({
             <FieldControl
               key={field.id}
               field={field}
-              value={block.data[field.api_id]}
+              value={(reusable ? reusable.data : block.data)[field.api_id]}
               termsByTaxonomy={termsByTaxonomy}
               media={media}
-              preview={disabled}
+              preview={disabled || Boolean(reusable)}
               // Two blocks of the same type share one field definition, so the block's own id is
               // what keeps their inputs from colliding on a duplicate DOM id.
               idPrefix={block.id}

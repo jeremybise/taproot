@@ -8,8 +8,9 @@ A DB-backed, Astro-native CMS for a campus website with many non-technical depar
 contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the relevant phase section
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
-**Status:** Phase 1 is complete. Phase 2 is in progress: block types, page composition, and
-`BlockRenderer` are done; Reusable Blocks are not.
+**Status:** Phases 1 and 2 are complete — block types, page composition, `BlockRenderer`, and
+Reusable Blocks. Phase 3 (roles, departments, and workflow) is next; read its SCOPE.md section
+before starting.
 
 ## Commands
 
@@ -18,7 +19,7 @@ before starting work on it. Decisions recorded there are settled; don't relitiga
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 403 tests |
+| `npm test` | Vitest, 418 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -112,7 +113,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-23 routes, 0 violations, all 32 token pairs passing in both themes.
+25 routes, 0 violations, all 32 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
@@ -236,6 +237,22 @@ many), *Block*, *Reusable Block*, *Content Type*.
 - **Taproot ships no block templates.** `BlockRenderer` takes a map from block `api_id` to an Astro
   component, supplied by the host site — a CMS that shipped a hero component would be shipping a
   design. `apps/web/src/blocks/index.ts` is the worked example.
+- **A reusable block's content belongs to the library, not the page.** A page stores only
+  `{ id, type, ref }` and no copy — two copies would raise the question of which is authoritative,
+  and the stale one would win on whichever page nobody reopened. `resolveBlockReferences` fills the
+  data in at read time, and is called by the public route *and* the admin so both see the same
+  content.
+  - A referencing page's revision records **that** it referenced the entry, not what the entry said
+    at the time. Restoring an old revision restores the reference, and the reference resolves to
+    today's content — correct for shared content, since a restored page must not resurrect last
+    month's opening hours, but a real difference from ordinary blocks.
+  - Referenced blocks skip field validation on the page, because the library row already validated
+    it. Requiring a page that stores no content to satisfy a required field would make the
+    reference unsavable.
+  - Deleting an entry is **refused** while anything references it. A reference with no target
+    renders as a gap on exactly the pages nobody is watching — which is why the content was shared.
+  - Deleting a block *type* also checks the library, because `countBlockUsage` only sees blocks
+    written into a content item and an entry no page references yet is invisible to it.
 - `repeater` has columns and a validation seam but no editing UI.
 
 ## Definition of done for a phase

@@ -190,6 +190,26 @@ export interface ContentItemsTable {
   updated_at: Timestamp;
 }
 
+/**
+ * A block instance promoted to a shared library.
+ *
+ * The row owns its `data`; an item that places it stores only a reference. That is the whole
+ * point — an ordinary block's content belongs to the page and is versioned with it, while this
+ * belongs to the library, and editing it changes every page that references it at once.
+ */
+export interface ReusableBlocksTable {
+  id: string;
+  /** How editors find it in the library. Not a machine name; renaming is safe. */
+  name: string;
+  description: string | null;
+  /** The block type's `api_id`, matching how block instances name their type in `data`. */
+  block_type: string;
+  data: JsonText;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface MediaTable {
   id: string;
   /** Key within the storage adapter's namespace, not a public URL. */
@@ -370,6 +390,7 @@ export interface Database {
   content_types: ContentTypesTable;
   fields: FieldsTable;
   content_items: ContentItemsTable;
+  reusable_blocks: ReusableBlocksTable;
   media: MediaTable;
   redirects: RedirectsTable;
   revisions: RevisionsTable;
@@ -398,6 +419,10 @@ export type FieldUpdate = Updateable<FieldsTable>;
 export type ContentItemRow = Selectable<ContentItemsTable>;
 export type NewContentItem = Insertable<ContentItemsTable>;
 export type ContentItemUpdate = Updateable<ContentItemsTable>;
+
+export type ReusableBlockRow = Selectable<ReusableBlocksTable>;
+export type NewReusableBlock = Insertable<ReusableBlocksTable>;
+export type ReusableBlockUpdate = Updateable<ReusableBlocksTable>;
 
 export type MediaRow = Selectable<MediaTable>;
 export type NewMedia = Insertable<MediaTable>;

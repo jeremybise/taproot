@@ -1,0 +1,101 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import { blockTypeRegistry, countReusableBlockUsage, listReusableBlocks } from '@taproot/core';
+import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
+
+/**
+ * The reusable block library.
+ *
+ * A sidebar destination rather than a Settings page, because these are content — an office's
+ * contact details, a term's key dates — not configuration. Settings holds the things that shape
+ * the site; this holds words an editor writes.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const blocks = await listReusableBlocks(taproot.db.db);
+const registry = await blockTypeRegistry(taproot.db.db);
+
+const usage = new Map<string, number>();
+for (const block of blocks) {
+  usage.set(block.id, await countReusableBlockUsage(taproot.db.db, block.id));
+}
+
+const deleted = Astro.url.searchParams.get('deleted');
+const error = Astro.url.searchParams.get('error');
+---
+
+<AdminLayout
+  title="Reusable blocks"
+  user={user}
+  breadcrumbs={[{ label: 'Reusable blocks' }]}
+  flash={deleted ? `Deleted ${deleted}.` : null}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Reusable blocks</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      Content that appears on several pages and changes in one place. Editing one here changes every
+      page that uses it.
+    </p>
+  </header>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  {
+    blocks.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        Nothing in the library yet. Open a page with blocks, then use “Save to the library” on one
+        of them — a reusable block starts life as an ordinary block that turned out to be needed
+        twice.
+      </p>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only-focusable">Reusable blocks, alphabetically</caption>
+          <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 font-medium">Name</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Block type</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Used on</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {blocks.map((block) => (
+              <tr class="border-t border-border">
+                <th scope="row" class="px-4 py-2.5 font-medium">
+                  <a href={`/admin/blocks/${block.id}`} class="hover:underline">
+                    {block.name}
+                  </a>
+                </th>
+                <td class="px-4 py-2.5 text-content-muted">
+                  {registry.get(block.block_type)?.name ?? (
+                    <span class="text-danger">{block.block_type} (missing)</span>
+                  )}
+                </td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  {usage.get(block.id) === 0
+                    ? 'nothing yet'
+                    : `${usage.get(block.id)} ${usage.get(block.id) === 1 ? 'page' : 'pages'}`}
+                </td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  <Timestamp value={block.updated_at} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</AdminLayout>

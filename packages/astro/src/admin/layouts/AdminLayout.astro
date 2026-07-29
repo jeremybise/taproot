@@ -75,6 +75,9 @@ const groups: NavGroup[] = [
     label: 'Library',
     items: [
       { href: '/admin/media', label: 'Media' },
+      // Content, not configuration — an office's contact details rather than a setting — so it
+      // lives beside Media rather than under Settings with the block *types*.
+      { href: '/admin/blocks', label: 'Reusable blocks' },
       { href: '/admin/taxonomies', label: 'Taxonomies' },
       ...(canManageSchema(user) ? [{ href: '/admin/menus', label: 'Menus' }] : []),
     ],

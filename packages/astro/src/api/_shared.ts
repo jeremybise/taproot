@@ -4,6 +4,7 @@ import {
   ContentItemError,
   ContentTypeError,
   MenuError,
+  ReusableBlockError,
   RevisionError,
   TaxonomyError,
 } from '@taproot/core';
@@ -145,6 +146,19 @@ export function mapError(error: unknown): Response {
       case 'invalid_parent':
       case 'not_hierarchical':
         return apiError(422, error.message);
+      default:
+        return apiError(400, error.message);
+    }
+  }
+
+  if (error instanceof ReusableBlockError) {
+    switch (error.code) {
+      case 'not_found':
+        return apiError(404, error.message);
+      case 'in_use':
+        return apiError(409, error.message);
+      case 'validation_failed':
+        return apiError(422, error.message, error.fieldErrors);
       default:
         return apiError(400, error.message);
     }

@@ -36,6 +36,7 @@ const ROUTES = [
   '/admin/settings/users',
   '/admin/settings/system',
   '/admin/media',
+  '/admin/blocks',
   '/admin/taxonomies',
   '/admin/menus',
   '/admin/settings/redirects',
@@ -87,6 +88,11 @@ if (singleton) ROUTES.push(`/admin/singleton/${singleton.api_id}`);
 const mediaResponse = await fetch(`${base}/api/taproot/media?limit=1`, { headers: { cookie } });
 const { media } = await mediaResponse.json();
 if (media?.[0]) ROUTES.push(`/admin/media/${media[0].id}`);
+
+// One reusable block's editor, which renders the block type's own fields plus a usage list.
+const reusableResponse = await fetch(`${base}/api/taproot/reusable-blocks`, { headers: { cookie } });
+const { reusableBlocks } = await reusableResponse.json();
+if (reusableBlocks?.[0]) ROUTES.push(`/admin/blocks/${reusableBlocks[0].id}`);
 
 // The term editor is the densest screen in the admin — a repeated form per row — so it is the one
 // most worth auditing, and it only exists once a taxonomy does.

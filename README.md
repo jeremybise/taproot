@@ -3,8 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 and 1 complete; Phase 2 in progress** — blocks and page composition work,
-Reusable Blocks are next. Sign in, define a content type and its fields visually, write
+**Status: Phases 0, 1, and 2 complete.** Sign in, define a content type and its fields visually, write
 content with a real rich text editor, classify it, put it in a menu, set its focal point, and see it
 render at a real nested URL. See [SCOPE.md](SCOPE.md) for the full plan and
 [what's next](#whats-next).
@@ -55,6 +54,10 @@ toolchain — Taproot has zero native dependencies.
   and edit blocks inline; reordering works by dragging and by buttons. Taproot ships no block
   templates — `BlockRenderer` takes a map from block name to your own Astro component, because a
   CMS that shipped a hero component would be shipping a design.
+- **Reusable blocks.** Promote a block to a shared library and every page referencing it changes
+  when you edit it once. A referencing page stores the reference and no copy, so there is never a
+  question of which version is authoritative — and deleting a library entry is refused while
+  anything still uses it.
 - **Focal point and crop, stored as data rather than baked in.** Set one focal point and watch it
   play out in a wide banner, a social card, a square thumbnail, and a portrait card at once —
   because that is the decision being made, and it cannot be judged from a single frame. Drag it, or
@@ -190,7 +193,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-403 tests. The ones worth knowing about:
+418 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -224,6 +227,11 @@ npm test
   picker, and the relation target list all depend on without asking for it.
 - That richtext inside a block is sanitised exactly as it is at the top level, because block
   validation recurses through the same function.
+- That editing one reusable block changes every page referencing it — the entire point of the
+  feature, and the thing that silently stops working if a copy is ever stored alongside the
+  reference.
+- That deleting a block type checks the reusable library as well as content items: an entry no page
+  references yet is invisible to the usage count, and deleting the type would strand it.
 - Image headers built byte by byte rather than committed as binary files, so a diff shows exactly
   which bytes the parser depends on — including that width and height are not transposed, which is
   the likeliest bug and invisible on a square fixture.
@@ -232,10 +240,12 @@ npm test
 
 ## What's next
 
-The rest of **Phase 2**, per [SCOPE.md](SCOPE.md): Reusable Blocks — promoting a block instance to
-a shared library, referencing it from several content items, and usage tracking that warns before
-deletion. The block field type, page composition, and `BlockRenderer` are done. `repeater` still
-has only its columns and validation seam.
+**Phase 3**, per [SCOPE.md](SCOPE.md): departments as a first-class entity with membership and
+ownership, a scoped role model, the draft/review/schedule/publish workflow with role gates, and an
+audit log. Departments are built there rather than earlier because nothing before it consumes them
+— Phase 1's taxonomies classify content, they do not own it.
+
+`repeater` is the one field type still with only its columns and a validation seam.
 
 Phase 0 deliberately left seams rather than stubs that would need unpicking, and Phase 1 filled
 every one of them — `fields` was already a real table, `content_items` already carried

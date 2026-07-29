@@ -274,6 +274,7 @@ export function buildValueSchema(field: FieldRow): z.ZodType {
           id: z.string().min(1),
           type: z.string().min(1),
           data: z.record(z.string(), z.unknown()).default({}),
+          ref: z.string().min(1).optional(),
         }),
       );
       break;
@@ -306,6 +307,14 @@ export interface BlockInstance {
   /** The block type's `api_id`. */
   type: string;
   data: Record<string, unknown>;
+  /**
+   * A reusable block's id, when this placement is a reference rather than content of its own.
+   *
+   * Set means the library owns the content: `data` is empty here and filled in at read time by
+   * `resolveBlockReferences`. Storing a copy alongside the reference would make "which is
+   * authoritative" a question, and the answer would be wrong on whichever page nobody reopened.
+   */
+  ref?: string;
 }
 
 export interface ValidateItemOptions {
@@ -409,6 +418,18 @@ function validateBlocks(
     // An empty allow-list means "any block type", matching the field config's documented default.
     if (allowed.length > 0 && !allowed.includes(block.type)) {
       errors.push(`${position}: "${block.type}" is not allowed in this field.`);
+      return;
+    }
+
+    /**
+     * A reference carries no content of its own, so there is nothing here to validate.
+     *
+     * The library row owns the data and was validated when it was written; re-checking a copy
+     * would mean there were two, and the stale one would win on whichever page nobody reopened.
+     * `data` is dropped rather than preserved so the stored shape cannot imply otherwise.
+     */
+    if (block.ref) {
+      value.push({ id: block.id, type: block.type, data: {}, ref: block.ref });
       return;
     }
 

@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { slugify, type ContentStatus, type FieldRow, type SeoData } from '@taproot/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
-import type { BlockTypeOption } from './fields/BlockListEditor.js';
+import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
 import SeoPanel, { type MediaOption } from './SeoPanel.js';
 import { STATUS_META, STATUS_ORDER } from '../status.js';
 
@@ -37,6 +37,8 @@ interface Props {
   termsByTaxonomy?: Record<string, TermOption[]>;
   /** Block types with their fields, for any block fields on this type. */
   blockTypes?: BlockTypeOption[];
+  /** Library entries placeable into a block field. */
+  reusableBlocks?: ReusableBlockOption[];
   canPublish: boolean;
   isHierarchical: boolean;
   /** Image assets selectable as a social card, with their resolved public URLs. */
@@ -70,6 +72,7 @@ export default function ItemEditor({
   parents,
   termsByTaxonomy,
   blockTypes,
+  reusableBlocks,
   canPublish,
   isHierarchical,
   images = [],
@@ -231,6 +234,10 @@ export default function ItemEditor({
               onChange={(value) => setValue(field.api_id, value)}
               termsByTaxonomy={termsByTaxonomy}
               blockTypes={blockTypes}
+              reusableBlocks={reusableBlocks}
+              // Promoting shares content across pages, so it sits behind the same bar as
+              // publishing rather than the one for editing a single page.
+              canPromote={canPublish}
               media={images}
             />
           ))}

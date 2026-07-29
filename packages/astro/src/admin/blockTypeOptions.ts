@@ -1,8 +1,11 @@
 import type { Kysely } from 'kysely';
 import type { Database } from '@taproot/core';
-import { blockTypeRegistry } from '@taproot/core';
+import { blockTypeRegistry, listReusableBlocks } from '@taproot/core';
 
-import type { BlockTypeOption } from './islands/fields/BlockListEditor.js';
+import type {
+  BlockTypeOption,
+  ReusableBlockOption,
+} from './islands/fields/BlockListEditor.js';
 
 /**
  * Block types with their fields, shaped for the editor island.
@@ -23,4 +26,24 @@ export async function blockTypeOptionsForFields(
 
   const registry = await blockTypeRegistry(db);
   return [...registry.values()];
+}
+
+/**
+ * Library entries placeable into this type's block fields.
+ *
+ * The whole library rather than a filtered slice: `FieldControl` narrows it per field by the block
+ * types that field allows, and a site's library is small enough that one query beats one per field.
+ */
+export async function reusableBlockOptionsForFields(
+  db: Kysely<Database>,
+  fields: { type: string }[],
+): Promise<ReusableBlockOption[]> {
+  if (!fields.some((field) => field.type === 'block')) return [];
+
+  return (await listReusableBlocks(db)).map((entry) => ({
+    id: entry.id,
+    name: entry.name,
+    block_type: entry.block_type,
+    data: entry.data,
+  }));
 }

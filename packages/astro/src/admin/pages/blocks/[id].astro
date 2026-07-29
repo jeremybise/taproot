@@ -1,0 +1,155 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import ReusableBlockEditor from '../../islands/ReusableBlockEditor.tsx';
+import { termOptionsForFields } from '../../termOptions.js';
+import { imageOptions } from '../../mediaOptions.js';
+import {
+  blockTypeRegistry,
+  countReusableBlockUsage,
+  getReusableBlock,
+  itemsUsingReusableBlock,
+} from '@taproot/core';
+import {
+  getTaproot,
+  loginRedirect,
+  canEditContent,
+  canPublishContent,
+} from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canEditContent(user)) return Astro.redirect('/admin');
+
+const block = await getReusableBlock(taproot.db.db, Astro.params.id!);
+if (!block) return new Response('Reusable block not found', { status: 404 });
+
+const registry = await blockTypeRegistry(taproot.db.db);
+const blockType = registry.get(block.block_type);
+
+const usageCount = await countReusableBlockUsage(taproot.db.db, block.id);
+const usedBy = await itemsUsingReusableBlock(taproot.db.db, block.id);
+
+const fields = blockType?.fields ?? [];
+const termsByTaxonomy = await termOptionsForFields(taproot.db.db, fields);
+const images = await imageOptions(taproot.db.db, taproot.storage);
+
+// Editing shared content is the same bar as publishing: it changes pages other people own.
+const canEdit = canPublishContent(user);
+
+// A refused delete redirects back here with its reason, since the usage list explaining it is here.
+const error = Astro.url.searchParams.get('error');
+---
+
+<AdminLayout
+  title={block.name}
+  user={user}
+  breadcrumbs={[
+    { label: 'Reusable blocks', href: '/admin/blocks' },
+    { label: block.name },
+  ]}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">{block.name}</h1>
+    <p class="mt-1 text-sm text-content-muted">
+      Reusable {blockType?.name ?? block.block_type}
+    </p>
+  </header>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  {
+    !blockType && (
+      <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+        <strong class="font-semibold">
+          The “{block.block_type}” block type no longer exists.
+        </strong>{' '}
+        Its content is preserved but cannot be edited until a block type with that API id exists
+        again.
+      </p>
+    )
+  }
+
+  <section aria-labelledby="usage-heading" class="mb-8">
+    <h2 id="usage-heading" class="mb-1 text-base font-semibold">Where it appears</h2>
+    {
+      usageCount === 0 ? (
+        <p class="text-sm text-content-muted">
+          Not placed on any page yet. It appears in the “From the library” list on any block field
+          that allows this block type.
+        </p>
+      ) : (
+        <>
+          <p class="mb-3 max-w-prose text-sm text-content-muted">
+            Saving changes all of these at once. That is the point of a reusable block — and the
+            reason to read it twice before saving.
+          </p>
+          <ul class="flex flex-wrap gap-2">
+            {usedBy.map((item) => (
+              <li>
+                <a
+                  href={`/admin/content/${item.id}`}
+                  class="inline-block rounded-md border border-border bg-surface-raised px-3 py-1.5 text-sm transition-colors hover:border-border-strong"
+                >
+                  {item.title}
+                </a>
+              </li>
+            ))}
+            {usageCount > usedBy.length && (
+              <li class="self-center text-sm text-content-subtle">
+                and {usageCount - usedBy.length} more
+              </li>
+            )}
+          </ul>
+        </>
+      )
+    }
+  </section>
+
+  <ReusableBlockEditor
+    client:load
+    id={block.id}
+    fields={fields}
+    initial={{ name: block.name, description: block.description ?? '', data: block.data }}
+    termsByTaxonomy={termsByTaxonomy}
+    media={images}
+    usageCount={usageCount}
+    canEdit={canEdit}
+  />
+
+  {
+    canEdit && (
+      <section aria-labelledby="delete-heading" class="mt-10 border-t border-border pt-6">
+        <h2 id="delete-heading" class="text-base font-semibold">
+          Delete
+        </h2>
+        <p class="mt-1 mb-3 max-w-prose text-sm text-content-muted">
+          {usageCount === 0
+            ? 'Nothing references this, so deleting it is safe.'
+            : `Refused while ${usageCount} page(s) still reference it — a reference with no target would render as a gap on pages nobody is looking at.`}
+        </p>
+        {/*
+          A plain form post rather than an island: one button and a confirmation, and it works
+          before hydration.
+        */}
+        <form method="post" action={`/api/taproot/reusable-blocks/${block.id}/delete`}>
+          <button
+            type="submit"
+            disabled={usageCount > 0}
+            class="rounded-md border border-danger px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-subtle disabled:opacity-40"
+          >
+            Delete “{block.name}”
+          </button>
+        </form>
+      </section>
+    )
+  }
+</AdminLayout>

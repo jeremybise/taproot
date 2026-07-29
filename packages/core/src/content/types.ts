@@ -275,6 +275,27 @@ export async function deleteContentType(db: Kysely<Database>, id: string): Promi
       );
     }
 
+    /**
+     * A library entry counts as usage even when nothing places it yet.
+     *
+     * `countBlockUsage` only sees blocks written into a content item, and a reusable block that no
+     * page references is invisible to it — deleting the type would leave an entry in the library
+     * whose schema no longer exists.
+     */
+    const library = await db
+      .selectFrom('reusable_blocks')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('block_type', '=', existing.api_id)
+      .executeTakeFirst();
+
+    if (Number(library?.count ?? 0) > 0) {
+      throw new ContentTypeError(
+        `Cannot delete the "${existing.name}" block while ${library?.count} reusable block(s) of ` +
+          `that type exist. Delete those from the library first.`,
+        'in_use',
+      );
+    }
+
     await db.deleteFrom('content_types').where('id', '=', id).execute();
     return;
   }
