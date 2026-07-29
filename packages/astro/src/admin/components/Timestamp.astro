@@ -1,0 +1,25 @@
+---
+import { formatTimestamp } from '../datetime.js';
+
+interface Props {
+  value: string | null | undefined;
+}
+
+const { value } = Astro.props;
+const { text, full, machine } = formatTimestamp(value);
+---
+
+{/*
+  `datetime` carries the exact instant even though the visible text is abbreviated, so the precise
+  value stays available to anything reading the markup. `title` repeats it for a pointer user;
+  it is deliberately supplementary, never the only place the information exists.
+*/}
+{
+  machine ? (
+    <time datetime={machine} title={full} class="whitespace-nowrap">
+      {text}
+    </time>
+  ) : (
+    <span class="text-content-subtle">{text}</span>
+  )
+}

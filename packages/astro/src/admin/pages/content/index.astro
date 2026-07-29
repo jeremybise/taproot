@@ -1,6 +1,9 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { listContentTypes, listItems } from '@taproot/core';
+import StatusBadge from '../../components/StatusBadge.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import { countItemsByStatus, listContentTypes, listItems } from '@taproot/core';
+import { parseStatusFilter, statusFilterOptions } from '../../status.js';
 import { getTaproot, loginRedirect, canEditContent } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -10,15 +13,28 @@ const user = taproot.user;
 const params = Astro.url.searchParams;
 const typeFilter = params.get('type') ?? '';
 const search = params.get('q') ?? '';
+// Anything unrecognised is dropped rather than passed through, so a hand-edited URL narrows the
+// list to nothing instead of reaching the query with a status that cannot exist.
+const statusFilter = parseStatusFilter(params.get('status'));
 
 const contentTypes = await listContentTypes(taproot.db.db);
-const { items, total } = await listItems(taproot.db.db, {
+
+const facetFilters = {
   contentTypeId: typeFilter || undefined,
   search: search || undefined,
-  limit: 100,
-});
+};
 
+const [{ items, total }, statusCounts] = await Promise.all([
+  listItems(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 100 }),
+  countItemsByStatus(taproot.db.db, facetFilters),
+]);
+
+const statusOptions = statusFilterOptions(statusCounts, statusFilter);
+// The "All statuses" count comes from the same facet query, so it stays consistent with the
+// per-status numbers beside it even though `total` above is narrowed by the status filter.
+const statusTotal = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
 const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
+const filtered = Boolean(search || typeFilter || statusFilter);
 ---
 
 <AdminLayout title="Content" user={user} breadcrumbs={[{ label: 'Content' }]}>
@@ -26,7 +42,7 @@ const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
     <div>
       <h1 class="text-2xl font-semibold tracking-tight">Content</h1>
       <p class="mt-1 text-sm text-content-muted">
-        {total} {total === 1 ? 'item' : 'items'}
+        {total} {total === 1 ? 'item' : 'items'}{filtered ? ' matching this filter' : ''}
       </p>
     </div>
     {
@@ -72,6 +88,29 @@ const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
       </select>
     </div>
 
+    <div>
+      <label for="status" class="block text-sm font-medium">Status</label>
+      <select
+        id="status"
+        name="status"
+        class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      >
+        {/*
+          Counts ignore the status filter but honour the others, so each number answers "what
+          would I get if I switched to this?" rather than restating the row count already on
+          screen.
+        */}
+        <option value="">All statuses ({statusTotal})</option>
+        {
+          statusOptions.map((option) => (
+            <option value={option.status} selected={option.status === statusFilter}>
+              {option.label} ({option.count})
+            </option>
+          ))
+        }
+      </select>
+    </div>
+
     <button
       type="submit"
       class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
@@ -87,7 +126,7 @@ const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
       </p>
     ) : items.length === 0 ? (
       <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
-        {search || typeFilter ? 'No content matches that filter.' : 'No content items yet.'}
+        {filtered ? 'No content matches that filter.' : 'No content items yet.'}
       </p>
     ) : (
       <div class="overflow-x-auto rounded-lg border border-border">
@@ -99,6 +138,8 @@ const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
               <th scope="col" class="px-4 py-2.5 font-medium">Type</th>
               <th scope="col" class="px-4 py-2.5 font-medium">Path</th>
               <th scope="col" class="px-4 py-2.5 font-medium">Status</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Updated</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Created</th>
             </tr>
           </thead>
           <tbody>
@@ -118,9 +159,13 @@ const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
                 </td>
                 <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{item.path}</td>
                 <td class="px-4 py-2.5">
-                  <span class="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
-                    {item.status.replace('_', ' ')}
-                  </span>
+                  <StatusBadge status={item.status} />
+                </td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  <Timestamp value={item.updated_at} />
+                </td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  <Timestamp value={item.created_at} />
                 </td>
               </tr>
             ))}

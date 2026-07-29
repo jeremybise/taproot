@@ -1,4 +1,4 @@
-import { sql, type Kysely } from 'kysely';
+import { sql, type Kysely, type SelectQueryBuilder } from 'kysely';
 
 import type { BatchStatement } from '../db/batch.js';
 import type { TaprootDb } from '../db/client.js';
@@ -73,35 +73,54 @@ export function hydrateItem(row: ContentItemRow): ContentItem {
 // Reads
 // ---------------------------------------------------------------------------
 
-export interface ListItemsOptions {
+export interface ListItemsOptions extends ItemFilters {
+  limit?: number;
+  offset?: number;
+}
+
+/** The narrowing part of a list query, without paging. */
+export interface ItemFilters {
   contentTypeId?: string;
   status?: ContentStatus;
   parentId?: string | null;
   search?: string;
-  limit?: number;
-  offset?: number;
+}
+
+type ItemQuery = SelectQueryBuilder<Database, 'content_items', {}>;
+
+/**
+ * The WHERE clauses shared by the item list and its status counts.
+ *
+ * Extracted rather than duplicated because the counts label the list: a facet that applied a
+ * different search than the rows beneath it would be worse than showing no count at all. Typed
+ * against the pre-`select` builder, which is where both callers apply it.
+ */
+function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
+  let q = query;
+
+  if (filters.contentTypeId) q = q.where('content_type_id', '=', filters.contentTypeId);
+  if (filters.status) q = q.where('status', '=', filters.status);
+  if (filters.parentId !== undefined) {
+    q =
+      filters.parentId === null
+        ? q.where('parent_id', 'is', null)
+        : q.where('parent_id', '=', filters.parentId);
+  }
+  if (filters.search) {
+    const needle = `%${filters.search.toLowerCase()}%`;
+    q = q.where((eb) =>
+      eb.or([eb(sql`lower(title)`, 'like', needle), eb(sql`lower(path)`, 'like', needle)]),
+    );
+  }
+
+  return q;
 }
 
 export async function listItems(
   db: Kysely<Database>,
   options: ListItemsOptions = {},
 ): Promise<{ items: ContentItem[]; total: number }> {
-  let query = db.selectFrom('content_items');
-
-  if (options.contentTypeId) query = query.where('content_type_id', '=', options.contentTypeId);
-  if (options.status) query = query.where('status', '=', options.status);
-  if (options.parentId !== undefined) {
-    query =
-      options.parentId === null
-        ? query.where('parent_id', 'is', null)
-        : query.where('parent_id', '=', options.parentId);
-  }
-  if (options.search) {
-    const needle = `%${options.search.toLowerCase()}%`;
-    query = query.where((eb) =>
-      eb.or([eb(sql`lower(title)`, 'like', needle), eb(sql`lower(path)`, 'like', needle)]),
-    );
-  }
+  const query = applyItemFilters(db.selectFrom('content_items'), options);
 
   const totalRow = await query
     .select((eb) => eb.fn.countAll<number>().as('count'))
@@ -115,6 +134,42 @@ export async function listItems(
     .execute();
 
   return { items: rows.map(hydrateItem), total: Number(totalRow?.count ?? 0) };
+}
+
+/**
+ * How many items sit in each status, under every filter *except* status.
+ *
+ * The omission is the point, and it is why `status` is excluded at the type level rather than by
+ * convention. A status facet exists to answer "what would I get if I switched to Draft?", so
+ * counting within the current status filter would answer with the number already on screen and
+ * zero everywhere else. Statuses with no items are returned as 0 rather than omitted, so callers
+ * can render a complete list without treating a missing key as a special case.
+ */
+export async function countItemsByStatus(
+  db: Kysely<Database>,
+  filters: Omit<ItemFilters, 'status'> = {},
+): Promise<Record<ContentStatus, number>> {
+  const rows = await applyItemFilters(db.selectFrom('content_items'), filters)
+    .select('status')
+    .select((eb) => eb.fn.countAll<number>().as('n'))
+    .groupBy('status')
+    .execute();
+
+  const counts: Record<ContentStatus, number> = {
+    draft: 0,
+    in_review: 0,
+    scheduled: 0,
+    published: 0,
+    archived: 0,
+  };
+
+  for (const row of rows) {
+    // A row can carry a status this build does not know if the database is ahead of the code.
+    // Dropping it keeps the shape honest instead of inventing a key nobody can render.
+    if (Object.hasOwn(counts, row.status)) counts[row.status] = Number(row.n);
+  }
+
+  return counts;
 }
 
 export async function getItem(

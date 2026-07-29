@@ -45,6 +45,9 @@ toolchain — Taproot has zero native dependencies.
 - **An admin shaped by your content model.** Every content type is its own sidebar entry in an
   order you set, singletons open straight into their editor, and Settings is a hub rather than one
   long scrolling page.
+- **Content lists built for scanning.** Colour-coded status badges, a faceted status filter whose
+  counts tell you what each option would return, and created/updated columns that tighten to a
+  time for today's edits and widen to a year for old ones.
 - **Menus that reference rather than record.** A menu item points at a page, so moving that page
   updates the navigation and unpublishing it removes the entry — without anyone editing the menu.
   Menu items can also point at taxonomy terms, though whether a term has a public page at all is
@@ -65,7 +68,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (203 covering dialects, auth, paths, validation, revisions, taxonomies, menus, the field builder) |
+| `npm test` | Unit tests (227 covering dialects, auth, paths, validation, revisions, taxonomies, menus, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -168,7 +171,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-203 tests. The ones worth knowing about:
+227 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -182,6 +185,10 @@ npm test
   derived index rebuilt from `data` rather than the place tags actually live.
 - TOTP against the RFC 6238 test vectors, so the implementation is verified correct rather than
   merely self-consistent.
+- The status filter rejects `toString` and `constructor`, because testing membership with `in`
+  rather than against a list would have let every inherited key through to the query.
+- Status facet counts apply the same search as the list they label — they come from one shared
+  filter builder, and the test is what says so.
 
 ---
 
@@ -196,4 +203,10 @@ every media asset already has hotspot and crop columns.
 
 Known gaps closing in the rest of Phase 1: the richtext field edits as a plain textarea (values
 round-trip correctly), the TOTP enrolment UI is not built though the core is implemented and
-tested, and image dimensions are not read on upload.
+tested, and image dimensions are not read on upload. Content lists are ordered by path and cannot
+be sorted by date — for a hierarchical type the path order *is* the tree, so a date sort would
+leave the indentation describing a nesting the rows no longer follow.
+
+`scheduled` is a real status with a colour and a filter option, but the editor does not offer it:
+nothing yet flips a scheduled item live. The seed includes one so the gap is visible rather than
+theoretical.

@@ -37,6 +37,28 @@
   --color-warning: oklch(62% 0.14 75);
   --color-warning-subtle: oklch(96% 0.04 75);
 
+  /*
+   * Content status colours.
+   *
+   * Reinforcement, never the message: every badge renders its own text label, so the colour is
+   * redundant and WCAG 1.4.1 is satisfied by construction rather than by a reviewer remembering.
+   * Hues are spread far enough apart to survive the common colour-vision deficiencies, and each
+   * `-subtle` background is contrast-checked against `--color-content` in a11y-contrast.mjs.
+   *
+   * Draft and archived are the pair most at risk of reading alike — both are "not live" — so
+   * archived takes a mauve rather than a second grey.
+   */
+  --color-status-draft: oklch(58% 0.01 250);
+  --color-status-draft-subtle: oklch(95% 0.004 250);
+  --color-status-review: oklch(62% 0.14 75);
+  --color-status-review-subtle: oklch(96% 0.04 75);
+  --color-status-scheduled: oklch(55% 0.16 285);
+  --color-status-scheduled-subtle: oklch(95% 0.04 285);
+  --color-status-published: oklch(52% 0.15 155);
+  --color-status-published-subtle: oklch(95% 0.04 155);
+  --color-status-archived: oklch(55% 0.12 320);
+  --color-status-archived-subtle: oklch(95% 0.03 320);
+
   --color-focus: oklch(55% 0.19 250);
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -67,6 +89,17 @@
 
     --color-warning: oklch(75% 0.13 75);
     --color-warning-subtle: oklch(30% 0.05 75);
+
+    --color-status-draft: oklch(70% 0.015 250);
+    --color-status-draft-subtle: oklch(30% 0.008 250);
+    --color-status-review: oklch(75% 0.13 75);
+    --color-status-review-subtle: oklch(30% 0.05 75);
+    --color-status-scheduled: oklch(74% 0.13 285);
+    --color-status-scheduled-subtle: oklch(30% 0.06 285);
+    --color-status-published: oklch(70% 0.15 155);
+    --color-status-published-subtle: oklch(28% 0.05 155);
+    --color-status-archived: oklch(72% 0.12 320);
+    --color-status-archived-subtle: oklch(30% 0.05 320);
 
     --color-focus: oklch(72% 0.16 250);
   }

@@ -1,5 +1,7 @@
 ---
 import AdminLayout from '../layouts/AdminLayout.astro';
+import StatusBadge from '../components/StatusBadge.astro';
+import Timestamp from '../components/Timestamp.astro';
 import { listContentTypes } from '@taproot/core';
 import { getTaproot, loginRedirect, canManageSchema } from '../../runtime/guards.js';
 
@@ -110,6 +112,10 @@ const stats = [
                 <th scope="col" class="px-4 py-2.5 font-medium">Type</th>
                 <th scope="col" class="px-4 py-2.5 font-medium">Path</th>
                 <th scope="col" class="px-4 py-2.5 font-medium">Status</th>
+                {/* Updated only, no Created: this list is sorted by it, so it is the column that
+                    explains the order. Created belongs on the full lists, where it is a fact
+                    about the row rather than the reason the row is here. */}
+                <th scope="col" class="px-4 py-2.5 font-medium">Updated</th>
               </tr>
             </thead>
             <tbody>
@@ -123,9 +129,10 @@ const stats = [
                   <td class="px-4 py-2.5 text-content-muted">{item.type_name}</td>
                   <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{item.path}</td>
                   <td class="px-4 py-2.5">
-                    <span class="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
-                      {item.status.replace('_', ' ')}
-                    </span>
+                    <StatusBadge status={item.status} />
+                  </td>
+                  <td class="px-4 py-2.5 text-content-muted">
+                    <Timestamp value={item.updated_at} />
                   </td>
                 </tr>
               ))}

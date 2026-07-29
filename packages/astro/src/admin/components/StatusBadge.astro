@@ -1,0 +1,24 @@
+---
+import { statusMeta } from '../status.js';
+
+interface Props {
+  status: string;
+}
+
+const { status } = Astro.props;
+const meta = statusMeta(status);
+---
+
+{/*
+  The label is always rendered, so the colour is reinforcement rather than the message itself —
+  which is what keeps this clear of WCAG 1.4.1 without needing an icon per status. Nothing here
+  should ever become a colour swatch with the text removed.
+*/}
+<span
+  class:list={[
+    'inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium capitalize',
+    meta.badgeClass,
+  ]}
+>
+  {meta.label}
+</span>

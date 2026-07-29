@@ -1,6 +1,9 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
-import { getContentTypeByApiId, listItems } from '@taproot/core';
+import StatusBadge from '../../../components/StatusBadge.astro';
+import Timestamp from '../../../components/Timestamp.astro';
+import { countItemsByStatus, getContentTypeByApiId, listItems } from '@taproot/core';
+import { parseStatusFilter, statusFilterOptions } from '../../../status.js';
 import { getTaproot, loginRedirect, canEditContent } from '../../../../runtime/guards.js';
 
 /**
@@ -24,14 +27,20 @@ if (contentType.kind === 'singleton') {
 }
 
 const search = Astro.url.searchParams.get('q') ?? '';
+const statusFilter = parseStatusFilter(Astro.url.searchParams.get('status'));
 
-const { items, total } = await listItems(taproot.db.db, {
-  contentTypeId: contentType.id,
-  search: search || undefined,
-  limit: 200,
-});
+const facetFilters = { contentTypeId: contentType.id, search: search || undefined };
 
+const [{ items, total }, statusCounts] = await Promise.all([
+  listItems(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 200 }),
+  countItemsByStatus(taproot.db.db, facetFilters),
+]);
+
+const statusOptions = statusFilterOptions(statusCounts, statusFilter);
+const statusTotal = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
+const filtered = Boolean(search || statusFilter);
 const isHierarchical = contentType.kind === 'page';
+const plural = contentType.name_plural.toLowerCase();
 ---
 
 <AdminLayout
@@ -43,7 +52,7 @@ const isHierarchical = contentType.kind === 'page';
     <div>
       <h1 class="text-2xl font-semibold tracking-tight">{contentType.name_plural}</h1>
       <p class="mt-1 max-w-prose text-sm text-content-muted">
-        {total} {total === 1 ? 'item' : 'items'}
+        {total} {total === 1 ? 'item' : 'items'}{filtered ? ' matching this filter' : ''}
         {contentType.description && ` · ${contentType.description}`}
       </p>
     </div>
@@ -63,7 +72,7 @@ const isHierarchical = contentType.kind === 'page';
   <form method="get" class="mb-6 flex flex-wrap items-end gap-3">
     <div class="min-w-48 flex-1 sm:max-w-sm">
       <label for="q" class="block text-sm font-medium">
-        Search {contentType.name_plural.toLowerCase()}
+        Search {plural}
       </label>
       <input
         id="q"
@@ -74,20 +83,41 @@ const isHierarchical = contentType.kind === 'page';
         class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
       />
     </div>
+
+    <div>
+      <label for="status" class="block text-sm font-medium">Status</label>
+      <select
+        id="status"
+        name="status"
+        class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      >
+        {/*
+          Counts honour the search but ignore the status filter, so each number answers "what
+          would I get if I switched to this?" rather than restating the rows already on screen.
+        */}
+        <option value="">All statuses ({statusTotal})</option>
+        {
+          statusOptions.map((option) => (
+            <option value={option.status} selected={option.status === statusFilter}>
+              {option.label} ({option.count})
+            </option>
+          ))
+        }
+      </select>
+    </div>
+
     <button
       type="submit"
       class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
     >
-      Search
+      Filter
     </button>
   </form>
 
   {
     items.length === 0 ? (
       <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
-        {search
-          ? `No ${contentType.name_plural.toLowerCase()} match that search.`
-          : `No ${contentType.name_plural.toLowerCase()} yet.`}
+        {filtered ? `No ${plural} match that filter.` : `No ${plural} yet.`}
       </p>
     ) : (
       <div class="overflow-x-auto rounded-lg border border-border">
@@ -105,6 +135,12 @@ const isHierarchical = contentType.kind === 'page';
               </th>
               <th scope="col" class="px-4 py-2.5 font-medium">
                 Status
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Updated
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Created
               </th>
             </tr>
           </thead>
@@ -128,9 +164,13 @@ const isHierarchical = contentType.kind === 'page';
                 </th>
                 <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{item.path}</td>
                 <td class="px-4 py-2.5">
-                  <span class="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
-                    {item.status.replace('_', ' ')}
-                  </span>
+                  <StatusBadge status={item.status} />
+                </td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  <Timestamp value={item.updated_at} />
+                </td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  <Timestamp value={item.created_at} />
                 </td>
               </tr>
             ))}

@@ -27,6 +27,16 @@ const LIGHT = {
   'danger-subtle': [96, 0.03, 25],
   warning: [62, 0.14, 75],
   'warning-subtle': [96, 0.04, 75],
+  'status-draft': [58, 0.01, 250],
+  'status-draft-subtle': [95, 0.004, 250],
+  'status-review': [62, 0.14, 75],
+  'status-review-subtle': [96, 0.04, 75],
+  'status-scheduled': [55, 0.16, 285],
+  'status-scheduled-subtle': [95, 0.04, 285],
+  'status-published': [52, 0.15, 155],
+  'status-published-subtle': [95, 0.04, 155],
+  'status-archived': [55, 0.12, 320],
+  'status-archived-subtle': [95, 0.03, 320],
   focus: [55, 0.19, 250],
 };
 
@@ -46,6 +56,16 @@ const DARK = {
   'danger-subtle': [28, 0.06, 25],
   warning: [75, 0.13, 75],
   'warning-subtle': [30, 0.05, 75],
+  'status-draft': [70, 0.015, 250],
+  'status-draft-subtle': [30, 0.008, 250],
+  'status-review': [75, 0.13, 75],
+  'status-review-subtle': [30, 0.05, 75],
+  'status-scheduled': [74, 0.13, 285],
+  'status-scheduled-subtle': [30, 0.06, 285],
+  'status-published': [70, 0.15, 155],
+  'status-published-subtle': [28, 0.05, 155],
+  'status-archived': [72, 0.12, 320],
+  'status-archived-subtle': [30, 0.05, 320],
   focus: [72, 0.16, 250],
 };
 
@@ -68,6 +88,16 @@ const PAIRS = [
   ['focus', 'surface', 3, 'focus ring on the page background'],
   ['focus', 'surface-raised', 3, 'focus ring on cards'],
   ['focus', 'surface-sunken', 3, 'focus ring in the sidebar'],
+
+  // Status badges. The label sits on the `-subtle` fill, so that pair carries text and needs
+  // 4.5:1. The badge border is held to the 3:1 non-text threshold against both backgrounds a
+  // badge can appear on — a table row (surface) and the editor sidebar card (surface-raised) —
+  // because a status colour nobody can see is the same as not colour-coding at all.
+  ...['draft', 'review', 'scheduled', 'published', 'archived'].flatMap((name) => [
+    ['content', `status-${name}-subtle`, 4.5, `${name} badge label`],
+    [`status-${name}`, 'surface', 3, `${name} badge border on a table row`],
+    [`status-${name}`, 'surface-raised', 3, `${name} badge border on a card`],
+  ]),
 ];
 
 // --- oklch -> sRGB -> relative luminance ------------------------------------

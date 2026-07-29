@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { slugify, type ContentStatus, type FieldRow } from '@taproot/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
+import { STATUS_META, STATUS_ORDER } from '../status.js';
 
 /**
  * The content item editor.
@@ -35,12 +36,18 @@ interface Props {
   isHierarchical: boolean;
 }
 
-const STATUSES: { value: ContentStatus; label: string; needsPublish: boolean }[] = [
-  { value: 'draft', label: 'Draft', needsPublish: false },
-  { value: 'in_review', label: 'In review', needsPublish: false },
-  { value: 'published', label: 'Published', needsPublish: true },
-  { value: 'archived', label: 'Archived', needsPublish: true },
-];
+/**
+ * The statuses the editor offers, in workflow order.
+ *
+ * Derived from the shared table rather than listed again here, so a status can never carry one
+ * label in a list and another in the editor. `scheduled` is normally excluded — nothing yet flips
+ * a scheduled item live, so offering it would promise a behaviour that does not exist — but an
+ * item already in that status keeps its option, or the select would render blank and quietly
+ * misreport what the item is while still saving it unchanged.
+ */
+function statusOptions(current: ContentStatus): ContentStatus[] {
+  return STATUS_ORDER.filter((status) => STATUS_META[status].settable || status === current);
+}
 
 export default function ItemEditor({
   itemId,
@@ -213,23 +220,35 @@ export default function ItemEditor({
           <h2 className="text-sm font-semibold">Publishing</h2>
 
           <div className="mt-3">
-            <label htmlFor={`${formId}-status`} className="block text-sm font-medium">
-              Status
-            </label>
+            <div className="flex items-baseline justify-between gap-2">
+              <label htmlFor={`${formId}-status`} className="block text-sm font-medium">
+                Status
+              </label>
+              {/*
+                The same badge the lists use, so the colour an editor learns while scanning a list
+                means the same thing here. It tracks local state rather than the saved value, which
+                is the honest reading of a form: it shows what will be saved, not what is stored.
+              */}
+              <span
+                className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_META[status].badgeClass}`}
+              >
+                {STATUS_META[status].label}
+              </span>
+            </div>
             <select
               id={`${formId}-status`}
               value={status}
               onChange={(e) => setStatus(e.target.value as ContentStatus)}
               className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
             >
-              {STATUSES.map((option) => (
+              {statusOptions(status).map((option) => (
                 <option
-                  key={option.value}
-                  value={option.value}
-                  disabled={option.needsPublish && !canPublish}
+                  key={option}
+                  value={option}
+                  disabled={STATUS_META[option].needsPublish && !canPublish}
                 >
-                  {option.label}
-                  {option.needsPublish && !canPublish ? ' (needs editor role)' : ''}
+                  {STATUS_META[option].label}
+                  {STATUS_META[option].needsPublish && !canPublish ? ' (needs editor role)' : ''}
                 </option>
               ))}
             </select>

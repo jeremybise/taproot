@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createDb, type TaprootDb } from '../db/client.js';
 import { migrateToLatest } from '../db/migrations/index.js';
-import type { ContentTypeRow, FieldRow } from '../db/schema.js';
+import type { ContentStatus, ContentTypeRow, FieldRow } from '../db/schema.js';
 import {
   ancestorPaths,
   buildCollectionPath,
@@ -17,6 +17,7 @@ import {
 } from './paths.js';
 import { createContentType, createField, deleteContentType, updateField } from './types.js';
 import {
+  countItemsByStatus,
   createItem,
   deleteItem,
   getItemByPath,
@@ -617,5 +618,87 @@ describe('deletion', () => {
     // Deliberate: silently deleting a whole page tree is not a recoverable mistake.
     const { items } = await listItems(handle.db, {});
     expect(items.map((i) => i.id)).toEqual([child.id]);
+  });
+});
+
+describe('status counts', () => {
+  async function seedStatuses() {
+    const { type, fields } = await seedPageType();
+    const make = (title: string, status: ContentStatus) =>
+      createItem(handle, type, fields, { contentTypeId: type.id, title, status });
+
+    await make('Live one', 'published');
+    await make('Live two', 'published');
+    await make('Unfinished', 'draft');
+    await make('Waiting on legal', 'in_review');
+
+    return { type, fields };
+  }
+
+  it('reports every status, including the ones with nothing in them', async () => {
+    await seedStatuses();
+
+    // Zeros rather than missing keys, so a caller can render a complete filter without treating
+    // an absent key as a special case.
+    expect(await countItemsByStatus(handle.db)).toEqual({
+      draft: 1,
+      in_review: 1,
+      scheduled: 0,
+      published: 2,
+      archived: 0,
+    });
+  });
+
+  it('narrows by content type', async () => {
+    const { type: pageType, fields: pageFields } = await seedPageType();
+    await createItem(handle, pageType, pageFields, {
+      contentTypeId: pageType.id,
+      title: 'A page',
+      status: 'published',
+    });
+
+    const eventType = await createContentType(handle.db, {
+      api_id: 'event',
+      name: 'Event',
+      name_plural: 'Events',
+      kind: 'collection',
+      description: null,
+      icon: null,
+      url_prefix: 'events',
+      title_field: 'title',
+    });
+    await createItem(handle, eventType, [], {
+      contentTypeId: eventType.id,
+      title: 'An event',
+      status: 'draft',
+    });
+
+    expect((await countItemsByStatus(handle.db, { contentTypeId: eventType.id })).draft).toBe(1);
+    expect((await countItemsByStatus(handle.db, { contentTypeId: eventType.id })).published).toBe(0);
+  });
+
+  it('applies the same search the list applies', async () => {
+    // The counts label the list, so a search the two disagreed about would be worse than no count
+    // at all. Both go through the one filter builder; this is the test that says so.
+    await seedStatuses();
+
+    const counts = await countItemsByStatus(handle.db, { search: 'live' });
+    const { total } = await listItems(handle.db, { search: 'live' });
+
+    expect(counts.published).toBe(2);
+    expect(counts.draft).toBe(0);
+    expect(Object.values(counts).reduce((sum, n) => sum + n, 0)).toBe(total);
+  });
+
+  it('counts across statuses so a facet can answer "what would I get if I switched?"', async () => {
+    await seedStatuses();
+
+    // The signature omits `status` on purpose: counting within the current status filter would
+    // return the number already on screen and zero everywhere else.
+    const counts = await countItemsByStatus(handle.db);
+    const { total: draftTotal } = await listItems(handle.db, { status: 'draft' });
+
+    expect(counts.draft).toBe(draftTotal);
+    expect(counts.published).toBe(2);
   });
 });

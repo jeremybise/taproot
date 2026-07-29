@@ -463,6 +463,44 @@ await ensureItem(
   '/campus-housing',
 );
 
+// Every remaining status gets one item, so the status colours and the status filter both have
+// something to show on a fresh clone rather than a list that is entirely one colour.
+await ensureItem(
+  handle,
+  page.type,
+  page.fields,
+  {
+    contentTypeId: page.type.id,
+    title: 'Student Life',
+    status: 'in_review',
+    userId: admin.id,
+    data: {
+      summary: 'Clubs, athletics, and life on the river.',
+      body: 'Waiting on a read from the Student Affairs office before this goes live.',
+      show_in_nav: false,
+    },
+  },
+  '/student-life',
+);
+
+await ensureItem(
+  handle,
+  page.type,
+  page.fields,
+  {
+    contentTypeId: page.type.id,
+    title: 'Registration — Spring 2025',
+    status: 'archived',
+    userId: admin.id,
+    data: {
+      summary: 'Superseded by the current registration page.',
+      body: 'Kept for reference. Archived rather than deleted so its URL keeps resolving.',
+      show_in_nav: false,
+    },
+  },
+  '/registration-spring-2025',
+);
+
 await ensureItem(
   handle,
   event.type,
@@ -499,6 +537,28 @@ await ensureItem(
     },
   },
   '/events/financial-aid-night',
+);
+
+// `scheduled` is storable and the API accepts it, but no job flips a scheduled item live yet, so
+// the editor does not offer it. Seeding one keeps that gap visible instead of letting a status
+// exist in the schema that nothing in the running system ever demonstrates.
+await ensureItem(
+  handle,
+  event.type,
+  event.fields,
+  {
+    contentTypeId: event.type.id,
+    title: 'Summer Orientation',
+    status: 'scheduled',
+    userId: admin.id,
+    data: {
+      starts_at: '2026-08-24T13:00:00.000Z',
+      location: 'Halloway Hall',
+      audience: 'current',
+      body: 'Two days of advising, registration, and campus tours for incoming students.',
+    },
+  },
+  '/events/summer-orientation',
 );
 
 const bannerExists = await handle.db

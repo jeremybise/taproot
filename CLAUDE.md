@@ -19,7 +19,7 @@ SEO sidebar, singleton editing, a real richtext editor, and the media hotspot/cr
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 150 tests |
+| `npm test` | Vitest, 227 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -44,6 +44,19 @@ on first visit. The indirection buys a stable sidebar URL that cannot break if t
 Sidebar order comes from `content_types.position`, reorderable in Settings. Settings is a hub over
 Content types, Redirects, Users & access, and System — configuration that shapes the site rather
 than its content.
+
+Content lists share three pieces of presentation, each in one place so the screens cannot drift:
+[status.ts](packages/astro/src/admin/status.ts) (labels, badge classes, which statuses the editor
+offers), [StatusBadge.astro](packages/astro/src/admin/components/StatusBadge.astro), and
+[Timestamp.astro](packages/astro/src/admin/components/Timestamp.astro). **Status colour is always
+redundant with a text label** — that is what keeps the badges clear of WCAG 1.4.1, so a badge must
+never become a bare colour swatch. Badge classes are written out as literal strings because
+Tailwind 4 finds classes by scanning source text; `bg-status-${status}-subtle` would never be
+generated.
+
+The status filter is faceted: `countItemsByStatus` applies every filter **except** status, so each
+count answers "what would I get if I switched to this?" rather than restating the rows already on
+screen. `status` is excluded from its parameter type rather than by convention.
 
 **Nothing in the CMS assumes a particular kind of site.** The demo is a college; the CMS must work
 for anyone. Content types, taxonomies, and menus are all user-defined, and a site with none of them
@@ -100,7 +113,11 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-11 routes, 0 violations, all token pairs passing in both themes.
+19 routes, 0 violations, all 32 token pairs passing in both themes.
+
+**A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
+the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
+them — which means a token added to the CSS alone is simply unchecked.
 
 What it does **not** cover, and what needs a real browser and a human: post-hydration behaviour of
 the React islands, and screen-reader output. Custom interactions are where WCAG failures actually
