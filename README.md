@@ -182,9 +182,16 @@ npm run dev      # in one terminal
 npm run a11y     # in another
 ```
 
-`a11y:axe` runs axe-core against every admin route's server-rendered HTML. `a11y:contrast` checks
-the design tokens numerically, because jsdom cannot compute contrast — it caught five failing pairs
-during Phase 0, including input borders at 1.81:1 against a 3:1 requirement.
+`a11y:axe` runs axe-core against every admin route's server-rendered HTML, plus one check axe does
+not make: that every `<label for>` points at an element that can actually be labelled. `a11y:contrast`
+checks the design tokens numerically, because jsdom cannot compute contrast — it caught five failing
+pairs during Phase 0, including input borders at 1.81:1 against a 3:1 requirement.
+
+The label check found seven inert labels on its first run, all pointing at custom controls that had
+replaced a plain input. None was a WCAG failure — each control was still named correctly — but the
+markup was invalid and clicking the label did nothing. It also surfaced why they had gone unseen:
+the audit picked its item editor with `items[0]`, which meant the alphabetically-first path, which
+meant a singleton with three plain inputs. It now picks by field count.
 
 Two things these do **not** cover, and which need a real browser and a human: post-hydration
 behaviour of the React islands, and screen-reader output. The field builder's drag-and-drop

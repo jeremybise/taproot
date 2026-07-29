@@ -105,17 +105,41 @@ export function FieldControl({
     } ${preview ? 'cursor-default opacity-90' : ''}`,
   };
 
+  const labelText = (
+    <>
+      {field.label || <span className="text-content-subtle">Untitled field</span>}
+      {required && (
+        <span className="ml-1 text-danger" aria-hidden="true">
+          *
+        </span>
+      )}
+      {required && <span className="sr-only-focusable"> (required)</span>}
+    </>
+  );
+
   return (
     <div>
-      <label id={labelId} htmlFor={id} className="block text-sm font-medium">
-        {field.label || <span className="text-content-subtle">Untitled field</span>}
-        {required && (
-          <span className="ml-1 text-danger" aria-hidden="true">
-            *
-          </span>
-        )}
-        {required && <span className="sr-only-focusable"> (required)</span>}
-      </label>
+      {/*
+        A `<label for>` only when the branch below renders something a label can point at.
+
+        Most of them do not: richtext is a contenteditable region, media and block are groups,
+        the multi-select variants are checkbox groups in a `<fieldset>`, and the deferred types
+        render a `<p>`. A `<label for>` aimed at any of those is silently inert — the control is
+        still named, through `aria-labelledby` or a `<legend>`, so a screen reader sounds correct
+        while clicking the label does nothing and the HTML is invalid.
+
+        `scripts/a11y-audit.mjs` checks every label in the admin resolves to a labelable element,
+        which is what keeps this decision in step with the branches rather than review catching it.
+      */}
+      {labelsAControl() ? (
+        <label id={labelId} htmlFor={id} className="block text-sm font-medium">
+          {labelText}
+        </label>
+      ) : (
+        <span id={labelId} className="block text-sm font-medium">
+          {labelText}
+        </span>
+      )}
 
       {field.help_text && (
         <p id={hintId} className="mt-0.5 text-xs text-content-subtle">
@@ -132,6 +156,32 @@ export function FieldControl({
       ) : null}
     </div>
   );
+
+  /** Whether `renderControl` puts `id` on a labelable element. Mirrors its branches exactly. */
+  function labelsAControl(): boolean {
+    switch (field.type) {
+      case 'text':
+      case 'number':
+      case 'boolean':
+      case 'date':
+        return true;
+
+      case 'select':
+        return config.multiple !== true;
+
+      case 'taxonomy': {
+        // Both empty states — no taxonomy chosen, or one with no terms — render an explanatory
+        // paragraph rather than a control, so a configured field is not enough on its own.
+        const taxonomyId = stringOr(config.taxonomyId, undefined);
+        const options = taxonomyId ? (termsByTaxonomy?.[taxonomyId] ?? []) : [];
+        return Boolean(taxonomyId) && options.length > 0 && config.multiple === false;
+      }
+
+      default:
+        // richtext, media, block, relation, repeater.
+        return false;
+    }
+  }
 
   function renderControl() {
     switch (field.type) {

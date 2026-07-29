@@ -119,6 +119,22 @@ Debt here compounds, so `npm run a11y` must pass before a phase is called done. 
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
 them — which means a token added to the CSS alone is simply unchecked.
 
+**A `<label for>` must point at a labelable element** — button, input, meter, output, progress,
+select, textarea. Anything else is silently inert: the control is still named through
+`aria-labelledby` or a `<legend>`, so a screen reader sounds correct, axe passes, and only
+click-to-focus is missing. That is why the audit checks it directly; axe's `label` rule asks
+whether a control has a name, not whether a label has a target. **A custom control gets a `<span
+id>` and `aria-labelledby`, not a `<label for>`** — [FieldControl](packages/astro/src/admin/islands/fields/FieldControl.tsx)'s
+`labelsAControl()` is the worked example, and it is the audit rather than review that keeps it in
+step with the branches it mirrors.
+
+**The audit's dynamic routes must be chosen by what they exercise, not by what sorts first.** It
+picks the item editor by field count, because taking `items[0]` took the alphabetically-first path
+— the weather-banner singleton, three plain inputs — and left the densest screen in the admin the
+one route never audited. Seven inert labels sat there through four phases as a result. Note that
+`/api/taproot/content-types` returns types *without* their fields, so a count derived from that
+list is zero for everything and quietly restores the bug.
+
 What it does **not** cover, and what needs a real browser and a human: post-hydration behaviour of
 the React islands, and screen-reader output. Custom interactions are where WCAG failures actually
 creep in — off-the-shelf Radix primitives rarely fail. **Drag-and-drop must always be added

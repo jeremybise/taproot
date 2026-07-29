@@ -62,13 +62,44 @@ if (!cookie.startsWith('taproot_session=')) {
 }
 
 // Add the dynamic content and type editors, which only exist once there is data to point at.
-const itemsResponse = await fetch(`${base}/api/taproot/items?limit=1`, { headers: { cookie } });
+const itemsResponse = await fetch(`${base}/api/taproot/items?limit=100`, { headers: { cookie } });
 const { items } = await itemsResponse.json();
-if (items?.[0]) ROUTES.push(`/admin/content/${items[0].id}`);
 
 const typesResponse = await fetch(`${base}/api/taproot/content-types`, { headers: { cookie } });
 const { contentTypes } = await typesResponse.json();
 if (contentTypes?.[0]) ROUTES.push(`/admin/settings/types/${contentTypes[0].id}`);
+
+/**
+ * The item editor is audited on the item with the *most* fields, not the first one returned.
+ *
+ * Taking `items[0]` meant taking the alphabetically-first path, which was the weather-banner
+ * singleton — three fields, all of them plain inputs. Every custom control in the admin lives in
+ * the field types that screen does not have, so the densest editor was the one route never
+ * audited, and seven inert labels sat there through four phases. Picking by field count makes this
+ * track the content model rather than whatever the seed happens to sort first.
+ *
+ * Field counts come from a request per type because the list endpoint returns types without their
+ * fields — a detail worth stating, since deriving the count from the list silently yields zero for
+ * everything and restores exactly the bug this replaced.
+ */
+const fieldCounts = await Promise.all(
+  (contentTypes ?? []).map(async (type) => {
+    const response = await fetch(`${base}/api/taproot/content-types/${type.id}/fields`, {
+      headers: { cookie },
+    });
+    const { fields } = await response.json();
+    return [type.id, (fields ?? []).length];
+  }),
+);
+const fieldCountByType = new Map(fieldCounts);
+
+const richestItem = (items ?? [])
+  .slice()
+  .sort(
+    (a, b) =>
+      (fieldCountByType.get(b.content_type_id) ?? 0) - (fieldCountByType.get(a.content_type_id) ?? 0),
+  )[0];
+if (richestItem) ROUTES.push(`/admin/content/${richestItem.id}`);
 
 // One block type's field builder. Block types are excluded from the content-types endpoint on
 // purpose, so the id comes from the listing page rather than the API.
@@ -106,7 +137,46 @@ const menusResponse = await fetch(`${base}/api/taproot/menus`, { headers: { cook
 const { menus } = await menusResponse.json();
 if (menus?.[0]) ROUTES.push(`/admin/menus/${menus[0].id}`);
 
+/**
+ * Elements a `<label for>` may point at, per the HTML spec's "labelable elements".
+ *
+ * `div`, `ol`, `fieldset`, and `p` are not among them, which is the whole point of checking: a
+ * label pointing at one of those is silently inert.
+ */
+const LABELABLE = new Set(['button', 'input', 'meter', 'output', 'progress', 'select', 'textarea']);
+
+/**
+ * Every `<label for>` must point at an element that exists *and* can be labelled.
+ *
+ * axe does not check this — its `label` rule asks whether a form control has a name, not whether a
+ * label has a target, so a label pointing at a `<div>` passes every rule while doing nothing. The
+ * failure is quiet by construction: the control is still named through `aria-labelledby`, so a
+ * screen reader sounds correct and only the click-to-focus behaviour is missing.
+ *
+ * It is checked here rather than in a component test because the mistake is not specific to any
+ * one component — it is what happens whenever a custom control replaces a plain input and the
+ * label above it is left alone.
+ */
+function brokenLabels(document) {
+  const broken = [];
+
+  for (const label of document.querySelectorAll('label[for]')) {
+    const id = label.getAttribute('for');
+    const target = document.getElementById(id);
+    const text = (label.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+
+    if (!target) {
+      broken.push(`"${text}" → for="${id}" matches no element`);
+    } else if (!LABELABLE.has(target.tagName.toLowerCase())) {
+      broken.push(`"${text}" → for="${id}" points at <${target.tagName.toLowerCase()}>, not labelable`);
+    }
+  }
+
+  return broken;
+}
+
 let totalViolations = 0;
+let totalBrokenLabels = 0;
 const summary = [];
 
 for (const route of [...ANONYMOUS_ROUTES, ...ROUTES]) {
@@ -137,10 +207,12 @@ for (const route of [...ANONYMOUS_ROUTES, ...ROUTES]) {
   });
 
   const violations = results.violations ?? [];
+  const labels = brokenLabels(window.document);
   totalViolations += violations.length;
+  totalBrokenLabels += labels.length;
   summary.push({ route, status: response.status, violations });
 
-  const mark = violations.length === 0 ? 'PASS' : 'FAIL';
+  const mark = violations.length === 0 && labels.length === 0 ? 'PASS' : 'FAIL';
   console.log(`${mark}  ${route}  (${response.status})`);
 
   for (const violation of violations) {
@@ -153,12 +225,16 @@ for (const route of [...ANONYMOUS_ROUTES, ...ROUTES]) {
     }
   }
 
+  for (const broken of labels) {
+    console.log(`      [label] ${broken}`);
+  }
+
   window.close();
 }
 
 console.log(
-  `\n${summary.length} routes audited, ${totalViolations} violation type(s) found ` +
-    `(colour contrast checked separately).`,
+  `\n${summary.length} routes audited, ${totalViolations} violation type(s) and ` +
+    `${totalBrokenLabels} inert label(s) found (colour contrast checked separately).`,
 );
 
-process.exit(totalViolations === 0 ? 0 : 1);
+process.exit(totalViolations === 0 && totalBrokenLabels === 0 ? 0 : 1);
