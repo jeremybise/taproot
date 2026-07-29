@@ -29,7 +29,7 @@ import {
 
 import { openDb } from './_db.ts';
 import { loadEnv } from './_env.ts';
-import { socialCardPng } from './_png.ts';
+import { placeholderPng, socialCardPng } from './_png.ts';
 
 /**
  * Seed a realistic starting point.
@@ -208,7 +208,7 @@ const page = await ensureType(
       help_text: 'Composed blocks rendered under the body.',
       // Named by `api_id` rather than by id, so the list survives a block type being recreated and
       // reads meaningfully in the stored config.
-      config: { allowedBlocks: ['hero', 'call_to_action', 'prose', 'quote'] },
+      config: { allowedBlocks: ['hero', 'call_to_action', 'prose', 'quote', 'gallery'] },
     },
   ],
 );
@@ -364,6 +364,41 @@ const quote = await ensureType(
   ],
 );
 
+const gallery = await ensureType(
+  {
+    api_id: 'gallery',
+    name: 'Gallery',
+    name_plural: 'Galleries',
+    description: 'Several images in the order you choose them.',
+    kind: 'block',
+    icon: null,
+    url_prefix: null,
+    title_field: null,
+  },
+  [
+    {
+      api_id: 'images',
+      label: 'Images',
+      type: 'media',
+      required: true,
+      localized: false,
+      // The order is the feature, so the help text says so rather than leaving an editor to
+      // discover that the move buttons do something the page respects.
+      help_text: 'They appear in the order listed. Use the move buttons to change it.',
+      config: { multiple: true, accept: ['image/'] },
+    },
+    {
+      api_id: 'caption',
+      label: 'Caption',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: null,
+      config: { maxLength: 200 },
+    },
+  ],
+);
+
 const event = await ensureType(
   {
     api_id: 'event',
@@ -474,26 +509,28 @@ const banner = await ensureType(
 
 // --- Media ------------------------------------------------------------------
 //
-// One generated image, so the media library is not empty on a fresh clone and the SEO panel's
-// social-card preview has something to show. Keyed on filename so re-seeding reuses it rather
-// than writing a second copy.
+// Enough generated assets that the picker is a grid rather than a single card. One image proves
+// the storage pipeline works; it takes several to see whether selection, ordering, and search do.
+// Keyed on filename so re-seeding reuses them rather than writing second copies.
 
-const SOCIAL_CARD_FILENAME = 'riverbend-social-card.png';
+const mediaStorage = storageFromEnv(loadEnv());
 
-let socialCardId: string | null =
-  (
-    await handle.db
-      .selectFrom('media')
-      .select('id')
-      .where('filename', '=', SOCIAL_CARD_FILENAME)
-      .executeTakeFirst()
-  )?.id ?? null;
+async function ensureAsset(
+  filename: string,
+  bytes: Uint8Array,
+  dimensions: { width: number; height: number },
+  altText: string,
+  title: string,
+): Promise<string> {
+  const existing = await handle.db
+    .selectFrom('media')
+    .select('id')
+    .where('filename', '=', filename)
+    .executeTakeFirst();
+  if (existing) return existing.id;
 
-if (!socialCardId) {
-  const storage = storageFromEnv(loadEnv());
   const id = newId();
-  const bytes = socialCardPng();
-  const stored = await storage.put(buildStorageKey(id, SOCIAL_CARD_FILENAME), bytes, {
+  const stored = await mediaStorage.put(buildStorageKey(id, filename), bytes, {
     contentType: 'image/png',
   });
 
@@ -503,16 +540,16 @@ if (!socialCardId) {
     .values({
       id,
       storage_key: stored.key,
-      filename: SOCIAL_CARD_FILENAME,
+      filename,
       mime_type: 'image/png',
       size_bytes: stored.size,
-      width: 1200,
-      height: 630,
-      // Written rather than left null on purpose: an OG image is announced to anyone who receives
-      // the shared link, and the media library warns about missing alt text for exactly this
-      // reason. Seeding an asset without it would seed the warning too.
-      alt_text: 'Riverbend College — a green gradient card used as the default sharing image.',
-      title: 'Default social card',
+      width: dimensions.width,
+      height: dimensions.height,
+      // Written rather than left null on purpose: the media library warns about missing alt text,
+      // and the picker repeats the warning on every card. Seeding assets without it would seed
+      // the warning too, on every screen that shows them.
+      alt_text: altText,
+      title,
       hotspot_x: null,
       hotspot_y: null,
       crop_top: null,
@@ -525,9 +562,58 @@ if (!socialCardId) {
     })
     .execute();
 
-  socialCardId = id;
-  console.log(`  media ${SOCIAL_CARD_FILENAME} (created)`);
+  console.log(`  media ${filename} (created)`);
+  return id;
 }
+
+const SOCIAL_CARD_FILENAME = 'riverbend-social-card.png';
+
+const socialCardId = await ensureAsset(
+  SOCIAL_CARD_FILENAME,
+  socialCardPng(),
+  { width: 1200, height: 630 },
+  'Riverbend College — a green gradient card used as the default sharing image.',
+  'Default social card',
+);
+
+/**
+ * Library assets in a spread of shapes.
+ *
+ * The shapes are the point as much as the count: the hotspot editor resolves one asset into a
+ * 16:9 hero, a square thumbnail, and a portrait card, and a library of identical landscape images
+ * would never show that doing anything.
+ */
+const galleryImages = [
+  await ensureAsset(
+    'campus-quad.png',
+    placeholderPng(140, 1600, 900),
+    { width: 1600, height: 900 },
+    'Students crossing the main quad between lectures.',
+    'The quad',
+  ),
+  await ensureAsset(
+    'library-reading-room.png',
+    placeholderPng(28, 1600, 900),
+    { width: 1600, height: 900 },
+    'The reading room on the first floor of the Hartley Library.',
+    'Hartley Library reading room',
+  ),
+  await ensureAsset(
+    'science-building.png',
+    placeholderPng(200, 1200, 1200),
+    { width: 1200, height: 1200 },
+    'The Fenwick science building seen from the south lawn.',
+    'Fenwick building',
+  ),
+];
+
+await ensureAsset(
+  'convocation.png',
+  placeholderPng(320, 900, 1600),
+  { width: 900, height: 1600 },
+  'A graduate crossing the stage during the spring convocation.',
+  'Spring convocation',
+);
 
 // --- Content items ----------------------------------------------------------
 
@@ -718,6 +804,16 @@ await ensureItem(
               '<h2>What to expect</h2>' +
               '<ul><li>Ninety minutes on foot, mostly outdoors</li>' +
               '<li>A short session with an admissions counsellor</li></ul>',
+          },
+        },
+        {
+          id: newId(),
+          // Three images in a deliberate order, which is what makes the field's move buttons
+          // demonstrable: reorder them in the admin and the page changes to match.
+          type: 'gallery',
+          data: {
+            images: galleryImages,
+            caption: 'A few corners of the campus you will walk through on the tour.',
           },
         },
         {

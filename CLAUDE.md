@@ -19,7 +19,7 @@ before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 418 tests |
+| `npm test` | Vitest, 461 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -125,12 +125,16 @@ creep in — off-the-shelf Radix primitives rarely fail. **Drag-and-drop must al
 alongside keyboard controls, never instead of them**; the field builder's reorder buttons are the
 pattern to follow.
 
-Where a widget only exists after hydration — the richtext toolbar is the case, since ProseMirror
-needs a real DOM and the server renders an empty placeholder — the audit cannot see it at all.
-Those get a jsdom test that runs axe on the hydrated tree plus its keyboard contract
-([RichTextEditor.test.tsx](packages/astro/src/admin/islands/fields/RichTextEditor.test.tsx)).
+Where a widget only exists after hydration — the richtext toolbar, since ProseMirror needs a real
+DOM and the server renders an empty placeholder; the media picker, which is a dialog that has to be
+opened — the audit cannot see it at all. Those get a jsdom test that runs axe on the hydrated tree
+plus its keyboard contract
+([RichTextEditor.test.tsx](packages/astro/src/admin/islands/fields/RichTextEditor.test.tsx),
+[MediaPicker.test.tsx](packages/astro/src/admin/islands/media/MediaPicker.test.tsx)).
 Scope axe to the render container, not `document`: in isolation there is no landmark around the
-component, and the resulting `region` violation is an artifact of the test.
+component, and the resulting `region` violation is an artifact of the test. **Radix dialogs are the
+exception** — they portal to `document.body`, so the render container is empty and axe must be
+scoped to the dialog element itself.
 
 ## Conventions
 
@@ -218,6 +222,31 @@ many), *Block*, *Reusable Block*, *Content Type*.
 - **Image dimensions are read from header bytes on upload**, not decoded — the crop maths needs the
   source's real proportions, and every library that could decode is a native dependency. An
   unrecognised format returns null and the editor degrades rather than the upload failing.
+- **One media picker, used by every place an asset is chosen.** `MediaField` is the control and
+  `MediaPicker` the dialog; the `media` field, the SEO panel's social image, and a content type's
+  default social card all mount the same pair. Three `<select>`s of filenames shipped first
+  precisely so there would be one picker to build rather than three to replace — don't add a
+  fourth bespoke chooser.
+  - **The grid is a listbox, not a checkbox per card.** A checkbox each gives every asset its own
+    tab stop, so reaching the twelfth image costs twelve presses. One tab stop with arrow keys
+    inside it is the pattern a screen-reader user already expects for "choose from a set".
+  - **Arrow-key row movement is measured from layout, and degrades to linear when it cannot be.**
+    The grid is responsive, so the column count belongs to a breakpoint; hardcoding it here would
+    drift the moment the CSS changed. Under jsdom every `offsetTop` is 0, so `columnCount` returns
+    1 and Up/Down move by one — every card stays reachable and no key does nothing.
+  - **Selection is resolved against every asset the dialog has shown**, not the page on screen.
+    Select an image, search for a second, and the first is no longer among the results; resolving
+    from the visible page dropped it silently while the footer still counted it.
+  - **The picker honours a `media` field's `accept` list**, so a field configured for documents can
+    reach one. Every call site used to be handed an images-only list regardless, because the only
+    list on hand was the one the SEO panel needed. `mediaMatchesAccept` is shared by the client
+    filter and the SQL one so the first page cannot offer what a search would hide.
+  - **Upload-in-place asks for alt text.** That is the moment someone knows what the image is for,
+    and an upload path that never asks is how a library fills with images nobody can describe.
+- **A media field's stored shape follows its own config** — an array when it allows several files,
+  a bare id when it does not. `MediaField` works in ordered arrays either way and `FieldControl`
+  converts, rather than the control learning two shapes. Order is the stored order, which for a
+  gallery is the order it renders in.
 - **A block type is a content type with `kind: 'block'`.** A block type is a user-defined schema
   with fields, which is exactly what a content type is — so it reuses the same table, field builder,
   field API, and validation rather than growing a parallel set of all four. `kind` already answers

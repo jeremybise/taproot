@@ -6,6 +6,8 @@ import {
   type ReusableBlockOption,
 } from './BlockListEditor.js';
 import { RichTextEditor } from './RichTextEditor.js';
+import { MediaField } from '../media/MediaField.js';
+import type { MediaOption } from '../../mediaOptions.js';
 
 /**
  * Renders a single field's input from its definition.
@@ -46,8 +48,8 @@ export interface FieldControlProps {
    * rather than costing a request per block field.
    */
   blockTypes?: BlockTypeOption[];
-  /** Media assets selectable by a `media` field, resolved server-side with their public URLs. */
-  media?: { id: string; filename: string; url: string }[];
+  /** The library's first page, resolved server-side with public URLs. The picker searches past it. */
+  media?: MediaOption[];
   /** Library entries placeable into a `block` field. */
   reusableBlocks?: ReusableBlockOption[];
   /** Whether this user may promote a block into the shared library. */
@@ -349,47 +351,39 @@ export function FieldControl({
 
       case 'media': {
         /**
-         * A select of the library rather than a browsing modal.
-         *
-         * The full picker — a grid with search and upload in place — is a real piece of work, and
-         * shipping a second bespoke one here would mean two to replace. The SEO panel uses the
-         * same shape for the same reason, and both move together when the picker lands.
-         *
-         * Multiple selection is not offered yet, so a field configured for it edits only its first
-         * value; that is stated rather than silently discarding the rest.
+         * The stored shape follows the field's own config: an array when it allows several files,
+         * a bare id when it does not. `MediaField` works in ordered arrays either way, so the
+         * conversion happens here rather than teaching the control two shapes.
          */
-        const selected = Array.isArray(value) ? ((value as string[])[0] ?? '') : ((value as string) ?? '');
         const multiple = config.multiple === true;
+        const selected = Array.isArray(value)
+          ? (value as string[])
+          : typeof value === 'string' && value
+            ? [value]
+            : [];
+
+        /**
+         * The accept list is honoured, so a field configured for documents can actually reach one.
+         * It used to be images-only regardless of config, because the only list on hand was the
+         * one the SEO panel needed.
+         */
+        const accept = stringArrayOr(config.accept, undefined);
+        const noun = accept?.every((prefix) => prefix.startsWith('image/')) === false ? 'file' : 'image';
 
         return (
-          <>
-            <select
-              {...shared}
-              value={selected}
-              onChange={(e) => {
-                const next = e.target.value || null;
-                onChange(multiple ? (next ? [next] : []) : next);
-              }}
-            >
-              <option value="">— None —</option>
-              {(media ?? []).map((asset) => (
-                <option key={asset.id} value={asset.id}>
-                  {asset.filename}
-                </option>
-              ))}
-            </select>
-            {media && media.length === 0 && (
-              <p className="mt-1 text-xs text-content-subtle">
-                No images in the library yet. Upload one under Media.
-              </p>
-            )}
-            {multiple && (
-              <p className="mt-1 text-xs text-content-subtle">
-                This field allows several files, but only one can be chosen until the media picker
-                arrives.
-              </p>
-            )}
-          </>
+          <MediaField
+            id={id}
+            labelledBy={labelId}
+            describedBy={describedBy || undefined}
+            value={multiple ? selected : selected.slice(0, 1)}
+            onChange={(ids) => onChange(multiple ? ids : (ids[0] ?? null))}
+            library={media ?? []}
+            accept={accept}
+            multiple={multiple}
+            invalid={Boolean(errors?.length)}
+            disabled={preview}
+            noun={noun}
+          />
         );
       }
 

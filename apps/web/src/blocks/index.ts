@@ -1,4 +1,5 @@
 import CallToAction from './CallToAction.astro';
+import Gallery from './Gallery.astro';
 import Hero from './Hero.astro';
 import Prose from './Prose.astro';
 import Quote from './Quote.astro';
@@ -20,4 +21,5 @@ export const BLOCK_COMPONENTS = {
   call_to_action: CallToAction,
   prose: Prose,
   quote: Quote,
+  gallery: Gallery,
 };

@@ -2,7 +2,7 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import ReusableBlockEditor from '../../islands/ReusableBlockEditor.tsx';
 import { termOptionsForFields } from '../../termOptions.js';
-import { imageOptions } from '../../mediaOptions.js';
+import { mediaOptions } from '../../mediaOptions.js';
 import {
   blockTypeRegistry,
   countReusableBlockUsage,
@@ -32,7 +32,7 @@ const usedBy = await itemsUsingReusableBlock(taproot.db.db, block.id);
 
 const fields = blockType?.fields ?? [];
 const termsByTaxonomy = await termOptionsForFields(taproot.db.db, fields);
-const images = await imageOptions(taproot.db.db, taproot.storage);
+const media = await mediaOptions(taproot.db.db, taproot.storage);
 
 // Editing shared content is the same bar as publishing: it changes pages other people own.
 const canEdit = canPublishContent(user);
@@ -120,7 +120,7 @@ const error = Astro.url.searchParams.get('error');
     fields={fields}
     initial={{ name: block.name, description: block.description ?? '', data: block.data }}
     termsByTaxonomy={termsByTaxonomy}
-    media={images}
+    media={media}
     usageCount={usageCount}
     canEdit={canEdit}
   />

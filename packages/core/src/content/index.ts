@@ -4,6 +4,7 @@ export * from './items.js';
 export * from './seo.js';
 export * from './sanitizeHtml.js';
 export * from './imageCrop.js';
+export * from './media.js';
 export * from './reusableBlocks.js';
 export * from './revisions.js';
 export * from './taxonomies.js';

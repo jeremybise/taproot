@@ -3,7 +3,8 @@ import { slugify, type ContentStatus, type FieldRow, type SeoData } from '@tapro
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
-import SeoPanel, { type MediaOption } from './SeoPanel.js';
+import SeoPanel from './SeoPanel.js';
+import type { MediaOption } from '../mediaOptions.js';
 import { STATUS_META, STATUS_ORDER } from '../status.js';
 
 /**
@@ -41,8 +42,14 @@ interface Props {
   reusableBlocks?: ReusableBlockOption[];
   canPublish: boolean;
   isHierarchical: boolean;
-  /** Image assets selectable as a social card, with their resolved public URLs. */
-  images?: MediaOption[];
+  /**
+   * The media library's first page, with resolved public URLs.
+   *
+   * One list for both the SEO panel and any `media` fields, rather than one query each: the panel
+   * constrains itself to images through the picker's accept list, so narrowing it here would only
+   * stop a document field from ever reaching a PDF.
+   */
+  media?: MediaOption[];
   /** The content type's default social image, inherited when the item chooses none. */
   defaultOgImage?: MediaOption | null;
   /** Where this item resolves publicly. Empty for a singleton, which has no path of its own. */
@@ -75,7 +82,7 @@ export default function ItemEditor({
   reusableBlocks,
   canPublish,
   isHierarchical,
-  images = [],
+  media = [],
   defaultOgImage = null,
   path = '/',
   origin = '',
@@ -238,7 +245,7 @@ export default function ItemEditor({
               // Promoting shares content across pages, so it sits behind the same bar as
               // publishing rather than the one for editing a single page.
               canPromote={canPublish}
-              media={images}
+              media={media}
             />
           ))}
         </section>
@@ -333,7 +340,7 @@ export default function ItemEditor({
           itemTitle={title}
           path={path}
           origin={origin}
-          images={images}
+          images={media}
           defaultOgImage={defaultOgImage}
         />
       </aside>

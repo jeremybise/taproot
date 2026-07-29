@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { ContentTypeRow, FieldRow } from '@taproot/core';
 
-import type { MediaOption } from './SeoPanel.js';
+import type { MediaOption } from '../mediaOptions.js';
+import { MediaField } from './media/MediaField.js';
 
 /**
  * Content type settings.
@@ -30,8 +31,6 @@ export default function ContentTypeSettings({
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  const selectedImage = images.find((image) => image.id === ogImageId) ?? null;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -156,36 +155,23 @@ export default function ContentTypeSettings({
       </div>
 
       <div>
-        <label htmlFor="ct-og-image" className="block text-sm font-medium">
+        <span id="ct-og-image-label" className="block text-sm font-medium">
           Default social image
-        </label>
+        </span>
         <p id="ct-og-image-hint" className="mt-0.5 text-xs text-content-subtle">
           Used when an item of this type has not chosen its own. Changing it updates every item
           still inheriting — nothing is copied onto items at creation.
         </p>
-        <select
+        <MediaField
           id="ct-og-image"
-          value={ogImageId}
-          aria-describedby="ct-og-image-hint"
-          onChange={(e) => setOgImageId(e.target.value)}
-          className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
-        >
-          <option value="">— None —</option>
-          {images.map((image) => (
-            <option key={image.id} value={image.id}>
-              {image.filename}
-            </option>
-          ))}
-        </select>
-        {selectedImage && (
-          /* Decorative: the filename in the select above is already the accessible name, and this
-             is confirmation of a choice rather than content in its own right. */
-          <img
-            src={selectedImage.url}
-            alt=""
-            className="mt-2 aspect-[1.91/1] w-48 rounded-md border border-border object-cover"
-          />
-        )}
+          labelledBy="ct-og-image-label"
+          describedBy="ct-og-image-hint"
+          value={ogImageId ? [ogImageId] : []}
+          onChange={(ids) => setOgImageId(ids[0] ?? '')}
+          library={images}
+          accept={['image/']}
+          noun="social image"
+        />
       </div>
 
       {contentType.kind === 'collection' && (

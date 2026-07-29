@@ -4,9 +4,9 @@ A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with 
 departmental contributors.
 
 **Status: Phases 0, 1, and 2 complete.** Sign in, define a content type and its fields visually, write
-content with a real rich text editor, classify it, put it in a menu, set its focal point, and see it
-render at a real nested URL. See [SCOPE.md](SCOPE.md) for the full plan and
-[what's next](#whats-next).
+content with a real rich text editor, pick images from a real media browser, classify it, put it in a
+menu, set its focal point, and see it render at a real nested URL. See [SCOPE.md](SCOPE.md) for the
+full plan and [what's next](#whats-next).
 
 ---
 
@@ -58,6 +58,12 @@ toolchain — Taproot has zero native dependencies.
   when you edit it once. A referencing page stores the reference and no copy, so there is never a
   question of which version is authoritative — and deleting a library entry is refused while
   anything still uses it.
+- **A media library you can actually browse.** One picker — a grid with search and upload in
+  place — behind every field that chooses an asset, rather than a `<select>` of filenames that only
+  helps someone who already knows what `quad-autumn-2.jpg` looks like. It is a listbox, so the
+  whole grid is one tab stop with arrow keys inside it; multi-select keeps the order you chose in,
+  and reordering works by buttons as well as by dragging. Uploading asks for alt text, because that
+  is the moment you know what the image is for.
 - **Focal point and crop, stored as data rather than baked in.** Set one focal point and watch it
   play out in a wide banner, a social card, a square thumbnail, and a portrait card at once —
   because that is the decision being made, and it cannot be judged from a single frame. Drag it, or
@@ -185,6 +191,12 @@ behaviour of the React islands, and screen-reader output. The field builder's dr
 reordering is layered on *alongside* its keyboard buttons rather than replacing them — that is the
 pattern any future drag interaction should follow.
 
+Widgets that only exist after hydration get a jsdom test running axe on the hydrated tree instead —
+the richtext toolbar and the media picker, neither of which the audit can reach. One thing even
+that cannot check: the picker's two-dimensional arrow navigation reads the grid's real layout, and
+jsdom computes none, so under test it degrades to walking the list one card at a time. The
+degradation is asserted; the measured behaviour needs eyes.
+
 ---
 
 ## Testing
@@ -193,7 +205,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-418 tests. The ones worth knowing about:
+461 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -235,6 +247,11 @@ npm test
 - Image headers built byte by byte rather than committed as binary files, so a diff shows exactly
   which bytes the parser depends on — including that width and height are not transposed, which is
   the likeliest bug and invisible on a square fixture.
+- The media picker's keyboard contract and its selection semantics, in jsdom — including that a
+  selection survives a search that no longer returns it. That one was written as a guess and found
+  a real bug: the footer still counted the image, so the only evidence was the page afterwards.
+- That `listMedia` with an empty id list returns nothing rather than the whole library. `in ()` is
+  a syntax error, so the tempting fallthrough is the dangerous one.
 
 ---
 
@@ -252,9 +269,7 @@ every one of them — `fields` was already a real table, `content_items` already
 `parent_id`/`path`/`depth`, the empty `seo` column is now the SEO sidebar, and the hotspot and crop
 columns are now the focal point editor.
 
-Known gaps: the TOTP enrolment UI is not built, though the core is implemented and tested. The SEO
-panel and the hotspot editor both reach the media library through a select rather than a browser —
-the real picker arrives with the `media` field type, and both move to it then.
+Known gaps: the TOTP enrolment UI is not built, though the core is implemented and tested.
 
 The richtext editor needs JavaScript, unlike the rest of the admin. That is unavoidable for a
 document editor, and the item editor around it is already an island; the trade is noted rather than

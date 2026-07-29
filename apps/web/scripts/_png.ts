@@ -116,3 +116,50 @@ export function socialCardPng(width = 1200, height = 630): Uint8Array {
     ];
   });
 }
+
+/**
+ * A placeholder "photograph" for the media library, distinct per seed.
+ *
+ * The picker is a grid, and a grid of one asset demonstrates nothing — you cannot tell whether
+ * selection, ordering, or search work until there are several things to tell apart. These have to
+ * be visually distinguishable at thumbnail size, hence a per-asset hue and a diagonal split rather
+ * than one gradient with the numbers changed.
+ *
+ * Still deliberately abstract: a seed that shipped recognisable photography would be shipping
+ * content, and every asset here is something a real site replaces immediately.
+ */
+export function placeholderPng(
+  hue: number,
+  width: number,
+  height: number,
+): Uint8Array {
+  return encodePng(width, height, (x, y) => {
+    const u = x / width;
+    const v = y / height;
+    // A soft diagonal split gives each thumbnail a recognisable shape as well as a colour, which
+    // is what makes them distinguishable to someone who cannot rely on hue.
+    const split = u * 0.7 + v * 0.3;
+    const light = split > 0.55 ? 0.26 : 0;
+    return hsl(hue + split * 24, 0.32, 0.36 + light + v * 0.08);
+  });
+}
+
+/** HSL to 8-bit RGB. Only the seed needs this, so it stays here rather than in core. */
+function hsl(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = (((h % 360) + 360) % 360) / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  const [r, g, b] =
+    hp < 1 ? [c, x, 0]
+    : hp < 2 ? [x, c, 0]
+    : hp < 3 ? [0, c, x]
+    : hp < 4 ? [0, x, c]
+    : hp < 5 ? [x, 0, c]
+    : [c, 0, x];
+  const m = l - c / 2;
+  return [
+    Math.round(Math.min(255, Math.max(0, (r + m) * 255))),
+    Math.round(Math.min(255, Math.max(0, (g + m) * 255))),
+    Math.round(Math.min(255, Math.max(0, (b + m) * 255))),
+  ];
+}

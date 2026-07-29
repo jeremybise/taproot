@@ -1,6 +1,7 @@
 import {
   buildStorageKey,
   contentTypeFromFilename,
+  listMedia,
   newId,
   now,
   readImageDimensions,
@@ -13,18 +14,39 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export const GET = handle(async ({ context, taproot }) => {
   const params = new URL(context.request.url).searchParams;
-  const limit = Math.min(Number(params.get('limit') ?? 50), 200);
 
-  const assets = await taproot.db.db
-    .selectFrom('media')
-    .selectAll()
-    .orderBy('created_at', 'desc')
-    .limit(limit)
-    .offset(Number(params.get('offset') ?? 0))
-    .execute();
+  /**
+   * `accept` arrives comma-separated because it comes straight from a `media` field's config,
+   * which stores MIME prefixes. Splitting here rather than repeating the parameter keeps the
+   * picker's fetch URL readable in a network log.
+   */
+  const accept = (params.get('accept') ?? '')
+    .split(',')
+    .map((prefix) => prefix.trim())
+    .filter(Boolean);
+
+  /**
+   * `ids` resolves assets a field already references. The picker only ever holds the most recent
+   * page of the library, so an item pointing at an older asset needs this to render its thumbnail
+   * at all. It ignores the accept filter on purpose: a stored value is shown as it is, and quietly
+   * dropping one because the field's accept list narrowed later would look like data loss.
+   */
+  const ids = (params.get('ids') ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  const { media, total } = await listMedia(taproot.db.db, {
+    ids: params.has('ids') ? ids : undefined,
+    search: params.get('q') ?? undefined,
+    accept: params.has('ids') ? [] : accept,
+    limit: params.has('ids') ? ids.length : Math.min(Number(params.get('limit') ?? 50), 200),
+    offset: Number(params.get('offset') ?? 0),
+  });
 
   return json({
-    media: assets.map((asset) => ({ ...asset, url: taproot.storage.publicUrl(asset.storage_key) })),
+    media: media.map((asset) => ({ ...asset, url: taproot.storage.publicUrl(asset.storage_key) })),
+    total,
   });
 });
 

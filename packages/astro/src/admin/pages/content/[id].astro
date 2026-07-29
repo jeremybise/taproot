@@ -7,7 +7,7 @@ import {
   blockTypeOptionsForFields,
   reusableBlockOptionsForFields,
 } from '../../blockTypeOptions.js';
-import { findImage, imageOptions } from '../../mediaOptions.js';
+import { findImage, mediaOptions } from '../../mediaOptions.js';
 import { getContentType, getItem, listItems } from '@taproot/core';
 import {
   getTaproot,
@@ -42,8 +42,10 @@ const termsByTaxonomy = await termOptionsForFields(taproot.db.db, contentType.fi
 const blockTypes = await blockTypeOptionsForFields(taproot.db.db, contentType.fields);
 const reusableBlocks = await reusableBlockOptionsForFields(taproot.db.db, contentType.fields);
 
-const images = await imageOptions(taproot.db.db, taproot.storage);
-const defaultOgImage = findImage(images, contentType.default_og_image_id);
+// The whole library, not just images: a `media` field can accept documents, and the SEO panel
+// narrows to images through the picker's accept list rather than by getting a narrower query.
+const media = await mediaOptions(taproot.db.db, taproot.storage);
+const defaultOgImage = findImage(media, contentType.default_og_image_id);
 
 const saved = Astro.url.searchParams.get('saved') === '1';
 const updated = Astro.url.searchParams.get('updated') === '1';
@@ -121,7 +123,7 @@ const flash = saved
     reusableBlocks={reusableBlocks}
     canPublish={canPublishContent(user)}
     isHierarchical={contentType.kind === 'page'}
-    images={images}
+    media={media}
     defaultOgImage={defaultOgImage}
     path={item.path}
     origin={Astro.url.origin}

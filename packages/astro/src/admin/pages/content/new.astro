@@ -6,7 +6,7 @@ import {
   blockTypeOptionsForFields,
   reusableBlockOptionsForFields,
 } from '../../blockTypeOptions.js';
-import { findImage, imageOptions } from '../../mediaOptions.js';
+import { findImage, mediaOptions } from '../../mediaOptions.js';
 import { getContentType, listContentTypes, listItems } from '@taproot/core';
 import {
   getTaproot,
@@ -47,8 +47,8 @@ const reusableBlocks = contentType
   ? await reusableBlockOptionsForFields(taproot.db.db, contentType.fields)
   : [];
 
-const images = contentType ? await imageOptions(taproot.db.db, taproot.storage) : [];
-const defaultOgImage = findImage(images, contentType?.default_og_image_id ?? null);
+const media = contentType ? await mediaOptions(taproot.db.db, taproot.storage) : [];
+const defaultOgImage = findImage(media, contentType?.default_og_image_id ?? null);
 ---
 
 <AdminLayout
@@ -99,7 +99,7 @@ const defaultOgImage = findImage(images, contentType?.default_og_image_id ?? nul
           reusableBlocks={reusableBlocks}
           canPublish={canPublishContent(user)}
           isHierarchical={contentType.kind === 'page'}
-          images={images}
+          media={media}
           defaultOgImage={defaultOgImage}
           origin={Astro.url.origin}
         />

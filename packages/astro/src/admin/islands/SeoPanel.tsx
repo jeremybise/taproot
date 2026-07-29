@@ -1,6 +1,9 @@
 import { useId } from 'react';
 import { SEO_GUIDANCE, resolveSeo, truncateForPreview, type SeoData } from '@taproot/core';
 
+import type { MediaOption } from '../mediaOptions.js';
+import { MediaField } from './media/MediaField.js';
+
 /**
  * The SEO panel: the fields, plus a preview of what they produce.
  *
@@ -12,13 +15,6 @@ import { SEO_GUIDANCE, resolveSeo, truncateForPreview, type SeoData } from '@tap
  * Fallbacks are resolved by `resolveSeo` in core, the same function the public route calls. A
  * preview that resolved its own fallbacks would be a preview of a page nobody will ever see.
  */
-
-export interface MediaOption {
-  id: string;
-  filename: string;
-  url: string;
-  altText: string | null;
-}
 
 interface Props {
   seo: SeoData;
@@ -121,38 +117,31 @@ export default function SeoPanel({
       </div>
 
       <div className="mt-4">
-        <label htmlFor={`${id}-og`} className="block text-sm font-medium">
+        <span id={`${id}-og-label`} className="block text-sm font-medium">
           Social image
-        </label>
-        {/*
-          A select rather than a media browser. The real library picker — grid, search, upload in
-          place — arrives with the `media` field type, and this moves to it then; shipping a second
-          bespoke picker now would mean two to replace.
-        */}
-        <select
+        </span>
+        <MediaField
           id={`${id}-og`}
-          value={seo.ogImageId ?? ''}
-          aria-describedby={`${id}-og-hint`}
-          onChange={(e) => set({ ogImageId: e.target.value || undefined })}
-          className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
-        >
-          <option value="">
-            {defaultOgImage
-              ? `— Use this type's default: ${defaultOgImage.filename} —`
-              : '— None —'}
-          </option>
-          {images.map((image) => (
-            <option key={image.id} value={image.id}>
-              {image.filename}
-            </option>
-          ))}
-        </select>
+          labelledBy={`${id}-og-label`}
+          describedBy={`${id}-og-hint`}
+          value={seo.ogImageId ? [seo.ogImageId] : []}
+          onChange={(ids) => set({ ogImageId: ids[0] })}
+          library={images}
+          // A PDF cannot be a social card, and offering one produces a share preview that
+          // silently fails on every platform.
+          accept={['image/']}
+          noun="social image"
+          inherited={
+            defaultOgImage
+              ? {
+                  asset: defaultOgImage,
+                  note: `Inherited from the content type: ${defaultOgImage.filename}. Changing it there updates every item that has not chosen its own.`,
+                }
+              : null
+          }
+        />
         <p id={`${id}-og-hint`} className="mt-1 text-xs text-content-subtle">
-          {images.length === 0
-            ? 'Upload an image in Media to choose one here.'
-            : resolved.ogImageSource === 'contentType'
-              ? 'Inherited from the content type. Changing it there updates every item that has not chosen its own.'
-              : 'Shown when the page is shared. Around 1200×630 works everywhere.'}
+          Shown when the page is shared. Around 1200×630 works everywhere.
         </p>
       </div>
 
