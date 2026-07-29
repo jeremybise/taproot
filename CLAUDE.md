@@ -8,9 +8,9 @@ A DB-backed, Astro-native CMS for a campus website with many non-technical depar
 contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the relevant phase section
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
-**Status:** Phase 0 (foundation), Phase 1A (visual content-type builder), and revisions are
-complete. The rest of Phase 1 is in progress: taxonomies, menus, SEO sidebar, singleton editing, a
-real richtext editor, and the media hotspot/crop editor.
+**Status:** Phase 0 (foundation), Phase 1A (visual content-type builder), revisions, and taxonomies
+are complete. The rest of Phase 1 is in progress: menus, SEO sidebar, singleton editing, a real
+richtext editor, and the media hotspot/crop editor.
 
 ## Commands
 
@@ -121,6 +121,16 @@ many), *Block*, *Reusable Block*, *Content Type*.
 - **Content type `kind`** is `page` (nests under a parent), `collection` (flat, `url_prefix`-based),
   or `singleton` (exactly one item, no create/delete).
 - **Field values live in `content_items.data`** keyed by field `api_id`, validated against the type.
+- **`taxonomy_assignments` is a derived index, not the source of truth.** Tags are authored into
+  `data` like every other field and the table is rebuilt from them inside the same atomic batch as
+  the item write. This looks like redundancy worth removing — it isn't. Storing tags only in the
+  join table would make a restored revision silently lose them, because revisions snapshot `data`.
+  The index exists purely to make "every item in this branch" an indexed query, which is what
+  Phase 3's taxonomy-scoped permissions need and JSON cannot give.
+- **Terms have no materialised path**, unlike content items. Content items need one because a
+  request URL must resolve in one indexed lookup on the hot path; terms have no public URL, and
+  their only tree query is a recursive CTE off `parent_id`. Adding a path would mean a second
+  cascading-rewrite implementation serving no read.
 - `block` and `repeater` field types have columns and validation seams but no editing UI until
   Phase 2. Media hotspot/crop columns exist with no editor yet.
 

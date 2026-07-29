@@ -63,7 +63,11 @@ export const fieldConfigSchemas = {
     accept: z.array(z.string()).default([]),
   }),
   taxonomy: z.object({
-    /** Set once taxonomies exist in Phase 1. */
+    /**
+     * Nullable so a field can be added before its taxonomy exists — the content type builder lets
+     * you design a type first and point the field at a taxonomy later. The editor renders an
+     * explicit "not pointed at a taxonomy yet" notice rather than an empty picker.
+     */
     taxonomyId: z.string().nullable().default(null),
     multiple: z.boolean().default(true),
   }),
@@ -92,7 +96,7 @@ export type FieldConfig<T extends FieldType> = z.infer<(typeof fieldConfigSchema
 export const FIELD_TYPES = Object.keys(fieldConfigSchemas) as FieldType[];
 
 /** Field types whose editing UI is not implemented yet, surfaced so the builder can label them. */
-export const DEFERRED_FIELD_TYPES: FieldType[] = ['block', 'repeater', 'taxonomy'];
+export const DEFERRED_FIELD_TYPES: FieldType[] = ['block', 'repeater'];
 
 export interface FieldTypeMeta {
   type: FieldType;

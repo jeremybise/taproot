@@ -8,9 +8,16 @@ import { FIELD_TYPE_META, type FieldRow } from '@taproot/core';
  * all, so there is one implementation and the two cannot drift.
  *
  * Phase 1 tranche B replaces the richtext placeholder with TipTap and the media placeholder with
- * a library picker; tranche C does relation and taxonomy. Until then those types render an honest
- * notice rather than a control that pretends to work.
+ * a library picker; tranche C does relation. Until then those types render an honest notice rather
+ * than a control that pretends to work.
  */
+
+/** One selectable term, flattened out of its tree with the depth it sat at. */
+export interface TermOption {
+  id: string;
+  name: string;
+  depth: number;
+}
 
 export interface FieldControlProps {
   field: FieldRow;
@@ -18,13 +25,29 @@ export interface FieldControlProps {
   errors?: string[];
   onChange: (value: unknown) => void;
   /**
+   * Selectable terms, keyed by taxonomy id.
+   *
+   * Resolved on the server and passed in rather than fetched here: the editor page already reads
+   * the content type to render at all, so pulling the terms in the same pass avoids a request per
+   * taxonomy field on every page load. The content-type builder's preview passes nothing, and the
+   * control degrades to an empty picker rather than breaking.
+   */
+  termsByTaxonomy?: Record<string, TermOption[]>;
+  /**
    * Preview mode: inputs are inert and ids are namespaced so a preview rendered next to the real
    * editor cannot collide with it or steal its label associations.
    */
   preview?: boolean;
 }
 
-export function FieldControl({ field, value, errors, onChange, preview = false }: FieldControlProps) {
+export function FieldControl({
+  field,
+  value,
+  errors,
+  onChange,
+  termsByTaxonomy,
+  preview = false,
+}: FieldControlProps) {
   const id = preview ? `preview-field-${field.id}` : `field-${field.id}`;
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
@@ -188,6 +211,80 @@ export function FieldControl({ field, value, errors, onChange, preview = false }
             {options.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
+              </option>
+            ))}
+          </select>
+        );
+      }
+
+      case 'taxonomy': {
+        const taxonomyId = stringOr(config.taxonomyId, undefined);
+        const options = taxonomyId ? (termsByTaxonomy?.[taxonomyId] ?? []) : [];
+
+        if (!taxonomyId) {
+          return (
+            <p className="mt-1.5 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-content-subtle">
+              This field is not pointed at a taxonomy yet. Choose one in the content type builder.
+            </p>
+          );
+        }
+
+        if (options.length === 0) {
+          return (
+            <p className="mt-1.5 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-content-subtle">
+              That taxonomy has no terms yet.
+            </p>
+          );
+        }
+
+        // Depth is shown as an indent rather than folded into the label text, so a screen reader
+        // announces the term's own name and nothing else. `multiple` defaults to true for taxonomy
+        // fields, matching the field config schema.
+        if (config.multiple !== false) {
+          const selected = Array.isArray(value) ? (value as string[]) : [];
+          return (
+            <fieldset className="mt-1.5" disabled={preview}>
+              <legend className="sr-only-focusable">{field.label}</legend>
+              <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-md border border-border-strong bg-surface px-3 py-2.5">
+                {options.map((term) => (
+                  <div
+                    key={term.id}
+                    className="flex items-center gap-2"
+                    style={{ marginLeft: `${term.depth * 1.25}rem` }}
+                  >
+                    <input
+                      id={`${id}-${term.id}`}
+                      type="checkbox"
+                      disabled={preview}
+                      checked={selected.includes(term.id)}
+                      onChange={(e) =>
+                        onChange(
+                          e.target.checked
+                            ? [...selected, term.id]
+                            : selected.filter((entry) => entry !== term.id),
+                        )
+                      }
+                    />
+                    <label htmlFor={`${id}-${term.id}`} className="text-sm">
+                      {term.name}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </fieldset>
+          );
+        }
+
+        return (
+          <select
+            {...shared}
+            value={(value as string) ?? ''}
+            onChange={(e) => onChange(e.target.value || null)}
+          >
+            <option value="">— None —</option>
+            {options.map((term) => (
+              <option key={term.id} value={term.id}>
+                {`${'— '.repeat(term.depth)}${term.name}`}
               </option>
             ))}
           </select>

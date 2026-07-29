@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import ItemEditor from '../../islands/ItemEditor.tsx';
+import { termOptionsForFields } from '../../termOptions.js';
 import { getContentType, listContentTypes, listItems } from '@taproot/core';
 import {
   getTaproot,
@@ -28,6 +29,10 @@ if (contentType?.kind === 'page') {
   });
   parents = items.map((item) => ({ id: item.id, title: item.title, path: item.path }));
 }
+
+const termsByTaxonomy = contentType
+  ? await termOptionsForFields(taproot.db.db, contentType.fields)
+  : {};
 ---
 
 <AdminLayout
@@ -73,6 +78,7 @@ if (contentType?.kind === 'page') {
           fields={contentType.fields}
           initial={{ title: '', slug: '', status: 'draft', parentId: null, data: {} }}
           parents={parents}
+          termsByTaxonomy={termsByTaxonomy}
           canPublish={canPublishContent(user)}
           isHierarchical={contentType.kind === 'page'}
         />

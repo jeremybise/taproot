@@ -20,6 +20,7 @@ import {
   snapshotIsUnchanged,
   RevisionError,
 } from './revisions.js';
+import { planAssignmentIndex } from './taxonomies.js';
 import {
   buildCollectionPath,
   buildPath,
@@ -272,10 +273,15 @@ export async function createItem(
     updated_at: timestamp,
   };
 
-  // Batched rather than a bare insert so the item and its first revision cannot diverge — an item
-  // whose history begins one save late is a gap that can never be reconstructed.
+  const assignments = await planAssignmentIndex(db, row.id, fields, validation.data ?? {});
+  assertTermsExist(assignments.missing);
+
+  // Batched rather than a bare insert so the item, its first revision, and its taxonomy index
+  // cannot diverge — an item whose history begins one save late is a gap that can never be
+  // reconstructed, and a stale index row is invisible until it wrongly answers a permission query.
   await handle.batch([
     db.insertInto('content_items').values(row),
+    ...assignments.statements,
     buildRevisionStatement(db, {
       contentItemId: row.id,
       revisionNumber: 1,
@@ -426,6 +432,10 @@ export async function updateItem(
    * - ...unless the item has no revisions at all, which means it predates this table. Backfilling
    *   its current state gives the history a floor to diff against instead of starting blank.
    */
+  const assignments = await planAssignmentIndex(db, id, fields, data);
+  assertTermsExist(assignments.missing);
+  statements.push(...assignments.statements);
+
   const sequence = await revisionSequence(db, id);
   const after = { title, slug, status, data, seo };
   if (sequence.count === 0 || !snapshotIsUnchanged(existing, after)) {
@@ -510,6 +520,33 @@ export async function deleteItem(handle: TaprootDb, id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+/**
+ * Reject a save that references terms which do not exist.
+ *
+ * Caught here rather than left to the foreign key so the caller gets per-field messages in the
+ * same shape as every other validation failure — and so the whole batch is never submitted, rather
+ * than failing at statement nine of twelve with a constraint error nobody can act on.
+ */
+function assertTermsExist(missing: Record<string, string[]>): void {
+  const apiIds = Object.keys(missing);
+  if (apiIds.length === 0) return;
+
+  throw new ContentItemError(
+    'Content failed validation.',
+    'validation_failed',
+    Object.fromEntries(
+      apiIds.map((apiId) => [
+        apiId,
+        [
+          missing[apiId]!.length === 1
+            ? 'That term no longer exists. It may have been deleted while you were editing.'
+            : 'Some of those terms no longer exist. They may have been deleted while you were editing.',
+        ],
+      ]),
+    ),
+  );
+}
 
 /**
  * Treat a blank or whitespace-only string as absent.

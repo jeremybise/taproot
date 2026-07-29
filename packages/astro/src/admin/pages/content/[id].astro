@@ -2,6 +2,7 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import ItemEditor from '../../islands/ItemEditor.tsx';
 import RevisionHistory from '../../components/RevisionHistory.astro';
+import { termOptionsForFields } from '../../termOptions.js';
 import { getContentType, getItem, listItems } from '@taproot/core';
 import {
   getTaproot,
@@ -30,6 +31,8 @@ if (contentType.kind === 'page') {
     .filter((candidate) => candidate.id !== item.id && !candidate.path.startsWith(`${item.path}/`))
     .map((candidate) => ({ id: candidate.id, title: candidate.title, path: candidate.path }));
 }
+
+const termsByTaxonomy = await termOptionsForFields(taproot.db.db, contentType.fields);
 
 const saved = Astro.url.searchParams.get('saved') === '1';
 const updated = Astro.url.searchParams.get('updated') === '1';
@@ -101,6 +104,7 @@ const flash = saved
       data: item.data,
     }}
     parents={parents}
+    termsByTaxonomy={termsByTaxonomy}
     canPublish={canPublishContent(user)}
     isHierarchical={contentType.kind === 'page'}
   />

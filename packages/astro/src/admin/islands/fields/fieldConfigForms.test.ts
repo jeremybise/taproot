@@ -56,7 +56,7 @@ describe('config round-trips through core validation', () => {
     date: { includeTime: true, min: '2026-01-01', max: '2027-01-01' },
     select: { options: [{ label: 'A', value: 'a' }], multiple: true },
     media: { multiple: true, accept: ['image/'] },
-    taxonomy: { taxonomyId: null, multiple: true },
+    taxonomy: { taxonomyId: 'tax1', multiple: true },
     relation: { targetContentTypeId: 'abc', multiple: false, reverseLabel: 'Referenced by' },
     block: { allowedBlocks: [], maxBlocks: 4 },
     repeater: { minItems: 0, maxItems: 5, fields: [] },

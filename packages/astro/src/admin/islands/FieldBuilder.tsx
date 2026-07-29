@@ -4,6 +4,7 @@ import {
   type ContentTypeRow,
   type FieldRow,
   type FieldType,
+  type TaxonomyRow,
 } from '@taproot/core';
 
 import { FieldConfigForm } from './fields/FieldConfigForm.js';
@@ -27,6 +28,8 @@ interface Props {
   initialFields: FieldRow[];
   /** All content types, for the relation field's target picker. */
   contentTypes: ContentTypeRow[];
+  /** All taxonomies, for the taxonomy field's source picker. */
+  taxonomies: TaxonomyRow[];
   /** Item counts per field api_id that are currently empty, for the "required" warning. */
   itemCount: number;
 }
@@ -55,6 +58,7 @@ export default function FieldBuilder({
   contentTypeId,
   initialFields,
   contentTypes,
+  taxonomies,
   itemCount,
 }: Props) {
   const [fields, setFields] = useState<FieldRow[]>(initialFields);
@@ -358,6 +362,7 @@ export default function FieldBuilder({
                     type={draft.type}
                     config={draft.config}
                     contentTypes={contentTypes}
+                    taxonomies={taxonomies}
                     currentContentTypeId={contentTypeId}
                     onChange={(config) => setDraft({ ...draft, config })}
                   />

@@ -2,7 +2,7 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import FieldBuilder from '../../islands/FieldBuilder.tsx';
 import ContentTypeSettings from '../../islands/ContentTypeSettings.tsx';
-import { getContentType, listContentTypes } from '@taproot/core';
+import { getContentType, listContentTypes, listTaxonomies } from '@taproot/core';
 import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -15,6 +15,8 @@ if (!contentType) return new Response('Content type not found', { status: 404 })
 
 // All types, so the relation field's target picker has something to choose from.
 const contentTypes = await listContentTypes(taproot.db.db);
+// Likewise for the taxonomy field's source picker.
+const taxonomies = await listTaxonomies(taproot.db.db);
 
 const itemCountRow = await taproot.db.db
   .selectFrom('content_items')
@@ -95,6 +97,7 @@ const kindLabels: Record<string, string> = {
       contentTypeId={contentType.id}
       initialFields={contentType.fields}
       contentTypes={contentTypes}
+      taxonomies={taxonomies}
       itemCount={itemCount}
     />
   </section>

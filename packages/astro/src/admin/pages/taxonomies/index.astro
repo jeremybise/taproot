@@ -1,0 +1,179 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listTaxonomies, listTerms } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const taxonomies = await listTaxonomies(taproot.db.db);
+
+// One count query per taxonomy. There are a handful of taxonomies on a site, not thousands, so a
+// join with a group-by would be more machinery than the read is worth.
+const withCounts = await Promise.all(
+  taxonomies.map(async (taxonomy) => ({
+    ...taxonomy,
+    termCount: (await listTerms(taproot.db.db, taxonomy.id)).length,
+  })),
+);
+
+const created = Astro.url.searchParams.get('created');
+const error = Astro.url.searchParams.get('error');
+---
+
+<AdminLayout
+  title="Taxonomies"
+  user={user}
+  breadcrumbs={[{ label: 'Taxonomies' }]}
+  flash={created ? `Created ${created}.` : null}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Taxonomies</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      Term trees that any content type can use. A content type is attached to one by giving it a
+      taxonomy field — there is no separate wiring step.
+    </p>
+  </header>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  {
+    canManageSchema(user) && (
+      <form
+        method="post"
+        action="/api/taproot/taxonomies"
+        class="mb-8 max-w-xl space-y-4 rounded-lg border border-border bg-surface-raised p-5"
+      >
+        <h2 class="text-base font-semibold">Add a taxonomy</h2>
+
+        <div>
+          <label for="name" class="block text-sm font-medium">
+            Name
+          </label>
+          <p id="name-hint" class="mt-0.5 text-xs text-content-subtle">
+            Singular, as an editor would say it — "Department", not "Departments".
+          </p>
+          <input
+            id="name"
+            name="name"
+            required
+            maxlength="120"
+            aria-describedby="name-hint"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div>
+          <label for="name_plural" class="block text-sm font-medium">
+            Plural name
+          </label>
+          <input
+            id="name_plural"
+            name="name_plural"
+            required
+            maxlength="120"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div>
+          <label for="api_id" class="block text-sm font-medium">
+            API id
+          </label>
+          <p id="api-hint" class="mt-0.5 text-xs text-content-subtle">
+            The machine name used in field configuration and the API. Fixed after creation.
+          </p>
+          <input
+            id="api_id"
+            name="api_id"
+            required
+            maxlength="64"
+            aria-describedby="api-hint"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+          />
+        </div>
+
+        <div class="flex items-start gap-2">
+          <input
+            id="hierarchical"
+            name="hierarchical"
+            type="checkbox"
+            checked
+            value="true"
+            class="mt-1"
+          />
+          <div>
+            <label for="hierarchical" class="text-sm font-medium">
+              Terms can nest
+            </label>
+            <p id="nest-hint" class="text-xs text-content-subtle">
+              On for a tree like Departments. Off for a flat list like Tags.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          Create taxonomy
+        </button>
+      </form>
+    )
+  }
+
+  {
+    withCounts.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No taxonomies yet.
+      </p>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only-focusable">Taxonomies</caption>
+          <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Name
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                API id
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Terms
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Nesting
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {withCounts.map((taxonomy) => (
+              <tr class="border-t border-border">
+                <th scope="row" class="px-4 py-2.5 font-normal">
+                  <a href={`/admin/taxonomies/${taxonomy.id}`} class="font-medium hover:underline">
+                    {taxonomy.name}
+                  </a>
+                </th>
+                <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{taxonomy.api_id}</td>
+                <td class="px-4 py-2.5 tabular-nums">{taxonomy.termCount}</td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  {taxonomy.hierarchical ? 'Tree' : 'Flat'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</AdminLayout>

@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import type { ContentTypeRow, FieldType } from '@taproot/core';
+import type { ContentTypeRow, FieldType, TaxonomyRow } from '@taproot/core';
 
 /**
  * Per-field-type option forms.
@@ -15,6 +15,8 @@ export interface ConfigFormProps {
   onChange: (config: Record<string, unknown>) => void;
   /** Available content types, for the relation target picker. */
   contentTypes: ContentTypeRow[];
+  /** Available taxonomies, for the taxonomy field's source picker. */
+  taxonomies: TaxonomyRow[];
   /** Content type being edited, so a relation cannot silently target nothing. */
   currentContentTypeId: string;
 }
@@ -463,18 +465,39 @@ const RelationConfig: ConfigForm = ({ config, onChange, contentTypes, currentCon
   );
 };
 
-const TaxonomyConfig: ConfigForm = ({ config, onChange }) => (
+const TaxonomyConfig: ConfigForm = ({ config, onChange, taxonomies }) => (
   <div className="space-y-4">
+    <div>
+      <label htmlFor="taxonomy-source" className="block text-sm font-medium">
+        Taxonomy
+      </label>
+      <select
+        id="taxonomy-source"
+        className={inputClass}
+        value={typeof config.taxonomyId === 'string' ? config.taxonomyId : ''}
+        onChange={(e) => onChange({ ...config, taxonomyId: e.target.value || null })}
+      >
+        <option value="">— Choose a taxonomy —</option>
+        {taxonomies.map((taxonomy) => (
+          <option key={taxonomy.id} value={taxonomy.id}>
+            {taxonomy.name_plural}
+          </option>
+        ))}
+      </select>
+    </div>
+
     <Toggle
       label="Allow multiple terms"
       checked={config.multiple !== false}
       onChange={(multiple) => onChange({ ...config, multiple })}
     />
-    <p className="rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-xs text-content-subtle">
-      Taxonomies do not exist yet — they arrive later in Phase 1, along with the picker that
-      chooses which taxonomy this field draws from. This field type is selectable now so content
-      types can be designed ahead of it.
-    </p>
+
+    {taxonomies.length === 0 && (
+      <p className="rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-xs text-content-subtle">
+        No taxonomies exist yet. Create one under Taxonomies, then come back and point this field
+        at it — the field can be saved without a taxonomy meanwhile.
+      </p>
+    )}
   </div>
 );
 

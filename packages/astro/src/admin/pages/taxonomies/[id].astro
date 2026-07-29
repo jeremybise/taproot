@@ -1,0 +1,224 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { buildTermTree, getTaxonomy, listTerms, type TermNode } from '@taproot/core';
+import { getTaproot, loginRedirect, hasRole } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const taxonomy = await getTaxonomy(taproot.db.db, Astro.params.id!);
+if (!taxonomy) return new Response('Taxonomy not found', { status: 404 });
+
+const terms = await listTerms(taproot.db.db, taxonomy.id);
+const tree = buildTermTree(terms);
+const canEditTerms = hasRole(user, 'editor');
+
+/**
+ * Flatten the tree back into render order, carrying depth.
+ *
+ * The list is rendered flat with an indent rather than as nested `<ul>`s. Nested lists would be
+ * the more semantic choice for a pure tree, but each row is an editing form, and burying forms
+ * several lists deep makes the keyboard path long without telling a screen reader anything the
+ * explicit "Parent" control on each row does not already say.
+ */
+function flatten(nodes: TermNode[], depth = 0): { term: TermNode; depth: number }[] {
+  return nodes.flatMap((term) => [{ term, depth }, ...flatten(term.children, depth + 1)]);
+}
+
+const rows = flatten(tree);
+
+const added = Astro.url.searchParams.get('added');
+const updated = Astro.url.searchParams.get('updated');
+const deleted = Astro.url.searchParams.get('deleted');
+const error = Astro.url.searchParams.get('error');
+
+const flash = added
+  ? `Added ${added}.`
+  : updated
+    ? `Saved ${updated}.`
+    : deleted
+      ? `Deleted ${deleted}. Any child terms moved up a level.`
+      : null;
+---
+
+<AdminLayout
+  title={taxonomy.name_plural}
+  user={user}
+  breadcrumbs={[{ label: 'Taxonomies', href: '/admin/taxonomies' }, { label: taxonomy.name_plural }]}
+  flash={flash}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">{taxonomy.name_plural}</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      <code class="font-mono text-xs">{taxonomy.api_id}</code> ·
+      {taxonomy.hierarchical ? ' terms can nest' : ' flat list'} ·
+      {` ${terms.length} ${terms.length === 1 ? 'term' : 'terms'}`}
+    </p>
+  </header>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  {
+    canEditTerms && (
+      <form
+        method="post"
+        action={`/api/taproot/taxonomies/${taxonomy.id}/terms`}
+        class="mb-8 max-w-xl space-y-4 rounded-lg border border-border bg-surface-raised p-5"
+      >
+        <h2 class="text-base font-semibold">Add a term</h2>
+
+        <div>
+          <label for="new-name" class="block text-sm font-medium">
+            Name
+          </label>
+          <input
+            id="new-name"
+            name="name"
+            required
+            maxlength="120"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          />
+        </div>
+
+        {taxonomy.hierarchical && (
+          <div>
+            <label for="new-parent" class="block text-sm font-medium">
+              Parent
+            </label>
+            <select
+              id="new-parent"
+              name="parentId"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            >
+              <option value="">None — a top-level term</option>
+              {rows.map(({ term, depth }) => (
+                <option value={term.id}>
+                  {`${'— '.repeat(depth)}${term.name}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          Add term
+        </button>
+      </form>
+    )
+  }
+
+  {
+    rows.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No terms yet.
+      </p>
+    ) : (
+      <ul class="space-y-2">
+        {rows.map(({ term, depth }) => (
+          <li style={`margin-left:${depth * 1.5}rem`}>
+            <div class="rounded-lg border border-border bg-surface-raised px-4 py-3">
+              {canEditTerms ? (
+                <form
+                  method="post"
+                  action={`/api/taproot/terms/${term.id}`}
+                  class="flex flex-wrap items-end gap-3"
+                >
+                  <div class="min-w-40 flex-1">
+                    {/*
+                      Every row repeats the same few controls, so a bare "Name" label would be
+                      announced identically dozens of times. The term name in the label is what
+                      makes each one distinguishable in a screen reader's form-control list.
+                    */}
+                    <label for={`name-${term.id}`} class="block text-xs font-medium">
+                      Name<span class="sr-only-focusable"> of {term.name}</span>
+                    </label>
+                    <input
+                      id={`name-${term.id}`}
+                      name="name"
+                      value={term.name}
+                      required
+                      maxlength="120"
+                      class="mt-1 w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm"
+                    />
+                  </div>
+
+                  {taxonomy.hierarchical && (
+                    <div class="min-w-40 flex-1">
+                      <label for={`parent-${term.id}`} class="block text-xs font-medium">
+                        Parent<span class="sr-only-focusable"> of {term.name}</span>
+                      </label>
+                      <select
+                        id={`parent-${term.id}`}
+                        name="parentId"
+                        class="mt-1 w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm"
+                      >
+                        <option value="" selected={term.parent_id === null}>
+                          None — a top-level term
+                        </option>
+                        {rows
+                          // A term cannot be its own parent. Moving it under one of its own
+                          // descendants is refused server-side too; this keeps the option out of
+                          // the menu so the choice is never offered in the first place.
+                          .filter((candidate) => candidate.term.id !== term.id)
+                          .map((candidate) => (
+                            <option
+                              value={candidate.term.id}
+                              selected={term.parent_id === candidate.term.id}
+                            >
+                              {`${'— '.repeat(candidate.depth)}${candidate.term.name}`}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+                  >
+                    Save<span class="sr-only-focusable"> {term.name}</span>
+                  </button>
+                </form>
+              ) : (
+                <p class="text-sm font-medium">{term.name}</p>
+              )}
+
+              <div class="mt-2 flex items-center gap-3 text-xs text-content-subtle">
+                <code class="font-mono">{term.slug}</code>
+                {canEditTerms && (
+                  <form method="post" action={`/api/taproot/terms/${term.id}`}>
+                    <input type="hidden" name="_method" value="delete" />
+                    <button
+                      type="submit"
+                      class="text-danger transition-colors hover:underline"
+                    >
+                      Delete<span class="sr-only-focusable"> {term.name}</span>
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  <p class="mt-8 max-w-prose text-sm text-content-subtle">
+    Deleting a term moves its children up to its parent rather than deleting them, and removes the
+    term from any content tagged with it. Drag-and-drop reordering is a later increment; the parent
+    control above already does every move it would.
+  </p>
+</AdminLayout>

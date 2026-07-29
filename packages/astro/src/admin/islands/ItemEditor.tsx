@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { slugify, type ContentStatus, type FieldRow } from '@taproot/core';
 
-import { FieldControl } from './fields/FieldControl.js';
+import { FieldControl, type TermOption } from './fields/FieldControl.js';
 
 /**
  * The content item editor.
@@ -29,6 +29,8 @@ interface Props {
   };
   /** Candidate parents for hierarchical types. Empty for collections and singletons. */
   parents: { id: string; title: string; path: string }[];
+  /** Selectable terms for any taxonomy fields, keyed by taxonomy id. Resolved server-side. */
+  termsByTaxonomy?: Record<string, TermOption[]>;
   canPublish: boolean;
   isHierarchical: boolean;
 }
@@ -47,6 +49,7 @@ export default function ItemEditor({
   fields,
   initial,
   parents,
+  termsByTaxonomy,
   canPublish,
   isHierarchical,
 }: Props) {
@@ -198,6 +201,7 @@ export default function ItemEditor({
               value={data[field.api_id]}
               errors={errors[field.api_id]}
               onChange={(value) => setValue(field.api_id, value)}
+              termsByTaxonomy={termsByTaxonomy}
             />
           ))}
         </section>

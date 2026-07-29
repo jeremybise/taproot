@@ -32,6 +32,7 @@ const ROUTES = [
   '/admin/types',
   '/admin/types/new',
   '/admin/media',
+  '/admin/taxonomies',
   '/admin/redirects',
   '/admin/settings',
 ];
@@ -62,6 +63,12 @@ if (items?.[0]) ROUTES.push(`/admin/content/${items[0].id}`);
 const typesResponse = await fetch(`${base}/api/taproot/content-types`, { headers: { cookie } });
 const { contentTypes } = await typesResponse.json();
 if (contentTypes?.[0]) ROUTES.push(`/admin/types/${contentTypes[0].id}`);
+
+// The term editor is the densest screen in the admin — a repeated form per row — so it is the one
+// most worth auditing, and it only exists once a taxonomy does.
+const taxonomiesResponse = await fetch(`${base}/api/taproot/taxonomies`, { headers: { cookie } });
+const { taxonomies } = await taxonomiesResponse.json();
+if (taxonomies?.[0]) ROUTES.push(`/admin/taxonomies/${taxonomies[0].id}`);
 
 let totalViolations = 0;
 const summary = [];

@@ -1,6 +1,6 @@
 import type { APIContext } from 'astro';
 import type { User } from '@taproot/core';
-import { ContentItemError, ContentTypeError, RevisionError } from '@taproot/core';
+import { ContentItemError, ContentTypeError, RevisionError, TaxonomyError } from '@taproot/core';
 import { z } from 'zod';
 
 import { getTaproot, type Role, hasRole } from '../runtime/guards.js';
@@ -107,6 +107,22 @@ export function mapError(error: unknown): Response {
       case 'in_use':
         return apiError(409, error.message);
       case 'immutable':
+        return apiError(422, error.message);
+      default:
+        return apiError(400, error.message);
+    }
+  }
+
+  if (error instanceof TaxonomyError) {
+    switch (error.code) {
+      case 'not_found':
+        return apiError(404, error.message);
+      case 'duplicate_api_id':
+      case 'in_use':
+        return apiError(409, error.message);
+      case 'cycle':
+      case 'invalid_parent':
+      case 'not_hierarchical':
         return apiError(422, error.message);
       default:
         return apiError(400, error.message);

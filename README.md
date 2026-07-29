@@ -39,6 +39,9 @@ toolchain — Taproot has zero native dependencies.
 - **Revision history.** Every save appends a snapshot, with restore-to-any-revision. A restore runs
   through the normal update path, so restoring an older slug moves the subtree and writes the
   redirects rather than stranding the children.
+- **Taxonomies.** Term trees any content type can use, attached by giving the type a taxonomy
+  field. "Every item anywhere under this branch" is one indexed query — the one Phase 3's
+  department-scoped permissions are built on.
 - **Auth.** OAuth (Google/GitHub/Microsoft) plus a dev-only password provider that cannot be
   enabled in production.
 - **REST API** with a typed client.
@@ -55,7 +58,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (166 covering dialects, auth, paths, validation, revisions, the field builder) |
+| `npm test` | Unit tests (189 covering dialects, auth, paths, validation, revisions, taxonomies, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -158,7 +161,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-166 tests. The ones worth knowing about:
+189 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -168,6 +171,8 @@ npm test
   and that a rejected move leaves the tree untouched.
 - Restoring a revision whose slug differs moves the subtree and writes the redirects — the case
   that would silently strand every child if a restore wrote the old row back directly.
+- Restoring a revision restores its tags, which is the whole reason taxonomy assignments are a
+  derived index rebuilt from `data` rather than the place tags actually live.
 - TOTP against the RFC 6238 test vectors, so the implementation is verified correct rather than
   merely self-consistent.
 
@@ -175,13 +180,12 @@ npm test
 
 ## What's next
 
-The rest of Phase 1, per [SCOPE.md](SCOPE.md): taxonomies, menus, the SEO sidebar, singleton
-editing, rich-text editing, and the media hotspot/crop editor.
+The rest of Phase 1, per [SCOPE.md](SCOPE.md): menus, the SEO sidebar, singleton editing,
+rich-text editing, and the media hotspot/crop editor.
 
 Phase 0 deliberately left seams for these rather than stubs that would need unpicking — `fields` is
 a real table, `content_items` already carries `parent_id`/`path`/`depth` and a `seo` column, and
-every media asset already has hotspot and crop columns. Taxonomies and menus still need their own
-tables.
+every media asset already has hotspot and crop columns. Menus still need their own table.
 
 Known gaps closing in the rest of Phase 1: the richtext field edits as a plain textarea (values
 round-trip correctly), the TOTP enrolment UI is not built though the core is implemented and

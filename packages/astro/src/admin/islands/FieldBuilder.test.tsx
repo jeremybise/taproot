@@ -57,6 +57,7 @@ function renderBuilder(fields: FieldRow[] = [], itemCount = 0) {
       contentTypeId="ct1"
       initialFields={fields}
       contentTypes={[contentType]}
+      taxonomies={[]}
       itemCount={itemCount}
     />,
   );

@@ -239,14 +239,65 @@ export interface RevisionsTable {
 }
 
 // ---------------------------------------------------------------------------
+// Taxonomies
+// ---------------------------------------------------------------------------
+
+/**
+ * A term tree, attachable to any content type through a `taxonomy` field.
+ *
+ * There is no join table between taxonomies and content types: a type is attached to a taxonomy by
+ * having a field configured with its id, which means per-type settings (required, single vs
+ * multiple) ride on the existing field system rather than a parallel one.
+ */
+export interface TaxonomiesTable {
+  id: string;
+  /** Stable machine name. Immutable after creation. */
+  api_id: string;
+  name: string;
+  name_plural: string;
+  description: string | null;
+  /** Whether terms may nest. A flat tag list and a department tree differ only in this. */
+  hierarchical: SqlBool;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface TermsTable {
+  id: string;
+  taxonomy_id: string;
+  parent_id: string | null;
+  /** Unique among siblings within its taxonomy, not globally. */
+  slug: string;
+  name: string;
+  description: string | null;
+  depth: number;
+  position: number;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
+ * A derived index of which items carry which terms, rebuilt from `content_items.data` on save.
+ *
+ * Not the source of truth — see the 0003 migration for why the authored value stays in `data`.
+ * `field_api_id` is part of the key so two taxonomy fields pointing at the same taxonomy stay
+ * independently rebuildable.
+ */
+export interface TaxonomyAssignmentsTable {
+  content_item_id: string;
+  field_api_id: string;
+  term_id: string;
+}
+
+// ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
 
 /**
  * The full Kysely database interface.
  *
- * Phase 1 still adds `taxonomies`, `terms`, `taxonomy_assignments`, and `menus`.
- * Phase 3 adds `role_assignments` and `audit_log`. Phase 3.5 adds `releases`.
+ * Phase 1 still adds `menus`. Phase 3 adds `role_assignments` and `audit_log`.
+ * Phase 3.5 adds `releases`.
  */
 export interface Database {
   users: UsersTable;
@@ -260,6 +311,9 @@ export interface Database {
   media: MediaTable;
   redirects: RedirectsTable;
   revisions: RevisionsTable;
+  taxonomies: TaxonomiesTable;
+  terms: TermsTable;
+  taxonomy_assignments: TaxonomyAssignmentsTable;
 }
 
 export type User = Selectable<UsersTable>;
@@ -290,3 +344,13 @@ export type NewRedirect = Insertable<RedirectsTable>;
 
 export type RevisionRow = Selectable<RevisionsTable>;
 export type NewRevision = Insertable<RevisionsTable>;
+
+export type TaxonomyRow = Selectable<TaxonomiesTable>;
+export type NewTaxonomy = Insertable<TaxonomiesTable>;
+export type TaxonomyUpdate = Updateable<TaxonomiesTable>;
+
+export type TermRow = Selectable<TermsTable>;
+export type NewTerm = Insertable<TermsTable>;
+export type TermUpdate = Updateable<TermsTable>;
+
+export type TaxonomyAssignmentRow = Selectable<TaxonomyAssignmentsTable>;

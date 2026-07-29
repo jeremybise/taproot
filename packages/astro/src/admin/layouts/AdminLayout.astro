@@ -19,6 +19,7 @@ const nav = [
   { href: '/admin', label: 'Dashboard', exact: true },
   { href: '/admin/content', label: 'Content' },
   { href: '/admin/media', label: 'Media' },
+  { href: '/admin/taxonomies', label: 'Taxonomies' },
   ...(canManageSchema(user) ? [{ href: '/admin/types', label: 'Content types' }] : []),
   { href: '/admin/redirects', label: 'Redirects' },
   { href: '/admin/settings', label: 'Settings' },
