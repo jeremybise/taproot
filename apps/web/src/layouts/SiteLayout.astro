@@ -7,9 +7,28 @@ interface Props {
   title: string;
   description?: string | null;
   breadcrumbs?: { label: string; href: string }[];
+  /** Absolute URL of the social card image. Relative URLs are ignored by every crawler. */
+  ogImage?: string | null;
+  ogImageAlt?: string | null;
+  /** Absolute URL this page should be indexed under. */
+  canonical?: string | null;
+  noIndex?: boolean;
 }
 
-const { title, description, breadcrumbs = [] } = Astro.props;
+const {
+  title,
+  description,
+  breadcrumbs = [],
+  ogImage = null,
+  ogImageAlt = null,
+  canonical = null,
+  noIndex = false,
+} = Astro.props;
+
+const siteName = 'Riverbend College';
+// The `<title>` carries the site name; `og:title` does not, because platforms render the site name
+// separately underneath and would otherwise show it twice.
+const pageTitle = `${title} · ${siteName}`;
 
 /**
  * The site navigation, resolved from the `main` menu on every request.
@@ -35,8 +54,35 @@ const isCurrent = (href: string | null) => href !== null && path === href;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title} · Riverbend College</title>
+    <title>{pageTitle}</title>
     {description && <meta name="description" content={description} />}
+    {canonical && <link rel="canonical" href={canonical} />}
+    {
+      /*
+        `noindex` also carries `nofollow`, which is the pair that stops a hidden page leaking its
+        links into an index. This is a request crawlers honour, not access control — the page is
+        still served to anyone who asks for it, and the admin says so where the box is ticked.
+      */
+      noIndex && <meta name="robots" content="noindex, nofollow" />
+    }
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={title} />
+    {description && <meta property="og:description" content={description} />}
+    {canonical && <meta property="og:url" content={canonical} />}
+    {
+      ogImage && (
+        <>
+          <meta property="og:image" content={ogImage} />
+          {/* Alt travels with the card: a shared link is an image in someone's timeline, and it
+              needs a text alternative there exactly as it would on the page. */}
+          {ogImageAlt && <meta property="og:image:alt" content={ogImageAlt} />}
+        </>
+      )
+    }
+    {/* Twitter reads the og:* tags for everything except the card shape. */}
+    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
     <style is:global>
       :root {
         --ink: #1a1d1b;

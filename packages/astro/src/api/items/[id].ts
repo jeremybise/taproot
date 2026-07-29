@@ -2,6 +2,7 @@ import { deleteItem, getContentType, getItem, updateItem } from '@taproot/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent, readJson } from '../_shared.js';
+import { seoSchema } from '../seoSchema.js';
 import { canPublishContent } from '../../runtime/guards.js';
 
 export const GET = handle(async ({ context, taproot }) => {
@@ -16,7 +17,11 @@ const patchSchema = z.object({
   parentId: z.string().nullish(),
   status: z.enum(['draft', 'in_review', 'scheduled', 'published', 'archived']).optional(),
   data: z.record(z.string(), z.unknown()).optional(),
-  seo: z.record(z.string(), z.unknown()).optional(),
+  // Written explicitly as `.optional()` on the shared schema rather than derived with
+  // `.partial()`, which does not strip a `.default()` and would send `{}` on every request that
+  // omitted the key — wiping any stored SEO overrides. That exact bug has already cost a real one
+  // here with field config.
+  seo: seoSchema.optional(),
 });
 
 export const PATCH = handle(

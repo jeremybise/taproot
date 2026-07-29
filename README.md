@@ -48,6 +48,10 @@ toolchain — Taproot has zero native dependencies.
 - **Content lists built for scanning.** Colour-coded status badges, a faceted status filter whose
   counts tell you what each option would return, and created/updated columns that tighten to a
   time for today's edits and widen to a year for old ones.
+- **An SEO sidebar with live previews.** Meta title, description, social image, and a noindex
+  toggle — with a search-result and a shared-link preview beside them, resolved through the same
+  code the public page uses, so the preview cannot drift from what actually ships. Social images
+  fall back to a per-content-type default.
 - **Menus that reference rather than record.** A menu item points at a page, so moving that page
   updates the navigation and unpublishing it removes the entry — without anyone editing the menu.
   Menu items can also point at taxonomy terms, though whether a term has a public page at all is
@@ -68,7 +72,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (227 covering dialects, auth, paths, validation, revisions, taxonomies, menus, the field builder) |
+| `npm test` | Unit tests (245 covering dialects, auth, paths, validation, revisions, taxonomies, menus, SEO, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -171,7 +175,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-227 tests. The ones worth knowing about:
+245 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -189,21 +193,25 @@ npm test
   rather than against a list would have let every inherited key through to the query.
 - Status facet counts apply the same search as the list they label — they come from one shared
   filter builder, and the test is what says so.
+- SEO resolution treats a whitespace-only meta title as unset, so `"  "` cannot blank out the
+  title a page actually renders.
 
 ---
 
 ## What's next
 
-The rest of Phase 1, per [SCOPE.md](SCOPE.md): the SEO sidebar, singleton editing, rich-text
-editing, and the media hotspot/crop editor. Every table Phase 1 needs now exists.
+The rest of Phase 1, per [SCOPE.md](SCOPE.md): rich-text editing and the media hotspot/crop
+editor. Every table Phase 1 needs now exists.
 
 Phase 0 deliberately left seams for these rather than stubs that would need unpicking — `fields` is
-a real table, `content_items` already carries `parent_id`/`path`/`depth` and a `seo` column, and
-every media asset already has hotspot and crop columns.
+a real table, `content_items` carries `parent_id`/`path`/`depth`, the `seo` column it left empty is
+now the SEO sidebar, and every media asset already has hotspot and crop columns.
 
 Known gaps closing in the rest of Phase 1: the richtext field edits as a plain textarea (values
 round-trip correctly), the TOTP enrolment UI is not built though the core is implemented and
-tested, and image dimensions are not read on upload. Content lists are ordered by path and cannot
+tested, and image dimensions are not read on upload. The SEO panel picks a social image from a
+select rather than a media browser — the real library picker arrives with the `media` field type
+and this moves to it then. Content lists are ordered by path and cannot
 be sorted by date — for a hierarchical type the path order *is* the tree, so a date sort would
 leave the indentation describing a nesting the rows no longer follow.
 

@@ -13,8 +13,12 @@ import {
   getContentTypeByApiId,
   getTaxonomyByApiId,
   listTerms,
+  buildStorageKey,
   migrateToLatest,
+  newId,
+  now,
   setPassword,
+  storageFromEnv,
   type ContentTypeRow,
   type FieldRow,
   type TaprootDb,
@@ -23,6 +27,8 @@ import {
 } from '@taproot/core';
 
 import { openDb } from './_db.ts';
+import { loadEnv } from './_env.ts';
+import { socialCardPng } from './_png.ts';
 
 /**
  * Seed a realistic starting point.
@@ -301,6 +307,63 @@ const banner = await ensureType(
   ],
 );
 
+// --- Media ------------------------------------------------------------------
+//
+// One generated image, so the media library is not empty on a fresh clone and the SEO panel's
+// social-card preview has something to show. Keyed on filename so re-seeding reuses it rather
+// than writing a second copy.
+
+const SOCIAL_CARD_FILENAME = 'riverbend-social-card.png';
+
+let socialCardId: string | null =
+  (
+    await handle.db
+      .selectFrom('media')
+      .select('id')
+      .where('filename', '=', SOCIAL_CARD_FILENAME)
+      .executeTakeFirst()
+  )?.id ?? null;
+
+if (!socialCardId) {
+  const storage = storageFromEnv(loadEnv());
+  const id = newId();
+  const bytes = socialCardPng();
+  const stored = await storage.put(buildStorageKey(id, SOCIAL_CARD_FILENAME), bytes, {
+    contentType: 'image/png',
+  });
+
+  const timestamp = now();
+  await handle.db
+    .insertInto('media')
+    .values({
+      id,
+      storage_key: stored.key,
+      filename: SOCIAL_CARD_FILENAME,
+      mime_type: 'image/png',
+      size_bytes: stored.size,
+      width: 1200,
+      height: 630,
+      // Written rather than left null on purpose: an OG image is announced to anyone who receives
+      // the shared link, and the media library warns about missing alt text for exactly this
+      // reason. Seeding an asset without it would seed the warning too.
+      alt_text: 'Riverbend College — a green gradient card used as the default sharing image.',
+      title: 'Default social card',
+      hotspot_x: null,
+      hotspot_y: null,
+      crop_top: null,
+      crop_right: null,
+      crop_bottom: null,
+      crop_left: null,
+      uploaded_by: admin.id,
+      created_at: timestamp,
+      updated_at: timestamp,
+    })
+    .execute();
+
+  socialCardId = id;
+  console.log(`  media ${SOCIAL_CARD_FILENAME} (created)`);
+}
+
 // --- Content items ----------------------------------------------------------
 
 async function ensureItem(
@@ -331,6 +394,13 @@ const admissionsId = await ensureItem(
     title: 'Admissions',
     status: 'published',
     userId: admin.id,
+    // A meta title that differs from the page title, which is the case the SEO preview exists for
+    // — "Admissions" is the right heading on the page and a poor search result on its own.
+    seo: {
+      metaTitle: 'Admissions & Applying — Riverbend College',
+      metaDescription:
+        'Deadlines, requirements, and financial aid for undergraduate and transfer applicants to Riverbend College.',
+    },
     data: {
       summary: 'Everything you need to join us at Riverbend.',
       body: 'Our admissions team is here to help at every step, from your first question to your first day on campus.',
@@ -420,6 +490,10 @@ await ensureItem(
     parentId: applyId,
     status: 'published',
     userId: admin.id,
+    // A thin page that repeats dates published on its parent — the ordinary reason to keep
+    // something out of search while leaving it linked and reachable. Set on a *published* page
+    // deliberately: an unpublished one never reaches a crawler, so it would demonstrate nothing.
+    seo: { noIndex: true },
     data: {
       summary: 'Key dates for the coming application cycle.',
       body: 'Early action: 1 November. Regular decision: 15 January. Transfer: 1 April.',
@@ -575,6 +649,17 @@ if (!bannerExists) {
     userId: admin.id,
     data: { enabled: false, message: '', severity: 'info' },
   });
+}
+
+// Give Events a default social card but leave Pages without one, so both sides of the fallback
+// are visible: an event inherits an image it never chose, a page shows the empty state.
+if (socialCardId && !event.type.default_og_image_id) {
+  await handle.db
+    .updateTable('content_types')
+    .set({ default_og_image_id: socialCardId, updated_at: now() })
+    .where('id', '=', event.type.id)
+    .execute();
+  console.log('  type event (default social image set)');
 }
 
 // --- Menu -------------------------------------------------------------------

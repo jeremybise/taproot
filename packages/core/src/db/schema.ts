@@ -98,6 +98,14 @@ export interface ContentTypesTable {
   title_field: string | null;
   /** Order in the admin sidebar, where each content type is its own entry. Ties break by name. */
   position: number;
+  /**
+   * Social-card image used by items of this type that have not set their own.
+   *
+   * Most items never need a bespoke card, so the useful default lives at the type level rather
+   * than being copied onto every item at creation — changing it here updates every item that has
+   * not overridden it, which copying would not.
+   */
+  default_og_image_id: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }

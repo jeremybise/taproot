@@ -2,6 +2,7 @@
 import SiteLayout from '../layouts/SiteLayout.astro';
 import {
   ancestorPaths,
+  canonicalUrl,
   getContentType,
   getItemByPath,
   getRedirect,
@@ -10,6 +11,7 @@ import {
   itemIdsInTermBranch,
   listItems,
   normalizePath,
+  resolveSeo,
 } from '@taproot/core';
 import { getTaproot, canEditContent } from '@taproot/astro/runtime/guards';
 import { PUBLIC_TERM_TAXONOMIES } from '../site.ts';
@@ -135,12 +137,48 @@ const renderable = (contentType?.fields ?? [])
 if (!isPreview) {
   Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
 }
+
+/**
+ * SEO, resolved through the same core function the admin's preview calls.
+ *
+ * That shared call is the whole point: a preview that resolved its own fallbacks would be a
+ * preview of a page that does not exist, and the mismatch would only surface weeks later in
+ * someone's shared link.
+ */
+const seo = item ? resolveSeo(item, contentType) : null;
+
+// The social image needs an absolute URL — a relative one is ignored by every crawler — and the
+// storage adapter is the only thing that knows how to build one.
+const ogAsset = seo?.ogImageId
+  ? await taproot.db.db
+      .selectFrom('media')
+      .select(['storage_key', 'alt_text'])
+      .where('id', '=', seo.ogImageId)
+      .executeTakeFirst()
+  : undefined;
+
+const ogImage = ogAsset
+  ? new URL(taproot.storage.publicUrl(ogAsset.storage_key), Astro.url.origin).toString()
+  : null;
+
+/**
+ * A preview is never canonical and never indexed.
+ *
+ * Without this, `?preview=1` would emit a canonical pointing at the live URL of content that is
+ * not live — telling a crawler that a draft is the authoritative version of a page.
+ */
+const canonical = isPreview ? null : canonicalUrl(Astro.url.origin, item ? item.path : path);
+const noIndex = isPreview || seo?.noIndex === true;
 ---
 
 <SiteLayout
-  title={item ? (item.seo.metaTitle ?? item.title) : archive!.title}
-  description={item ? (item.seo.metaDescription ?? null) : archive!.description}
+  title={seo ? seo.title : archive!.title}
+  description={seo ? seo.description : archive!.description}
   breadcrumbs={breadcrumbs}
+  ogImage={ogImage}
+  ogImageAlt={ogAsset?.alt_text ?? null}
+  canonical={canonical}
+  noIndex={noIndex}
 >
   {
     archive && (

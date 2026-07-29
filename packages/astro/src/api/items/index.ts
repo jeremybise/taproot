@@ -2,6 +2,7 @@ import { createItem, getContentType, listItems } from '@taproot/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, readJson } from '../_shared.js';
+import { seoSchema } from '../seoSchema.js';
 import { canPublishContent } from '../../runtime/guards.js';
 
 export const GET = handle(async ({ context, taproot }) => {
@@ -25,7 +26,7 @@ const createSchema = z.object({
   parentId: z.string().nullish(),
   status: z.enum(['draft', 'in_review', 'scheduled', 'published', 'archived']).default('draft'),
   data: z.record(z.string(), z.unknown()).default({}),
-  seo: z.record(z.string(), z.unknown()).default({}),
+  seo: seoSchema.default({}),
 });
 
 export const POST = handle(

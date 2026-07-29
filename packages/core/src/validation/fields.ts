@@ -313,6 +313,8 @@ export const contentTypeInputSchema = z.object({
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Must be a lowercase, hyphenated URL segment.')
     .nullish(),
   title_field: z.string().nullish(),
+  /** Social-card image for items of this type that have not chosen one. */
+  default_og_image_id: z.string().nullish(),
 });
 
 export const fieldInputSchema = z.object({

@@ -125,6 +125,7 @@ export async function createContentType(
     // Only collection types are type-prefixed; page and singleton types have no prefix.
     url_prefix: input.kind === 'collection' ? (input.url_prefix ?? input.api_id) : null,
     title_field: input.title_field ?? null,
+    default_og_image_id: input.default_og_image_id ?? null,
     // Appended to the end of the sidebar rather than dropped at 0, so creating a type does not
     // silently reshuffle an order someone already arranged.
     position: await nextContentTypePosition(db),
@@ -177,6 +178,10 @@ export async function updateContentType(
         ? (input.url_prefix ?? existing.url_prefix ?? existing.api_id)
         : null,
     title_field: input.title_field === undefined ? existing.title_field : (input.title_field ?? null),
+    default_og_image_id:
+      input.default_og_image_id === undefined
+        ? existing.default_og_image_id
+        : (input.default_og_image_id ?? null),
     updated_at: now(),
   };
 

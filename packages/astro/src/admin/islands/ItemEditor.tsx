@@ -1,7 +1,8 @@
 import { useId, useState } from 'react';
-import { slugify, type ContentStatus, type FieldRow } from '@taproot/core';
+import { slugify, type ContentStatus, type FieldRow, type SeoData } from '@taproot/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
+import SeoPanel, { type MediaOption } from './SeoPanel.js';
 import { STATUS_META, STATUS_ORDER } from '../status.js';
 
 /**
@@ -27,6 +28,7 @@ interface Props {
     status: ContentStatus;
     parentId: string | null;
     data: Record<string, unknown>;
+    seo: SeoData;
   };
   /** Candidate parents for hierarchical types. Empty for collections and singletons. */
   parents: { id: string; title: string; path: string }[];
@@ -34,6 +36,13 @@ interface Props {
   termsByTaxonomy?: Record<string, TermOption[]>;
   canPublish: boolean;
   isHierarchical: boolean;
+  /** Image assets selectable as a social card, with their resolved public URLs. */
+  images?: MediaOption[];
+  /** The content type's default social image, inherited when the item chooses none. */
+  defaultOgImage?: MediaOption | null;
+  /** Where this item resolves publicly. Empty for a singleton, which has no path of its own. */
+  path?: string;
+  origin?: string;
 }
 
 /**
@@ -59,6 +68,10 @@ export default function ItemEditor({
   termsByTaxonomy,
   canPublish,
   isHierarchical,
+  images = [],
+  defaultOgImage = null,
+  path = '/',
+  origin = '',
 }: Props) {
   const [title, setTitle] = useState(initial.title);
   const [slug, setSlug] = useState(initial.slug);
@@ -73,6 +86,7 @@ export default function ItemEditor({
   const [status, setStatus] = useState<ContentStatus>(initial.status);
   const [parentId, setParentId] = useState<string | null>(initial.parentId);
   const [data, setData] = useState<Record<string, unknown>>(initial.data);
+  const [seo, setSeo] = useState<SeoData>(initial.seo);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -84,7 +98,10 @@ export default function ItemEditor({
     setErrors({});
     setMessage(null);
 
-    const payload = { title, slug, status, parentId, data };
+    // Blank overrides are dropped rather than stored as empty strings. `resolveSeo` treats blank
+    // as absent anyway, but persisting `metaTitle: ""` would make a cleared field look deliberate
+    // in a revision diff and in the API response.
+    const payload = { title, slug, status, parentId, data, seo: pruneSeo(seo) };
     const url = itemId ? `/api/taproot/items/${itemId}` : '/api/taproot/items';
 
     try {
@@ -291,7 +308,40 @@ export default function ItemEditor({
             {busy ? 'Saving…' : itemId ? 'Save changes' : 'Create item'}
           </button>
         </div>
+
+        {/*
+          Below Publishing rather than above it. The save button has to stay reachable without
+          scrolling past a panel most edits never touch, and the SEO fields are reviewed at the end
+          of writing a page rather than the start.
+        */}
+        <SeoPanel
+          seo={seo}
+          onChange={setSeo}
+          itemTitle={title}
+          path={path}
+          origin={origin}
+          images={images}
+          defaultOgImage={defaultOgImage}
+        />
       </aside>
     </form>
   );
+}
+
+/**
+ * Drop keys whose value carries no meaning, so absence is the only way "unset" is represented.
+ *
+ * Without this a cleared meta title round-trips as `""`, which is falsy everywhere it is read but
+ * shows up as a real change in the revision diff — a save that changed nothing looks like one that
+ * did.
+ */
+function pruneSeo(seo: SeoData): SeoData {
+  const pruned: SeoData = {};
+
+  if (seo.metaTitle?.trim()) pruned.metaTitle = seo.metaTitle.trim();
+  if (seo.metaDescription?.trim()) pruned.metaDescription = seo.metaDescription.trim();
+  if (seo.ogImageId) pruned.ogImageId = seo.ogImageId;
+  if (seo.noIndex) pruned.noIndex = true;
+
+  return pruned;
 }

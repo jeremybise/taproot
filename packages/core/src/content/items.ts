@@ -54,6 +54,13 @@ export interface ContentItem extends Omit<ContentItemRow, 'data' | 'seo'> {
   seo: SeoData;
 }
 
+/**
+ * Per-item SEO overrides.
+ *
+ * Every key is optional and absence means "fall back", which is what `resolveSeo` implements. No
+ * length limits live here on purpose — see SEO_GUIDANCE in seo.ts for why an over-length title is
+ * a warning in the editor rather than a rejected save.
+ */
 export interface SeoData {
   metaTitle?: string;
   metaDescription?: string;

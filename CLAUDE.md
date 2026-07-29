@@ -9,8 +9,8 @@ contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the releva
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
 **Status:** Phase 0 (foundation), Phase 1A (visual content-type builder), revisions, taxonomies,
-and menus are complete — every table Phase 1 needs now exists. The rest of Phase 1 is in progress:
-SEO sidebar, singleton editing, a real richtext editor, and the media hotspot/crop editor.
+menus, and the SEO sidebar are complete. The rest of Phase 1 is in progress: a real richtext editor
+and the media hotspot/crop editor.
 
 ## Commands
 
@@ -19,7 +19,7 @@ SEO sidebar, singleton editing, a real richtext editor, and the media hotspot/cr
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 227 tests |
+| `npm test` | Vitest, 245 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -155,6 +155,17 @@ many), *Block*, *Reusable Block*, *Content Type*.
 - **Every path change writes a redirect automatically.** Never make this opt-in.
 - **Content type `kind`** is `page` (nests under a parent), `collection` (flat, `url_prefix`-based),
   or `singleton` (exactly one item, no create/delete).
+- **SEO fallbacks are resolved in core, never in a template.** `resolveSeo` is called by both the
+  admin's live preview and the public route, because a preview that resolves its own fallbacks is
+  a preview of a page nobody will ever see, and the mismatch only surfaces weeks later in a shared
+  link. The chain is item override → content type default (OG image only) → the item's own title.
+  There is deliberately **no excerpt fallback for the description** — a truncated first sentence
+  reads like a machine wrote it, and a search engine picks a better snippet than a truncation.
+- **SEO length guidance is guidance, not validation.** Search engines truncate by pixel width, so
+  no character count is exactly right; the editor warns past ~60/~160 and the server stores what it
+  is given. `SEO_GUIDANCE` is the one place those numbers live.
+- **`content_types.default_og_image_id` is inherited, not copied.** Changing it updates every item
+  that has not set its own — copying onto items at creation would silently freeze the old value.
 - **Field values live in `content_items.data`** keyed by field `api_id`, validated against the type.
 - **Taxonomies carry no authority.** A term classifies content — what it is about — and never
   determines who may edit it. Departments-as-permissions are a separate Phase 3 model, on purpose:

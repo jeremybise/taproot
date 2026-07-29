@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { ContentTypeRow, FieldRow } from '@taproot/core';
 
+import type { MediaOption } from './SeoPanel.js';
+
 /**
  * Content type settings.
  *
@@ -12,18 +14,24 @@ import type { ContentTypeRow, FieldRow } from '@taproot/core';
 export default function ContentTypeSettings({
   contentType,
   fields,
+  images = [],
 }: {
   contentType: ContentTypeRow;
   fields: FieldRow[];
+  /** Image assets selectable as this type's default social card. */
+  images?: MediaOption[];
 }) {
   const [name, setName] = useState(contentType.name);
   const [namePlural, setNamePlural] = useState(contentType.name_plural);
   const [description, setDescription] = useState(contentType.description ?? '');
   const [titleField, setTitleField] = useState(contentType.title_field ?? '');
   const [urlPrefix, setUrlPrefix] = useState(contentType.url_prefix ?? '');
+  const [ogImageId, setOgImageId] = useState(contentType.default_og_image_id ?? '');
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const selectedImage = images.find((image) => image.id === ogImageId) ?? null;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -39,6 +47,7 @@ export default function ContentTypeSettings({
           name_plural: namePlural.trim(),
           description: description.trim() || null,
           title_field: titleField || null,
+          default_og_image_id: ogImageId || null,
           ...(contentType.kind === 'collection' ? { url_prefix: urlPrefix.trim() || null } : {}),
         }),
       });
@@ -144,6 +153,39 @@ export default function ContentTypeSettings({
               </option>
             ))}
         </select>
+      </div>
+
+      <div>
+        <label htmlFor="ct-og-image" className="block text-sm font-medium">
+          Default social image
+        </label>
+        <p id="ct-og-image-hint" className="mt-0.5 text-xs text-content-subtle">
+          Used when an item of this type has not chosen its own. Changing it updates every item
+          still inheriting — nothing is copied onto items at creation.
+        </p>
+        <select
+          id="ct-og-image"
+          value={ogImageId}
+          aria-describedby="ct-og-image-hint"
+          onChange={(e) => setOgImageId(e.target.value)}
+          className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        >
+          <option value="">— None —</option>
+          {images.map((image) => (
+            <option key={image.id} value={image.id}>
+              {image.filename}
+            </option>
+          ))}
+        </select>
+        {selectedImage && (
+          /* Decorative: the filename in the select above is already the accessible name, and this
+             is confirmation of a choice rather than content in its own right. */
+          <img
+            src={selectedImage.url}
+            alt=""
+            className="mt-2 aspect-[1.91/1] w-48 rounded-md border border-border object-cover"
+          />
+        )}
       </div>
 
       {contentType.kind === 'collection' && (

@@ -2,6 +2,7 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import ItemEditor from '../../islands/ItemEditor.tsx';
 import { termOptionsForFields } from '../../termOptions.js';
+import { findImage, imageOptions } from '../../mediaOptions.js';
 import { getContentType, listContentTypes, listItems } from '@taproot/core';
 import {
   getTaproot,
@@ -33,6 +34,9 @@ if (contentType?.kind === 'page') {
 const termsByTaxonomy = contentType
   ? await termOptionsForFields(taproot.db.db, contentType.fields)
   : {};
+
+const images = contentType ? await imageOptions(taproot.db.db, taproot.storage) : [];
+const defaultOgImage = findImage(images, contentType?.default_og_image_id ?? null);
 ---
 
 <AdminLayout
@@ -76,11 +80,14 @@ const termsByTaxonomy = contentType
           contentTypeId={contentType.id}
           contentTypeName={contentType.name}
           fields={contentType.fields}
-          initial={{ title: '', slug: '', status: 'draft', parentId: null, data: {} }}
+          initial={{ title: '', slug: '', status: 'draft', parentId: null, data: {}, seo: {} }}
           parents={parents}
           termsByTaxonomy={termsByTaxonomy}
           canPublish={canPublishContent(user)}
           isHierarchical={contentType.kind === 'page'}
+          images={images}
+          defaultOgImage={defaultOgImage}
+          origin={Astro.url.origin}
         />
       </>
     )
