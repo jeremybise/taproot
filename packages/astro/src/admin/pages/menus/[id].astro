@@ -1,5 +1,6 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
+import MenuItemList from '../../islands/MenuItemList.tsx';
 import {
   getMenu,
   listItems,
@@ -59,6 +60,20 @@ const displayRows = ordered(null);
 const brokenCount = displayRows.filter(
   (entry) => resolvedById.get(entry.row.id)?.brokenReason === 'deleted',
 ).length;
+
+// Flattened for the island, which rebuilds the tree itself so it can reorder one level at a time.
+const islandItems = displayRows.map(({ row }) => {
+  const node = resolvedById.get(row.id);
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    rawLabel: row.label ?? '',
+    displayLabel: node?.label ?? 'Untitled',
+    targetType: row.target_type,
+    href: node?.href ?? null,
+    brokenReason: node?.brokenReason ?? null,
+  };
+});
 
 const created = Astro.url.searchParams.get('created');
 const added = Astro.url.searchParams.get('added');
@@ -255,130 +270,18 @@ const inputClass =
   <section aria-labelledby="items-heading">
     <h2 id="items-heading" class="mb-3 text-base font-semibold">Items</h2>
 
-    {
-      displayRows.length === 0 ? (
-        <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
-          This menu has no items yet.
-        </p>
-      ) : (
-        <ul class="space-y-2">
-          {displayRows.map(({ row, depth }) => {
-            const node = resolvedById.get(row.id);
-            return (
-              <li style={`margin-left:${depth * 1.5}rem`}>
-                <div class="rounded-lg border border-border bg-surface-raised px-4 py-3">
-                  <form
-                    method="post"
-                    action={`/api/taproot/menu-items/${row.id}`}
-                    class="flex flex-wrap items-end gap-3"
-                  >
-                    <input type="hidden" name="targetType" value={row.target_type} />
-                    <input type="hidden" name="contentItemId" value={row.content_item_id ?? ''} />
-                    <input type="hidden" name="termId" value={row.term_id ?? ''} />
-                    <input type="hidden" name="url" value={row.url ?? ''} />
-
-                    <div class="min-w-40 flex-1">
-                      {/*
-                        The item's own label goes in the field label as screen-reader text.
-                        Without it, a menu of a dozen entries announces "Label" a dozen times with
-                        nothing to tell them apart.
-                      */}
-                      <label for={`label-${row.id}`} class="block text-xs font-medium">
-                        Label
-                        <span class="sr-only-focusable"> for {node?.label ?? 'this item'}</span>
-                      </label>
-                      <input
-                        id={`label-${row.id}`}
-                        name="label"
-                        value={row.label ?? ''}
-                        placeholder={node?.label ?? ''}
-                        maxlength="120"
-                        class={inputClass}
-                      />
-                    </div>
-
-                    <div class="min-w-40 flex-1">
-                      <label for={`parent-${row.id}`} class="block text-xs font-medium">
-                        Nested under
-                        <span class="sr-only-focusable"> for {node?.label ?? 'this item'}</span>
-                      </label>
-                      <select id={`parent-${row.id}`} name="parentId" class={inputClass}>
-                        <option value="" selected={row.parent_id === null}>
-                          Top level
-                        </option>
-                        {displayRows
-                          .filter((candidate) => candidate.row.id !== row.id)
-                          .map((candidate) => (
-                            <option
-                              value={candidate.row.id}
-                              selected={row.parent_id === candidate.row.id}
-                            >
-                              {`${'— '.repeat(candidate.depth)}${
-                                resolvedById.get(candidate.row.id)?.label ?? 'Untitled'
-                              }`}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-
-                    <button
-                      type="submit"
-                      class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
-                    >
-                      Save<span class="sr-only-focusable"> {node?.label ?? 'this item'}</span>
-                    </button>
-                  </form>
-
-                  <div class="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                    <span class="rounded-full border border-border px-2 py-0.5 capitalize text-content-subtle">
-                      {row.target_type === 'item'
-                        ? 'Page'
-                        : row.target_type === 'term'
-                          ? 'Term'
-                          : 'Address'}
-                    </span>
-
-                    {node?.brokenReason === 'deleted' ? (
-                      <span class="text-warning">
-                        Target was deleted — hidden from visitors
-                      </span>
-                    ) : node?.brokenReason === 'unpublished' ? (
-                      <span class="text-content-subtle">
-                        Target is not published — hidden from visitors
-                      </span>
-                    ) : node?.brokenReason === 'no_route' ? (
-                      /*
-                        Not a fault, so it is not styled as one — and worded as ignorance rather
-                        than a verdict. This screen resolves the menu without the site's term-URL
-                        resolver, because the CMS has no way to run the host app's routing. It can
-                        say a term link exists; it cannot say where the site sends it.
-                      */
-                      <span class="text-content-subtle">
-                        Term link — the address is decided by the site's templates
-                      </span>
-                    ) : (
-                      <code class="font-mono text-content-subtle">{node?.href}</code>
-                    )}
-
-                    <form method="post" action={`/api/taproot/menu-items/${row.id}`}>
-                      <input type="hidden" name="_method" value="delete" />
-                      <button type="submit" class="text-danger transition-colors hover:underline">
-                        Remove<span class="sr-only-focusable"> {node?.label ?? 'this item'}</span>
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )
-    }
+    <!--
+      An island, because reordering by dragging is the one interaction here that server-rendered
+      forms cannot express. Editing, re-parenting, and removing moved into it too rather than
+      leaving two sets of controls over the same rows.
+    -->
+    <MenuItemList client:load menuId={menu.id} items={islandItems} />
   </section>
 
   <p class="mt-8 max-w-prose text-sm text-content-subtle">
-    Removing an item removes anything nested under it — a dropdown's contents have no meaning
-    without the thing they hang off. Reordering within a level is a later increment; the "nested
-    under" control already does every move between levels.
+    Drag an item, or use its up and down buttons, to reorder it among the items at its own level.
+    Moving between levels is the "Nested under" control, which says exactly what will happen rather
+    than asking you to aim. Removing an item removes anything nested under it — a dropdown's
+    contents have no meaning without the thing they hang off.
   </p>
 </AdminLayout>

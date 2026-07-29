@@ -1,0 +1,47 @@
+---
+import { createItem, getContentTypeByApiId } from '@taproot/core';
+import { getTaproot, loginRedirect, canEditContent } from '../../../runtime/guards.js';
+
+/**
+ * A singleton's sidebar entry.
+ *
+ * Resolves to the one item's editor, creating it on first visit if it does not exist yet. The
+ * indirection buys a stable URL: linking the sidebar straight at an item id would mean the link
+ * cannot be built until the item exists, and would break if it were ever deleted and recreated.
+ *
+ * Creating on demand rather than at seed time is what makes a singleton work like a settings
+ * screen — an editor clicks "Weather Banner" and gets a form, instead of an empty list and a
+ * "create the one allowed item" step that exists only to satisfy the data model.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const contentType = await getContentTypeByApiId(taproot.db.db, Astro.params.apiId!);
+if (!contentType) return new Response('Content type not found', { status: 404 });
+if (contentType.kind !== 'singleton') {
+  return Astro.redirect(`/admin/content/type/${contentType.api_id}`);
+}
+
+const existing = await taproot.db.db
+  .selectFrom('content_items')
+  .select('id')
+  .where('content_type_id', '=', contentType.id)
+  .executeTakeFirst();
+
+if (existing) return Astro.redirect(`/admin/content/${existing.id}`);
+
+// Nothing to show and nothing this reader may create — better than an editor form they cannot use.
+if (!canEditContent(user)) {
+  return new Response('This singleton has not been created yet.', { status: 404 });
+}
+
+const item = await createItem(taproot.db, contentType, contentType.fields, {
+  contentTypeId: contentType.id,
+  title: contentType.name,
+  status: 'draft',
+  userId: user.id,
+});
+
+return Astro.redirect(`/admin/content/${item.id}`);
+---

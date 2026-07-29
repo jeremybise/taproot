@@ -1,9 +1,9 @@
 ---
-import AdminLayout from '../../layouts/AdminLayout.astro';
-import FieldBuilder from '../../islands/FieldBuilder.tsx';
-import ContentTypeSettings from '../../islands/ContentTypeSettings.tsx';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import FieldBuilder from '../../../islands/FieldBuilder.tsx';
+import ContentTypeSettings from '../../../islands/ContentTypeSettings.tsx';
 import { getContentType, listContentTypes, listTaxonomies } from '@taproot/core';
-import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
 if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
@@ -37,7 +37,11 @@ const kindLabels: Record<string, string> = {
 <AdminLayout
   title={contentType.name}
   user={user}
-  breadcrumbs={[{ label: 'Content types', href: '/admin/types' }, { label: contentType.name }]}
+  breadcrumbs={[
+    { label: 'Settings', href: '/admin/settings' },
+    { label: 'Content types', href: '/admin/settings/types' },
+    { label: contentType.name },
+  ]}
   flash={created ? `Created the ${contentType.name} content type. Add its fields below.` : null}
 >
   <header class="mb-8">

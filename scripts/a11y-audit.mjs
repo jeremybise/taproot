@@ -29,12 +29,14 @@ const ROUTES = [
   '/admin',
   '/admin/content',
   '/admin/content/new',
-  '/admin/types',
-  '/admin/types/new',
+  '/admin/settings/types',
+  '/admin/settings/types/new',
+  '/admin/settings/users',
+  '/admin/settings/system',
   '/admin/media',
   '/admin/taxonomies',
   '/admin/menus',
-  '/admin/redirects',
+  '/admin/settings/redirects',
   '/admin/settings',
 ];
 
@@ -63,7 +65,14 @@ if (items?.[0]) ROUTES.push(`/admin/content/${items[0].id}`);
 
 const typesResponse = await fetch(`${base}/api/taproot/content-types`, { headers: { cookie } });
 const { contentTypes } = await typesResponse.json();
-if (contentTypes?.[0]) ROUTES.push(`/admin/types/${contentTypes[0].id}`);
+if (contentTypes?.[0]) ROUTES.push(`/admin/settings/types/${contentTypes[0].id}`);
+
+// One per-type content list and one singleton, since each content type is now its own destination
+// and the two render quite differently.
+const listable = (contentTypes ?? []).filter((type) => type.kind !== 'singleton');
+const singleton = (contentTypes ?? []).find((type) => type.kind === 'singleton');
+if (listable[0]) ROUTES.push(`/admin/content/type/${listable[0].api_id}`);
+if (singleton) ROUTES.push(`/admin/singleton/${singleton.api_id}`);
 
 // The term editor is the densest screen in the admin — a repeated form per row — so it is the one
 // most worth auditing, and it only exists once a taxonomy does.

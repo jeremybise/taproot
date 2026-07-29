@@ -1,0 +1,70 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getConfiguredProviders } from '@taproot/core';
+import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const providers = getConfiguredProviders(taproot.auth);
+
+const environment = [
+  { label: 'Database driver', value: taproot.db.driver },
+  { label: 'Media storage', value: taproot.storage.name },
+  { label: 'OAuth providers', value: providers.length > 0 ? providers.join(', ') : 'none' },
+  {
+    label: 'Development sign-in',
+    value: taproot.auth.devCredentialsEnabled ? 'enabled (local only)' : 'disabled',
+  },
+  { label: 'Secure cookies', value: taproot.auth.secureCookies ? 'yes' : 'no (local http)' },
+];
+
+const account = [
+  { label: 'Name', value: user.name },
+  { label: 'Email', value: user.email },
+  { label: 'Role', value: user.role },
+  { label: 'Two-factor authentication', value: 'Enrolment UI arrives in Phase 1' },
+];
+---
+
+<AdminLayout
+  title="System"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'System' }]}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">System</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      Read-only. What this deployment is running against, and who you are signed in as.
+    </p>
+  </header>
+
+  <section aria-labelledby="env-heading" class="mb-10">
+    <h2 id="env-heading" class="mb-3 text-base font-semibold">Environment</h2>
+    <dl class="divide-y divide-border overflow-hidden rounded-lg border border-border">
+      {
+        environment.map((row) => (
+          <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+            <dt class="text-content-muted">{row.label}</dt>
+            <dd class="font-mono text-xs">{row.value}</dd>
+          </div>
+        ))
+      }
+    </dl>
+  </section>
+
+  <section aria-labelledby="account-heading">
+    <h2 id="account-heading" class="mb-3 text-base font-semibold">Your account</h2>
+    <dl class="divide-y divide-border overflow-hidden rounded-lg border border-border">
+      {
+        account.map((row) => (
+          <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+            <dt class="text-content-muted">{row.label}</dt>
+            <dd class="capitalize">{row.value}</dd>
+          </div>
+        ))
+      }
+    </dl>
+  </section>
+</AdminLayout>

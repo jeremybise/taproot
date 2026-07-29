@@ -31,6 +31,24 @@ Sign in at `/admin` with **admin@example.com** / **taproot**.
 no root `tsconfig.json`, and the Astro projects can't be tsc project references because apps/web's
 sources are `.astro`, which tsc has no resolver for. apps/web is type-checked by `npm run build`.
 
+## Admin information architecture
+
+**Each content type is its own sidebar destination**, not a filter on one shared list — editors
+think of Pages and Events as different places. `/admin/content/type/{api_id}` rather than
+`/admin/content/{api_id}`, because `/admin/content/{id}` already means a content item and one
+segment cannot mean both. `/admin/content` survives as "All content" for searching across types.
+
+Singletons get `/admin/singleton/{api_id}`, which resolves to the one item's editor and creates it
+on first visit. The indirection buys a stable sidebar URL that cannot break if the item is deleted.
+
+Sidebar order comes from `content_types.position`, reorderable in Settings. Settings is a hub over
+Content types, Redirects, Users & access, and System — configuration that shapes the site rather
+than its content.
+
+**Nothing in the CMS assumes a particular kind of site.** The demo is a college; the CMS must work
+for anyone. Content types, taxonomies, and menus are all user-defined, and a site with none of them
+must still render every admin screen without erroring.
+
 ## Layout
 
 ```

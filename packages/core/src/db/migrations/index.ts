@@ -7,6 +7,7 @@ import * as m0001 from './0001_init.js';
 import * as m0002 from './0002_revisions.js';
 import * as m0003 from './0003_taxonomies.js';
 import * as m0004 from './0004_menus.js';
+import * as m0005 from './0005_content_type_position.js';
 
 /**
  * The migration registry.
@@ -24,6 +25,7 @@ export const migrations: Record<string, Migration> = {
   '0002_revisions': m0002,
   '0003_taxonomies': m0003,
   '0004_menus': m0004,
+  '0005_content_type_position': m0005,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

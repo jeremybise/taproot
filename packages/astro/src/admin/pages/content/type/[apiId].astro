@@ -1,0 +1,142 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getContentTypeByApiId, listItems } from '@taproot/core';
+import { getTaproot, loginRedirect, canEditContent } from '../../../../runtime/guards.js';
+
+/**
+ * One content type's items.
+ *
+ * A separate route from `/admin/content` rather than a query parameter on it: each type is its own
+ * sidebar destination, so it needs its own URL to be linkable, bookmarkable, and markable with
+ * `aria-current`. `/content/type/{api_id}` rather than `/content/{api_id}` because
+ * `/content/{id}` already means a content item, and one segment cannot mean both.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const contentType = await getContentTypeByApiId(taproot.db.db, Astro.params.apiId!);
+if (!contentType) return new Response('Content type not found', { status: 404 });
+
+// A singleton has exactly one item and no list worth showing; its sidebar entry opens the editor.
+if (contentType.kind === 'singleton') {
+  return Astro.redirect(`/admin/singleton/${contentType.api_id}`);
+}
+
+const search = Astro.url.searchParams.get('q') ?? '';
+
+const { items, total } = await listItems(taproot.db.db, {
+  contentTypeId: contentType.id,
+  search: search || undefined,
+  limit: 200,
+});
+
+const isHierarchical = contentType.kind === 'page';
+---
+
+<AdminLayout
+  title={contentType.name_plural}
+  user={user}
+  breadcrumbs={[{ label: contentType.name_plural }]}
+>
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">{contentType.name_plural}</h1>
+      <p class="mt-1 max-w-prose text-sm text-content-muted">
+        {total} {total === 1 ? 'item' : 'items'}
+        {contentType.description && ` · ${contentType.description}`}
+      </p>
+    </div>
+
+    {
+      canEditContent(user) && (
+        <a
+          href={`/admin/content/new?type=${contentType.id}`}
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          New {contentType.name.toLowerCase()}
+        </a>
+      )
+    }
+  </header>
+
+  <form method="get" class="mb-6 flex flex-wrap items-end gap-3">
+    <div class="min-w-48 flex-1 sm:max-w-sm">
+      <label for="q" class="block text-sm font-medium">
+        Search {contentType.name_plural.toLowerCase()}
+      </label>
+      <input
+        id="q"
+        name="q"
+        type="search"
+        value={search}
+        placeholder="Title or path"
+        class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      />
+    </div>
+    <button
+      type="submit"
+      class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+    >
+      Search
+    </button>
+  </form>
+
+  {
+    items.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        {search
+          ? `No ${contentType.name_plural.toLowerCase()} match that search.`
+          : `No ${contentType.name_plural.toLowerCase()} yet.`}
+      </p>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only-focusable">
+            {contentType.name_plural}, ordered by path
+          </caption>
+          <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Title
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Path
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Status
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr class="border-t border-border">
+                <th scope="row" class="px-4 py-2.5 font-medium">
+                  {/*
+                    Indentation shows the tree visually; the path column carries the same
+                    information non-visually, so hierarchy is never conveyed by appearance alone.
+                    Flat types get no indent because there is none to convey.
+                  */}
+                  <span
+                    style={isHierarchical ? `padding-left:${item.depth * 1.25}rem` : undefined}
+                    class="inline-block"
+                  >
+                    <a href={`/admin/content/${item.id}`} class="hover:underline">
+                      {item.title}
+                    </a>
+                  </span>
+                </th>
+                <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{item.path}</td>
+                <td class="px-4 py-2.5">
+                  <span class="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
+                    {item.status.replace('_', ' ')}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</AdminLayout>

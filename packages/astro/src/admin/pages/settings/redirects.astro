@@ -16,7 +16,11 @@ const redirects = await taproot.db.db
 const autoCount = redirects.filter((r) => r.source === 'auto').length;
 ---
 
-<AdminLayout title="Redirects" user={user} breadcrumbs={[{ label: 'Redirects' }]}>
+<AdminLayout
+  title="Redirects"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Redirects' }]}
+>
   <header class="mb-6">
     <h1 class="text-2xl font-semibold tracking-tight">Redirects</h1>
     <p class="mt-1 max-w-prose text-sm text-content-muted">

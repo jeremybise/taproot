@@ -72,22 +72,34 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
         addMiddleware({ entrypoint: '@taproot/astro/runtime/middleware', order: 'pre' });
 
         // --- Admin ---------------------------------------------------------
+        /**
+         * Admin routes.
+         *
+         * Content types are their own destinations rather than filters on one list, so the
+         * per-type list needs its own URL. `/content/type/{api_id}` rather than
+         * `/content/{api_id}` because `/content/{id}` already means a content item, and one
+         * segment cannot mean both.
+         */
         const adminRoutes: [string, string][] = [
           ['', 'index'],
           ['/login', 'login'],
           ['/content', 'content/index'],
           ['/content/new', 'content/new'],
+          ['/content/type/[apiId]', 'content/type/[apiId]'],
           ['/content/[id]', 'content/[id]'],
-          ['/types', 'types/index'],
-          ['/types/new', 'types/new'],
-          ['/types/[id]', 'types/[id]'],
+          ['/singleton/[apiId]', 'singleton/[apiId]'],
           ['/media', 'media/index'],
           ['/taxonomies', 'taxonomies/index'],
           ['/taxonomies/[id]', 'taxonomies/[id]'],
           ['/menus', 'menus/index'],
           ['/menus/[id]', 'menus/[id]'],
-          ['/redirects', 'redirects/index'],
           ['/settings', 'settings/index'],
+          ['/settings/types', 'settings/types/index'],
+          ['/settings/types/new', 'settings/types/new'],
+          ['/settings/types/[id]', 'settings/types/[id]'],
+          ['/settings/redirects', 'settings/redirects'],
+          ['/settings/users', 'settings/users'],
+          ['/settings/system', 'settings/system'],
         ];
 
         for (const [suffix, file] of adminRoutes) {
@@ -105,6 +117,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/auth/[provider]', 'auth/[provider]'],
           ['/auth/callback/[provider]', 'auth/callback/[provider]'],
           ['/content-types', 'content-types/index'],
+          ['/content-types/reorder', 'content-types/reorder'],
           ['/content-types/[id]', 'content-types/[id]'],
           ['/content-types/[id]/fields', 'content-types/[id]/fields'],
           ['/fields/[id]', 'fields/[id]'],
@@ -121,6 +134,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/menus', 'menus/index'],
           ['/menus/[id]', 'menus/[id]'],
           ['/menus/[id]/items', 'menus/[id]/items'],
+          ['/menus/[id]/reorder', 'menus/[id]/reorder'],
           ['/menu-items/[itemId]', 'menu-items/[itemId]'],
         ];
 

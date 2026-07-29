@@ -1,0 +1,62 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getTaproot, loginRedirect, canManageUsers } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageUsers(user)) return Astro.redirect('/admin/settings');
+
+const users = await taproot.db.db
+  .selectFrom('users')
+  .selectAll()
+  .orderBy('created_at')
+  .execute();
+---
+
+<AdminLayout
+  title="Users & access"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Users & access' }]}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Users &amp; access</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      {users.length} {users.length === 1 ? 'person' : 'people'} can sign in.
+    </p>
+  </header>
+
+  <div class="overflow-x-auto rounded-lg border border-border">
+    <table class="w-full text-left text-sm">
+      <caption class="sr-only-focusable">Users with access to this site</caption>
+      <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+        <tr>
+          <th scope="col" class="px-4 py-2.5 font-medium">Name</th>
+          <th scope="col" class="px-4 py-2.5 font-medium">Email</th>
+          <th scope="col" class="px-4 py-2.5 font-medium">Role</th>
+          <th scope="col" class="px-4 py-2.5 font-medium">Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          users.map((row) => (
+            <tr class="border-t border-border">
+              <th scope="row" class="px-4 py-2.5 font-medium">
+                {row.name}
+              </th>
+              <td class="px-4 py-2.5 text-content-muted">{row.email}</td>
+              <td class="px-4 py-2.5 capitalize">{row.role}</td>
+              <td class="px-4 py-2.5">{row.is_active ? 'Yes' : 'No'}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-4 max-w-prose text-sm text-content-subtle">
+    Role editing, invitations, and the scoped permission model — where a role is narrowed to a
+    content type, a department, or specific items — arrive in Phase 3. Until then every user has a
+    single role across the whole site.
+  </p>
+</AdminLayout>

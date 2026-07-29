@@ -42,6 +42,9 @@ toolchain — Taproot has zero native dependencies.
 - **Taxonomies.** Term trees any content type can use, attached by giving the type a taxonomy
   field. "Every item anywhere under this branch" is one indexed query rather than a scan over
   parsed JSON. Classification only — a term never decides who may edit content.
+- **An admin shaped by your content model.** Every content type is its own sidebar entry in an
+  order you set, singletons open straight into their editor, and Settings is a hub rather than one
+  long scrolling page.
 - **Menus that reference rather than record.** A menu item points at a page, so moving that page
   updates the navigation and unpublishing it removes the entry — without anyone editing the menu.
   Menu items can also point at taxonomy terms, though whether a term has a public page at all is

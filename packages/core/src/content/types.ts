@@ -1,5 +1,6 @@
 import type { Kysely } from 'kysely';
 
+import type { BatchStatement } from '../db/batch.js';
 import type { ContentTypeRow, Database, FieldRow } from '../db/schema.js';
 import { fromBool, now, stringifyJson } from '../db/values.js';
 import { newId } from '../ids.js';
@@ -31,8 +32,30 @@ export class ContentTypeError extends Error {
   }
 }
 
+/**
+ * Every content type, in sidebar order.
+ *
+ * `position` then `name`: a site that has never reordered has all-zero positions and so keeps an
+ * alphabetical list, which is what this returned before ordering existed.
+ */
 export async function listContentTypes(db: Kysely<Database>): Promise<ContentTypeRow[]> {
-  return db.selectFrom('content_types').selectAll().orderBy('name').execute();
+  return db.selectFrom('content_types').selectAll().orderBy('position').orderBy('name').execute();
+}
+
+/** Persist a new sidebar order. Positions are rewritten to match array order. */
+export async function reorderContentTypes(
+  handle: { db: Kysely<Database>; batch(statements: BatchStatement[]): Promise<void> },
+  orderedIds: string[],
+): Promise<void> {
+  const timestamp = now();
+  await handle.batch(
+    orderedIds.map((id, index) =>
+      handle.db
+        .updateTable('content_types')
+        .set({ position: index, updated_at: timestamp })
+        .where('id', '=', id),
+    ),
+  );
 }
 
 export async function getContentType(
@@ -102,12 +125,24 @@ export async function createContentType(
     // Only collection types are type-prefixed; page and singleton types have no prefix.
     url_prefix: input.kind === 'collection' ? (input.url_prefix ?? input.api_id) : null,
     title_field: input.title_field ?? null,
+    // Appended to the end of the sidebar rather than dropped at 0, so creating a type does not
+    // silently reshuffle an order someone already arranged.
+    position: await nextContentTypePosition(db),
     created_at: timestamp,
     updated_at: timestamp,
   };
 
   await db.insertInto('content_types').values(row).execute();
   return row;
+}
+
+async function nextContentTypePosition(db: Kysely<Database>): Promise<number> {
+  const row = await db
+    .selectFrom('content_types')
+    .select((eb) => eb.fn.max<number>('position').as('max'))
+    .executeTakeFirst();
+
+  return row?.max === null || row?.max === undefined ? 0 : Number(row.max) + 1;
 }
 
 /**

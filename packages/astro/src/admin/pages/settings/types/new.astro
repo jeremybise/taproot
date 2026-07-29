@@ -1,7 +1,7 @@
 ---
-import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { contentTypeInputSchema, createContentType, slugify } from '@taproot/core';
-import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
 if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
@@ -32,7 +32,7 @@ if (Astro.request.method === 'POST') {
   } else {
     try {
       const created = await createContentType(taproot.db.db, parsed.data);
-      return Astro.redirect(`/admin/types/${created.id}?created=1`);
+      return Astro.redirect(`/admin/settings/types/${created.id}?created=1`);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : 'Could not create the content type.';
     }
@@ -61,7 +61,11 @@ const kinds = [
 <AdminLayout
   title="New content type"
   user={user}
-  breadcrumbs={[{ label: 'Content types', href: '/admin/types' }, { label: 'New' }]}
+  breadcrumbs={[
+    { label: 'Settings', href: '/admin/settings' },
+    { label: 'Content types', href: '/admin/settings/types' },
+    { label: 'New' },
+  ]}
 >
   <h1 class="mb-6 text-2xl font-semibold tracking-tight">New content type</h1>
 
@@ -183,7 +187,7 @@ const kinds = [
         Create content type
       </button>
       <a
-        href="/admin/types"
+        href="/admin/settings/types"
         class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
       >
         Cancel

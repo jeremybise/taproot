@@ -1,112 +1,105 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { getConfiguredProviders } from '@taproot/core';
-import { getTaproot, loginRedirect, canManageUsers } from '../../../runtime/guards.js';
+import { listContentTypes } from '@taproot/core';
+import {
+  getTaproot,
+  loginRedirect,
+  canManageSchema,
+  canManageUsers,
+} from '../../../runtime/guards.js';
 
+/**
+ * Settings is a hub, not a page of stacked sections.
+ *
+ * The single scrolling page mixed things with nothing to do with each other — the content model,
+ * URL housekeeping, who has access, and read-only diagnostics. Splitting them gives each a URL
+ * worth linking to and stops an editor scrolling past three unrelated tables to reach the one
+ * they wanted.
+ */
 const taproot = getTaproot(Astro.locals);
 if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
 const user = taproot.user;
 
-const providers = getConfiguredProviders(taproot.auth);
+const typeCount = canManageSchema(user) ? (await listContentTypes(taproot.db.db)).length : 0;
 
-const users = canManageUsers(user)
-  ? await taproot.db.db.selectFrom('users').selectAll().orderBy('created_at').execute()
-  : [];
+const redirectCount = (
+  await taproot.db.db
+    .selectFrom('redirects')
+    .select((eb) => eb.fn.countAll<number>().as('n'))
+    .executeTakeFirst()
+)?.n;
 
-const environment = [
-  { label: 'Database driver', value: taproot.db.driver },
-  { label: 'Media storage', value: taproot.storage.name },
-  { label: 'OAuth providers', value: providers.length > 0 ? providers.join(', ') : 'none' },
+const userCount = canManageUsers(user)
+  ? (
+      await taproot.db.db
+        .selectFrom('users')
+        .select((eb) => eb.fn.countAll<number>().as('n'))
+        .executeTakeFirst()
+    )?.n
+  : 0;
+
+const sections = [
+  ...(canManageSchema(user)
+    ? [
+        {
+          href: '/admin/settings/types',
+          title: 'Content types',
+          description:
+            'The shape of your content — types, their fields, and the order they appear in the sidebar.',
+          meta: `${typeCount} ${typeCount === 1 ? 'type' : 'types'}`,
+        },
+      ]
+    : []),
   {
-    label: 'Development sign-in',
-    value: taproot.auth.devCredentialsEnabled ? 'enabled (local only)' : 'disabled',
+    href: '/admin/settings/redirects',
+    title: 'Redirects',
+    description:
+      'Old paths pointing at new ones. Written automatically whenever content moves.',
+    meta: `${Number(redirectCount ?? 0)} ${Number(redirectCount ?? 0) === 1 ? 'redirect' : 'redirects'}`,
   },
-  { label: 'Secure cookies', value: taproot.auth.secureCookies ? 'yes' : 'no (local http)' },
+  ...(canManageUsers(user)
+    ? [
+        {
+          href: '/admin/settings/users',
+          title: 'Users & access',
+          description: 'Who can sign in, and what each of them may do.',
+          meta: `${Number(userCount ?? 0)} ${Number(userCount ?? 0) === 1 ? 'user' : 'users'}`,
+        },
+      ]
+    : []),
+  {
+    href: '/admin/settings/system',
+    title: 'System',
+    description: 'Environment, database, storage, and your own account.',
+    meta: taproot.db.driver,
+  },
 ];
 ---
 
 <AdminLayout title="Settings" user={user} breadcrumbs={[{ label: 'Settings' }]}>
-  <h1 class="mb-6 text-2xl font-semibold tracking-tight">Settings</h1>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      Configuration that shapes the site rather than its content.
+    </p>
+  </header>
 
-  <section aria-labelledby="env-heading" class="mb-10">
-    <h2 id="env-heading" class="mb-3 text-base font-semibold">Environment</h2>
-    <dl class="divide-y divide-border overflow-hidden rounded-lg border border-border">
-      {
-        environment.map((row) => (
-          <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
-            <dt class="text-content-muted">{row.label}</dt>
-            <dd class="font-mono text-xs">{row.value}</dd>
-          </div>
-        ))
-      }
-    </dl>
-  </section>
-
-  {
-    canManageUsers(user) && (
-      <section aria-labelledby="users-heading" class="mb-10">
-        <h2 id="users-heading" class="mb-3 text-base font-semibold">Users</h2>
-        <div class="overflow-x-auto rounded-lg border border-border">
-          <table class="w-full text-left text-sm">
-            <caption class="sr-only-focusable">Users with access to this site</caption>
-            <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
-              <tr>
-                <th scope="col" class="px-4 py-2.5 font-medium">
-                  Name
-                </th>
-                <th scope="col" class="px-4 py-2.5 font-medium">
-                  Email
-                </th>
-                <th scope="col" class="px-4 py-2.5 font-medium">
-                  Role
-                </th>
-                <th scope="col" class="px-4 py-2.5 font-medium">
-                  Active
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((row) => (
-                <tr class="border-t border-border">
-                  <th scope="row" class="px-4 py-2.5 font-medium">
-                    {row.name}
-                  </th>
-                  <td class="px-4 py-2.5 text-content-muted">{row.email}</td>
-                  <td class="px-4 py-2.5 capitalize">{row.role}</td>
-                  <td class="px-4 py-2.5">{row.is_active ? 'Yes' : 'No'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p class="mt-3 max-w-prose text-sm text-content-subtle">
-          Role editing, invitations, and the scoped permission model — where a role is narrowed to a
-          content type, a department, or specific items — arrive in Phase 3. Phase
-          0 uses a single global role per user.
-        </p>
-      </section>
-    )
-  }
-
-  <section aria-labelledby="account-heading">
-    <h2 id="account-heading" class="mb-3 text-base font-semibold">Your account</h2>
-    <dl class="divide-y divide-border overflow-hidden rounded-lg border border-border">
-      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
-        <dt class="text-content-muted">Name</dt>
-        <dd>{user.name}</dd>
-      </div>
-      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
-        <dt class="text-content-muted">Email</dt>
-        <dd>{user.email}</dd>
-      </div>
-      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
-        <dt class="text-content-muted">Role</dt>
-        <dd class="capitalize">{user.role}</dd>
-      </div>
-      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
-        <dt class="text-content-muted">Two-factor authentication</dt>
-        <dd class="text-content-subtle">Enrolment UI arrives in Phase 1</dd>
-      </div>
-    </dl>
-  </section>
+  <ul class="grid gap-4 sm:grid-cols-2">
+    {
+      sections.map((section) => (
+        <li>
+          <a
+            href={section.href}
+            class="block h-full rounded-lg border border-border bg-surface-raised px-5 py-4 transition-colors hover:border-border-strong"
+          >
+            <span class="flex items-baseline justify-between gap-3">
+              <span class="font-medium">{section.title}</span>
+              <span class="shrink-0 font-mono text-xs text-content-subtle">{section.meta}</span>
+            </span>
+            <span class="mt-1 block text-sm text-content-muted">{section.description}</span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
 </AdminLayout>

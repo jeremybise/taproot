@@ -1,7 +1,7 @@
 ---
 import '../admin.css';
-import type { User } from '@taproot/core';
-import { canManageSchema } from '../../runtime/guards.js';
+import { listContentTypes, type User } from '@taproot/core';
+import { getTaproot, canManageSchema } from '../../runtime/guards.js';
 
 interface Props {
   title: string;
@@ -15,23 +15,82 @@ interface Props {
 const { title, user, breadcrumbs = [], flash = null } = Astro.props;
 const path = Astro.url.pathname;
 
-const nav = [
-  { href: '/admin', label: 'Dashboard', exact: true },
-  { href: '/admin/content', label: 'Content' },
-  { href: '/admin/media', label: 'Media' },
-  { href: '/admin/taxonomies', label: 'Taxonomies' },
-  ...(canManageSchema(user)
+/**
+ * The sidebar is built from the content types that exist, not from a fixed list.
+ *
+ * Each type is its own destination rather than a filter on one shared list, because that is how
+ * editors think about them: Pages and Events are different places, not two settings of the same
+ * screen. Their order is the site's own (`content_types.position`), since which one an editor
+ * reaches first every day is a judgement about that site.
+ *
+ * Singletons are separated because they behave differently — there is no list to land on, so the
+ * link opens the editor directly.
+ */
+const taproot = getTaproot(Astro.locals);
+const contentTypes = await listContentTypes(taproot.db.db);
+
+const listable = contentTypes.filter((type) => type.kind !== 'singleton');
+const singletons = contentTypes.filter((type) => type.kind === 'singleton');
+
+interface NavItem {
+  href: string;
+  label: string;
+  exact?: boolean;
+}
+
+interface NavGroup {
+  id: string;
+  label: string;
+  items: NavItem[];
+}
+
+const groups: NavGroup[] = [
+  {
+    id: 'nav-content',
+    label: 'Content',
+    items: [
+      ...listable.map((type) => ({
+        href: `/admin/content/type/${type.api_id}`,
+        label: type.name_plural,
+      })),
+      // Kept last: per-type lists are the way in, and searching across every type is the
+      // occasional case rather than the default.
+      { href: '/admin/content', label: 'All content', exact: true },
+    ],
+  },
+  ...(singletons.length > 0
     ? [
-        { href: '/admin/menus', label: 'Menus' },
-        { href: '/admin/types', label: 'Content types' },
+        {
+          id: 'nav-singletons',
+          label: 'Singletons',
+          items: singletons.map((type) => ({
+            href: `/admin/singleton/${type.api_id}`,
+            label: type.name,
+          })),
+        },
       ]
     : []),
-  { href: '/admin/redirects', label: 'Redirects' },
-  { href: '/admin/settings', label: 'Settings' },
+  {
+    id: 'nav-library',
+    label: 'Library',
+    items: [
+      { href: '/admin/media', label: 'Media' },
+      { href: '/admin/taxonomies', label: 'Taxonomies' },
+      ...(canManageSchema(user) ? [{ href: '/admin/menus', label: 'Menus' }] : []),
+    ],
+  },
 ];
 
-const isCurrent = (item: (typeof nav)[number]) =>
+const isCurrent = (item: NavItem) =>
   item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
+
+const navLinkClass = (current: boolean) =>
+  [
+    'block rounded-md px-3 py-2 text-sm transition-colors',
+    current
+      ? 'bg-accent-subtle font-medium text-content'
+      : 'text-content-muted hover:bg-surface-raised hover:text-content',
+  ].join(' ');
 ---
 
 <html lang="en">
@@ -70,29 +129,67 @@ const isCurrent = (item: (typeof nav)[number]) =>
             </a>
           </div>
 
-          <nav aria-label="Main" class="flex-1 px-3">
+          <!--
+            One navigation landmark containing labelled groups, rather than a landmark per group.
+            Four landmarks would clutter a screen reader's landmark list; `aria-labelledby` on each
+            list gets the grouping announced without that cost, and the headings are visible so the
+            same structure is available to everyone.
+          -->
+          <nav aria-label="Main" class="flex-1 overflow-y-auto px-3 pb-4">
             <ul class="space-y-0.5">
-              {
-                nav.map((item) => {
-                  const current = isCurrent(item);
-                  return (
-                    <li>
-                      <a
-                        href={item.href}
-                        aria-current={current ? 'page' : undefined}
-                        class:list={[
-                          'block rounded-md px-3 py-2 text-sm transition-colors',
-                          current
-                            ? 'bg-accent-subtle font-medium text-content'
-                            : 'text-content-muted hover:bg-surface-raised hover:text-content',
-                        ]}
-                      >
-                        {item.label}
-                      </a>
-                    </li>
-                  );
-                })
-              }
+              <li>
+                <a
+                  href="/admin"
+                  aria-current={path === '/admin' ? 'page' : undefined}
+                  class={navLinkClass(path === '/admin')}
+                >
+                  Dashboard
+                </a>
+              </li>
+            </ul>
+
+            {
+              groups.map((group) => (
+                <div class="mt-5">
+                  <h2
+                    id={group.id}
+                    class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-content-subtle"
+                  >
+                    {group.label}
+                  </h2>
+                  <ul aria-labelledby={group.id} class="space-y-0.5">
+                    {group.items.map((item) => {
+                      const current = isCurrent(item);
+                      return (
+                        <li>
+                          <a
+                            href={item.href}
+                            aria-current={current ? 'page' : undefined}
+                            class={navLinkClass(current)}
+                          >
+                            {item.label}
+                          </a>
+                        </li>
+                      );
+                    })}
+                    {group.items.length === 0 && (
+                      <li class="px-3 py-2 text-sm text-content-subtle">Nothing yet</li>
+                    )}
+                  </ul>
+                </div>
+              ))
+            }
+
+            <ul class="mt-5 space-y-0.5">
+              <li>
+                <a
+                  href="/admin/settings"
+                  aria-current={path.startsWith('/admin/settings') ? 'page' : undefined}
+                  class={navLinkClass(path.startsWith('/admin/settings'))}
+                >
+                  Settings
+                </a>
+              </li>
             </ul>
           </nav>
 

@@ -96,6 +96,8 @@ export interface ContentTypesTable {
   url_prefix: string | null;
   /** Field `api_id` whose value is shown as the item's label in admin lists. */
   title_field: string | null;
+  /** Order in the admin sidebar, where each content type is its own entry. Ties break by name. */
+  position: number;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
