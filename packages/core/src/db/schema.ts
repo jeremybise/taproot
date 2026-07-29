@@ -209,6 +209,35 @@ export interface RedirectsTable {
   created_at: Timestamp;
 }
 
+/** What produced a revision. A restore appends a new revision rather than rewinding the log. */
+export type RevisionReason = 'create' | 'save' | 'restore';
+
+/**
+ * An append-only snapshot of a content item's authored content, taken after every save.
+ *
+ * Only authored content is captured — not `path`, `depth`, or `position`, which are derived from
+ * the slug and parent at write time. A restore recomputes them through the normal update path so
+ * descendants and redirects stay consistent; `path` is kept for display alone.
+ */
+export interface RevisionsTable {
+  id: string;
+  content_item_id: string;
+  /** 1-based and monotonic per item, unique with `content_item_id`. Never reused. */
+  revision_number: number;
+  title: string;
+  slug: string;
+  /** Where the item lived when the snapshot was taken. Display only; never restored verbatim. */
+  path: string;
+  status: ContentStatus;
+  data: JsonText;
+  seo: JsonText;
+  reason: RevisionReason;
+  /** The revision number this one restored, set only when `reason` is `restore`. */
+  restored_from: number | null;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
 // ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
@@ -216,7 +245,7 @@ export interface RedirectsTable {
 /**
  * The full Kysely database interface.
  *
- * Phase 1 adds `revisions`, `taxonomies`, `terms`, `taxonomy_assignments`, and `menus`.
+ * Phase 1 still adds `taxonomies`, `terms`, `taxonomy_assignments`, and `menus`.
  * Phase 3 adds `role_assignments` and `audit_log`. Phase 3.5 adds `releases`.
  */
 export interface Database {
@@ -230,6 +259,7 @@ export interface Database {
   content_items: ContentItemsTable;
   media: MediaTable;
   redirects: RedirectsTable;
+  revisions: RevisionsTable;
 }
 
 export type User = Selectable<UsersTable>;
@@ -257,3 +287,6 @@ export type MediaUpdate = Updateable<MediaTable>;
 
 export type RedirectRow = Selectable<RedirectsTable>;
 export type NewRedirect = Insertable<RedirectsTable>;
+
+export type RevisionRow = Selectable<RevisionsTable>;
+export type NewRevision = Insertable<RevisionsTable>;

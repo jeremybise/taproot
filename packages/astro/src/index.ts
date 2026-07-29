@@ -106,6 +106,8 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/fields/[id]', 'fields/[id]'],
           ['/items', 'items/index'],
           ['/items/[id]', 'items/[id]'],
+          ['/items/[id]/revisions', 'items/[id]/revisions'],
+          ['/items/[id]/revisions/[revisionId]/restore', 'items/[id]/revisions/[revisionId]/restore'],
           ['/media', 'media/index'],
           ['/media/[id]', 'media/[id]'],
         ];

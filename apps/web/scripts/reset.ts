@@ -24,7 +24,29 @@ const env = loadEnv();
 const location = sqlitePath(env);
 
 for (const suffix of ['', '-wal', '-shm', '-journal']) {
-  rmSync(`${location}${suffix}`, { force: true });
+  try {
+    rmSync(`${location}${suffix}`, { force: true });
+  } catch (error) {
+    /**
+     * Windows holds an exclusive lock on an open SQLite file, so a running dev server makes the
+     * delete fail with EPERM. On Linux and macOS the unlink succeeds and the running server keeps
+     * writing to a file nobody can find any more, which is worse but silent.
+     *
+     * Either way the fix is the same, and a raw EPERM stack does not suggest it.
+     */
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EPERM' || code === 'EBUSY') {
+      console.error(
+        `Cannot delete ${location} — something still has it open.\n\n` +
+          'The dev server is the usual culprit. Astro 7 daemonises it, so it can be running even ' +
+          'with no terminal attached:\n\n' +
+          '  npm run astro --workspace=@taproot/web -- dev stop\n\n' +
+          'then run db:reset again.',
+      );
+      process.exit(1);
+    }
+    throw error;
+  }
 }
 
 console.log(`Removed ${location}`);

@@ -1,6 +1,6 @@
 import type { APIContext } from 'astro';
 import type { User } from '@taproot/core';
-import { ContentItemError, ContentTypeError } from '@taproot/core';
+import { ContentItemError, ContentTypeError, RevisionError } from '@taproot/core';
 import { z } from 'zod';
 
 import { getTaproot, type Role, hasRole } from '../runtime/guards.js';
@@ -111,6 +111,13 @@ export function mapError(error: unknown): Response {
       default:
         return apiError(400, error.message);
     }
+  }
+
+  if (error instanceof RevisionError) {
+    // `wrong_item` is a 404 rather than a 403: the revision exists, but not at the URL it was
+    // requested from, and confirming it exists elsewhere tells a caller something they should not
+    // learn from a mistyped id.
+    return apiError(404, error.message);
   }
 
   if (error instanceof z.ZodError) {

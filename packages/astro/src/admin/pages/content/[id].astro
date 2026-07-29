@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import ItemEditor from '../../islands/ItemEditor.tsx';
+import RevisionHistory from '../../components/RevisionHistory.astro';
 import { getContentType, getItem, listItems } from '@taproot/core';
 import {
   getTaproot,
@@ -31,13 +32,23 @@ if (contentType.kind === 'page') {
 }
 
 const saved = Astro.url.searchParams.get('saved') === '1';
+const updated = Astro.url.searchParams.get('updated') === '1';
+const restored = Astro.url.searchParams.get('restored');
+
+const flash = saved
+  ? 'Content item created.'
+  : updated
+    ? 'Changes saved.'
+    : restored
+      ? `Restored revision ${restored}. The restore was recorded as a new revision.`
+      : null;
 ---
 
 <AdminLayout
   title={item.title}
   user={user}
   breadcrumbs={[{ label: 'Content', href: '/admin/content' }, { label: item.title }]}
-  flash={saved ? 'Content item created.' : null}
+  flash={flash}
 >
   <header class="mb-6 flex flex-wrap items-start justify-between gap-3">
     <div>
@@ -92,5 +103,12 @@ const saved = Astro.url.searchParams.get('saved') === '1';
     parents={parents}
     canPublish={canPublishContent(user)}
     isHierarchical={contentType.kind === 'page'}
+  />
+
+  <RevisionHistory
+    db={taproot.db.db}
+    itemId={item.id}
+    fields={contentType.fields}
+    canEdit={canEditContent(user)}
   />
 </AdminLayout>

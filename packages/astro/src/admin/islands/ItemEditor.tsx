@@ -101,8 +101,19 @@ export default function ItemEditor({
         return;
       }
 
-      setMessage('Saved.');
-      if (body?.item) setSlug(body.item.path.split('/').pop() ?? slug);
+      /**
+       * Reload rather than reporting success in place.
+       *
+       * Everything around this form is server-rendered from the item as it was when the page
+       * loaded: the heading, the breadcrumb, the path in the sub-header, and the revision history
+       * below. Saving used to leave all of them showing the previous values — a rename displayed
+       * the old title next to the new one until someone reloaded by hand.
+       *
+       * Re-rendering them from the island would mean maintaining a second copy of that markup and
+       * hand-managing the focus and announcement that a real navigation gives for free. The flash
+       * lands in the layout's live region on the way back.
+       */
+      window.location.href = `/admin/content/${itemId}?updated=1`;
     } catch {
       setMessage('Could not reach the server. Your changes have not been saved.');
     } finally {

@@ -4,6 +4,7 @@ import type { Kysely } from 'kysely';
 
 import type { Database } from '../schema.js';
 import * as m0001 from './0001_init.js';
+import * as m0002 from './0002_revisions.js';
 
 /**
  * The migration registry.
@@ -18,6 +19,7 @@ import * as m0001 from './0001_init.js';
  */
 export const migrations: Record<string, Migration> = {
   '0001_init': m0001,
+  '0002_revisions': m0002,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

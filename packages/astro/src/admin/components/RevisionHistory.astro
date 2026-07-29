@@ -1,0 +1,135 @@
+---
+import { listRevisions, revisionChanges } from '@taproot/core';
+import type { FieldRow } from '@taproot/core';
+import type { Kysely } from 'kysely';
+
+interface Props {
+  db: Kysely<any>;
+  itemId: string;
+  fields: FieldRow[];
+  /** Restoring changes content, so the button is hidden from roles that cannot edit. */
+  canEdit: boolean;
+}
+
+const { db, itemId, fields, canEdit } = Astro.props;
+
+const { revisions, total } = await listRevisions(db, itemId, { limit: 25 });
+
+/**
+ * Rendered as a server-side list rather than a React island.
+ *
+ * Everything here is a link, a table, and a form POST — no interaction that needs client state.
+ * Keeping it out of an island means the restore action is a real form submission that works
+ * before hydration and needs no hand-built focus management to stay accessible.
+ */
+const entries = revisions.map((revision, index) => ({
+  revision,
+  // Newest-first, so the next entry is the older one and therefore the predecessor to diff against.
+  changes: revisionChanges(revisions[index + 1], revision, fields),
+  isCurrent: index === 0,
+}));
+
+const formatWhen = (iso: string) =>
+  new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
+    new Date(iso),
+  );
+
+const describeReason = (reason: string, restoredFrom: number | null) => {
+  if (reason === 'create') return 'Created';
+  if (reason === 'restore') return `Restored revision ${restoredFrom}`;
+  return 'Saved';
+};
+---
+
+<section aria-labelledby="revision-history-heading" class="mt-10">
+  <header class="mb-3">
+    <h2 id="revision-history-heading" class="text-lg font-semibold tracking-tight">History</h2>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      {
+        total === 1
+          ? 'One revision so far. Every save adds another.'
+          : `${total} revisions, newest first.`
+      }
+      {' '}Restoring brings back that version's content and records the restore as a new revision,
+      so nothing is lost and a restore can itself be undone.
+    </p>
+  </header>
+
+  <div class="overflow-x-auto rounded-lg border border-border">
+    <table class="w-full text-left text-sm">
+      <caption class="sr-only-focusable">Revision history, newest first</caption>
+      <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+        <tr>
+          <th scope="col" class="px-4 py-2.5 font-medium">Revision</th>
+          <th scope="col" class="px-4 py-2.5 font-medium">When</th>
+          <th scope="col" class="px-4 py-2.5 font-medium">Who</th>
+          <th scope="col" class="px-4 py-2.5 font-medium">Changed</th>
+          <th scope="col" class="px-4 py-2.5 font-medium">
+            <span class="sr-only-focusable">Actions</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          entries.map(({ revision, changes, isCurrent }) => (
+            <tr class="border-t border-border">
+              <th scope="row" class="px-4 py-2.5 font-normal tabular-nums whitespace-nowrap">
+                {revision.revision_number}
+                {isCurrent && (
+                  <span class="ml-2 rounded-full border border-accent bg-accent-subtle px-2 py-0.5 text-xs">
+                    Current
+                  </span>
+                )}
+              </th>
+              <td class="px-4 py-2.5 whitespace-nowrap text-content-muted">
+                <time datetime={revision.created_at}>{formatWhen(revision.created_at)}</time>
+              </td>
+              <td class="px-4 py-2.5 text-content-muted">
+                {revision.author_name ?? revision.author_email ?? 'Unknown'}
+              </td>
+              <td class="px-4 py-2.5 text-content-muted">
+                {changes.length === 0 ? (
+                  describeReason(revision.reason, revision.restored_from)
+                ) : (
+                  <>
+                    <span class="text-content">
+                      {describeReason(revision.reason, revision.restored_from)}
+                    </span>
+                    {' — '}
+                    {changes.map((change) => change.label).join(', ')}
+                  </>
+                )}
+              </td>
+              <td class="px-4 py-2.5 text-right">
+                {!isCurrent && canEdit && (
+                  <form method="post" action={`/api/taproot/items/${itemId}/revisions/${revision.id}/restore`}>
+                    <button
+                      type="submit"
+                      class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+                    >
+                      Restore
+                      {/*
+                        Every row's button reads "Restore" on its own, which is ambiguous out of
+                        context — a screen reader listing the page's buttons would announce the
+                        same name repeatedly. The revision number disambiguates them.
+                      */}
+                      <span class="sr-only-focusable"> revision {revision.revision_number}</span>
+                    </button>
+                  </form>
+                )}
+              </td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  {
+    total > entries.length && (
+      <p class="mt-2 text-sm text-content-subtle">
+        Showing the {entries.length} most recent of {total} revisions.
+      </p>
+    )
+  }
+</section>

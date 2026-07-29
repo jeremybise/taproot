@@ -8,10 +8,18 @@ import type {
   ContentTypeRow,
   Database,
   FieldRow,
+  RevisionReason,
 } from '../db/schema.js';
 import { now, parseJson, stringifyJson } from '../db/values.js';
 import { newId } from '../ids.js';
 import { validateItemData } from '../validation/fields.js';
+import {
+  buildRevisionStatement,
+  getRevision,
+  revisionSequence,
+  snapshotIsUnchanged,
+  RevisionError,
+} from './revisions.js';
 import {
   buildCollectionPath,
   buildPath,
@@ -264,7 +272,25 @@ export async function createItem(
     updated_at: timestamp,
   };
 
-  await db.insertInto('content_items').values(row).execute();
+  // Batched rather than a bare insert so the item and its first revision cannot diverge — an item
+  // whose history begins one save late is a gap that can never be reconstructed.
+  await handle.batch([
+    db.insertInto('content_items').values(row),
+    buildRevisionStatement(db, {
+      contentItemId: row.id,
+      revisionNumber: 1,
+      title: row.title,
+      slug: row.slug,
+      path: row.path,
+      status,
+      data: validation.data ?? {},
+      seo: input.seo ?? {},
+      reason: 'create',
+      userId: input.userId ?? null,
+      timestamp,
+    }),
+  ]);
+
   return hydrateItem(row);
 }
 
@@ -276,6 +302,16 @@ export interface UpdateItemInput {
   data?: Record<string, unknown>;
   seo?: SeoData;
   userId?: string | null;
+  /**
+   * How the resulting revision should be labelled. Defaults to `save`.
+   *
+   * Only `restoreRevision` sets this, to mark that a save came from restoring earlier content
+   * rather than from someone editing. It is on the input rather than a separate code path because
+   * a restore *is* an ordinary update — same validation, same path cascade, same redirects.
+   */
+  revisionReason?: RevisionReason;
+  /** The revision number being restored. Meaningful only with `revisionReason: 'restore'`. */
+  restoredFrom?: number | null;
 }
 
 /**
@@ -361,14 +397,17 @@ export async function updateItem(
     statements.push(...buildRedirectStatements(db, rewrites, timestamp));
   }
 
+  const title = input.title ?? existing.title;
+  const seo = input.seo ?? existing.seo;
+
   statements.push(
     db
       .updateTable('content_items')
       .set({
-        title: input.title ?? existing.title,
+        title,
         status,
         data: stringifyJson(data),
-        seo: stringifyJson(input.seo ?? existing.seo),
+        seo: stringifyJson(seo),
         published_at:
           status === 'published' ? (existing.published_at ?? timestamp) : existing.published_at,
         updated_by: input.userId ?? existing.updated_by,
@@ -377,20 +416,91 @@ export async function updateItem(
       .where('id', '=', id),
   );
 
+  /**
+   * Append a revision describing the item as it will be *after* this save.
+   *
+   * Both reads happen here, before the batch is submitted, because a batch cannot read its own
+   * writes. Two cases skip the append:
+   *
+   * - Nothing about the authored content changed, so the previous revision already says this.
+   * - ...unless the item has no revisions at all, which means it predates this table. Backfilling
+   *   its current state gives the history a floor to diff against instead of starting blank.
+   */
+  const sequence = await revisionSequence(db, id);
+  const after = { title, slug, status, data, seo };
+  if (sequence.count === 0 || !snapshotIsUnchanged(existing, after)) {
+    statements.push(
+      buildRevisionStatement(db, {
+        contentItemId: id,
+        revisionNumber: sequence.latest + 1,
+        ...after,
+        path,
+        reason: input.revisionReason ?? 'save',
+        restoredFrom: input.restoredFrom ?? null,
+        userId: input.userId ?? existing.updated_by,
+        timestamp,
+      }),
+    );
+  }
+
   await handle.batch(statements);
 
   return {
     ...existing,
-    title: input.title ?? existing.title,
+    title,
     slug,
     path,
     parent_id: parentId,
     depth,
     status,
     data,
-    seo: input.seo ?? existing.seo,
+    seo,
     updated_at: timestamp,
   };
+}
+
+/**
+ * Restore an item to an earlier revision.
+ *
+ * Deliberately routed through `updateItem` rather than writing the old row back directly. A
+ * revision stores the slug, so restoring one can move the page — and that has to cascade to every
+ * descendant's path and write the redirects, exactly as an ordinary rename does. Writing the
+ * snapshot back verbatim would restore the content and quietly corrupt the tree.
+ *
+ * The restore appends a new revision rather than truncating the log back to the restored point.
+ * History stays append-only, so restoring the wrong revision is itself undoable.
+ */
+export async function restoreRevision(
+  handle: TaprootDb,
+  contentType: ContentTypeRow,
+  fields: FieldRow[],
+  itemId: string,
+  revisionId: string,
+  userId?: string | null,
+): Promise<ContentItem> {
+  const revision = await getRevision(handle.db, revisionId);
+  if (!revision) {
+    throw new RevisionError(`Revision ${revisionId} not found.`, 'not_found');
+  }
+
+  // Without this an editor could restore one item's content over another's by pasting an id.
+  if (revision.content_item_id !== itemId) {
+    throw new RevisionError(
+      'That revision belongs to a different content item.',
+      'wrong_item',
+    );
+  }
+
+  return updateItem(handle, contentType, fields, itemId, {
+    title: revision.title,
+    slug: revision.slug,
+    status: revision.status,
+    data: revision.data,
+    seo: revision.seo,
+    userId,
+    revisionReason: 'restore',
+    restoredFrom: revision.revision_number,
+  });
 }
 
 export async function deleteItem(handle: TaprootDb, id: string): Promise<void> {

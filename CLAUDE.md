@@ -8,9 +8,9 @@ A DB-backed, Astro-native CMS for a campus website with many non-technical depar
 contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the relevant phase section
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
-**Status:** Phase 0 (foundation) and Phase 1A (visual content-type builder) are complete. The rest
-of Phase 1 is in progress: taxonomies, menus, revisions, SEO sidebar, singleton editing, a real
-richtext editor, and the media hotspot/crop editor.
+**Status:** Phase 0 (foundation), Phase 1A (visual content-type builder), and revisions are
+complete. The rest of Phase 1 is in progress: taxonomies, menus, SEO sidebar, singleton editing, a
+real richtext editor, and the media hotspot/crop editor.
 
 ## Commands
 
