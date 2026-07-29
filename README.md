@@ -48,6 +48,10 @@ toolchain — Taproot has zero native dependencies.
 - **Content lists built for scanning.** Colour-coded status badges, a faceted status filter whose
   counts tell you what each option would return, and created/updated columns that tighten to a
   time for today's edits and widen to a year for old ones.
+- **A rich text editor that cannot be used as an attack.** TipTap with an ARIA-pattern toolbar —
+  one tab stop, arrow keys between buttons, `aria-pressed` state. Values are sanitised **on the
+  server, on write**, through an allowlist serialiser, because the REST API accepts richtext from
+  any client and the editor is therefore not the boundary.
 - **An SEO sidebar with live previews.** Meta title, description, social image, and a noindex
   toggle — with a search-result and a shared-link preview beside them, resolved through the same
   code the public page uses, so the preview cannot drift from what actually ships. Social images
@@ -175,7 +179,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-245 tests. The ones worth knowing about:
+318 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -195,23 +199,33 @@ npm test
   filter builder, and the test is what says so.
 - SEO resolution treats a whitespace-only meta title as unset, so `"  "` cannot blank out the
   title a page actually renders.
+- Twenty-nine XSS vectors against the richtext sanitiser, written as attacks rather than examples —
+  split tags, encoded schemes, control characters inside a URL, comment smuggling. Plus an
+  idempotence check, because sanitised content is re-sanitised on every save.
+- The richtext toolbar's keyboard contract, run in jsdom. The axe script cannot see it: ProseMirror
+  needs a real DOM, so the server renders an empty placeholder and the toolbar only exists after
+  hydration.
 
 ---
 
 ## What's next
 
-The rest of Phase 1, per [SCOPE.md](SCOPE.md): rich-text editing and the media hotspot/crop
-editor. Every table Phase 1 needs now exists.
+The last of Phase 1, per [SCOPE.md](SCOPE.md): the media hotspot/crop editor. Every table Phase 1
+needs now exists.
 
 Phase 0 deliberately left seams for these rather than stubs that would need unpicking — `fields` is
 a real table, `content_items` carries `parent_id`/`path`/`depth`, the `seo` column it left empty is
 now the SEO sidebar, and every media asset already has hotspot and crop columns.
 
-Known gaps closing in the rest of Phase 1: the richtext field edits as a plain textarea (values
-round-trip correctly), the TOTP enrolment UI is not built though the core is implemented and
-tested, and image dimensions are not read on upload. The SEO panel picks a social image from a
-select rather than a media browser — the real library picker arrives with the `media` field type
-and this moves to it then. Content lists are ordered by path and cannot
+Known gaps closing in the rest of Phase 1: the TOTP enrolment UI is not built though the core is
+implemented and tested, and image dimensions are not read on upload. The SEO panel picks a social
+image from a select rather than a media browser — the real library picker arrives with the `media`
+field type and this moves to it then.
+
+The richtext editor needs JavaScript, unlike the rest of the admin. That is unavoidable for a
+document editor, and the item editor around it is already an island; the trade is noted rather than
+hidden. Underline is allowed by the sanitiser but has no toolbar button, because underlined text
+that is not a link is a usability problem — pasted underlines survive, new ones are not encouraged. Content lists are ordered by path and cannot
 be sorted by date — for a hierarchical type the path order *is* the tree, so a date sort would
 leave the indentation describing a nesting the rows no longer follow.
 

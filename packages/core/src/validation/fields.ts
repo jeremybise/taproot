@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { htmlToText, sanitizeHtml } from '../content/sanitizeHtml.js';
 import type { FieldRow, FieldType } from '../db/schema.js';
 import { parseJson } from '../db/values.js';
 
@@ -176,10 +177,44 @@ export function buildValueSchema(field: FieldRow): z.ZodType {
     }
 
     case 'richtext': {
-      let rich = z.string();
       const max = config.maxLength as number | undefined;
-      if (typeof max === 'number') rich = rich.max(max);
-      schema = required ? rich.min(1) : rich;
+      const allowedTags = Array.isArray(config.allowedFormats)
+        ? (config.allowedFormats as string[])
+        : undefined;
+
+      /**
+       * Sanitising happens here, inside validation, so every write path is covered by the one
+       * function that already runs on every write. The editor cannot be the boundary — the REST
+       * API takes a richtext value from any client with a session.
+       *
+       * The transform runs before the checks below, so length is measured on what will actually be
+       * stored rather than on markup that is about to be thrown away.
+       */
+      schema = z
+        .string()
+        .transform((html) => sanitizeHtml(html, { allowedTags }))
+        .superRefine((html, ctx) => {
+          /**
+           * Length and emptiness are measured on the visible text, not the markup.
+           *
+           * Two reasons. An editor asked for "300 characters" means words, not tags — counting
+           * `<strong>` against their budget is inexplicable from the outside. And an empty
+           * richtext editor emits `<p></p>`, which is 7 characters that a naive `.min(1)` on the
+           * HTML would happily accept as content, letting a required field be satisfied by
+           * nothing at all.
+           */
+          const text = htmlToText(html);
+
+          if (required && text.length === 0) {
+            ctx.addIssue({ code: 'custom', message: 'This field is required.' });
+          }
+          if (typeof max === 'number' && text.length > max) {
+            ctx.addIssue({
+              code: 'custom',
+              message: `Must be ${max} characters or fewer (currently ${text.length}).`,
+            });
+          }
+        });
       break;
     }
 

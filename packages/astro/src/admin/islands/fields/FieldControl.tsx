@@ -1,5 +1,7 @@
 import { FIELD_TYPE_META, type FieldRow } from '@taproot/core';
 
+import { RichTextEditor } from './RichTextEditor.js';
+
 /**
  * Renders a single field's input from its definition.
  *
@@ -51,6 +53,8 @@ export function FieldControl({
   const id = preview ? `preview-field-${field.id}` : `field-${field.id}`;
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
+  // Needed by controls that cannot be the target of a `<label for>` — see the richtext case.
+  const labelId = `${id}-label`;
   const config = parseConfig(field.config);
   const required = field.required === 1;
 
@@ -71,7 +75,7 @@ export function FieldControl({
 
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium">
+      <label id={labelId} htmlFor={id} className="block text-sm font-medium">
         {field.label || <span className="text-content-subtle">Untitled field</span>}
         {required && (
           <span className="ml-1 text-danger" aria-hidden="true">
@@ -292,15 +296,24 @@ export function FieldControl({
       }
 
       case 'richtext':
-        // Tranche B replaces this with TipTap. A textarea stores and round-trips the value
-        // correctly meanwhile, so nothing authored now is lost.
+        /**
+         * The label is associated with `aria-labelledby` rather than `htmlFor`.
+         *
+         * A `<label for>` only binds to a labelable element, and the editable region is a
+         * `contenteditable` div — so the outer label's `htmlFor` points at an id that exists but
+         * cannot claim it. Naming the region explicitly is what makes a screen reader announce
+         * which field it is in.
+         */
         return (
-          <textarea
-            {...shared}
-            rows={8}
-            maxLength={numberOr(config.maxLength, undefined)}
+          <RichTextEditor
+            id={id}
             value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value || null)}
+            onChange={(html) => onChange(html || null)}
+            labelledBy={labelId}
+            describedBy={describedBy || undefined}
+            invalid={Boolean(errors?.length)}
+            allowedTags={stringArrayOr(config.allowedFormats, undefined)}
+            disabled={preview}
           />
         );
 
@@ -341,6 +354,12 @@ function numberOr(value: unknown, fallback: number | undefined): number | undefi
 
 function stringOr(value: unknown, fallback: string | undefined): string | undefined {
   return typeof value === 'string' && value !== '' ? value : fallback;
+}
+
+function stringArrayOr(value: unknown, fallback: string[] | undefined): string[] | undefined {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+    ? (value as string[])
+    : fallback;
 }
 
 function toDateInputValue(value: unknown, includeTime: boolean): string {

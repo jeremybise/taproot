@@ -598,6 +598,54 @@ describe('field validation', () => {
     expect(validateItemData([], 'nope').success).toBe(false);
     expect(validateItemData([], ['a']).success).toBe(false);
   });
+
+  describe('richtext', () => {
+    const rich = (config: Record<string, unknown> = {}, required: 0 | 1 = 0) =>
+      field({ api_id: 'body', type: 'richtext', required, config: JSON.stringify(config) });
+
+    it('sanitises on the way in, not on the way out', () => {
+      // The path that matters: anything reaching the database has already been through the
+      // sanitiser, so no consumer has to remember to escape it.
+      const result = validateItemData([rich()], {
+        body: '<p>Hello</p><script>alert(1)</script><img src=x onerror=alert(1)>',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data?.body).toBe('<p>Hello</p>');
+    });
+
+    it('measures length against the visible text, not the markup', () => {
+      // Otherwise `<strong>` silently eats eight characters of an editor's stated budget.
+      const result = validateItemData([rich({ maxLength: 10 })], {
+        body: '<p><strong>0123456789</strong></p>',
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects text past the limit once tags are discounted', () => {
+      expect(validateItemData([rich({ maxLength: 5 })], { body: '<p>123456</p>' }).success).toBe(
+        false,
+      );
+    });
+
+    it('treats an empty editor as empty even though it emits markup', () => {
+      // A richtext editor produces `<p></p>` for "nothing typed". A `.min(1)` on the HTML string
+      // would accept that as satisfying a required field.
+      const result = validateItemData([rich({}, 1)], { body: '<p></p>' });
+
+      expect(result.success).toBe(false);
+      expect(result.errors.body).toBeDefined();
+    });
+
+    it('honours a narrowed allowedFormats', () => {
+      const result = validateItemData([rich({ allowedFormats: ['strong', 'em'] })], {
+        body: '<h2>Heading</h2><p><strong>kept</strong></p>',
+      });
+
+      expect(result.data?.body).toBe('Heading<strong>kept</strong>');
+    });
+  });
 });
 
 describe('deletion', () => {

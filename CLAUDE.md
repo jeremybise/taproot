@@ -9,8 +9,8 @@ contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the releva
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
 **Status:** Phase 0 (foundation), Phase 1A (visual content-type builder), revisions, taxonomies,
-menus, and the SEO sidebar are complete. The rest of Phase 1 is in progress: a real richtext editor
-and the media hotspot/crop editor.
+menus, the SEO sidebar, and the richtext editor are complete. The media hotspot/crop editor is the
+last of Phase 1.
 
 ## Commands
 
@@ -19,7 +19,7 @@ and the media hotspot/crop editor.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 245 tests |
+| `npm test` | Vitest, 318 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -125,6 +125,13 @@ creep in — off-the-shelf Radix primitives rarely fail. **Drag-and-drop must al
 alongside keyboard controls, never instead of them**; the field builder's reorder buttons are the
 pattern to follow.
 
+Where a widget only exists after hydration — the richtext toolbar is the case, since ProseMirror
+needs a real DOM and the server renders an empty placeholder — the audit cannot see it at all.
+Those get a jsdom test that runs axe on the hydrated tree plus its keyboard contract
+([RichTextEditor.test.tsx](packages/astro/src/admin/islands/fields/RichTextEditor.test.tsx)).
+Scope axe to the render container, not `document`: in isolation there is no landmark around the
+component, and the resulting `region` violation is an artifact of the test.
+
 ## Conventions
 
 **Zod 4, not 3.** Two traps that have already cost real bugs here:
@@ -155,6 +162,17 @@ many), *Block*, *Reusable Block*, *Content Type*.
 - **Every path change writes a redirect automatically.** Never make this opt-in.
 - **Content type `kind`** is `page` (nests under a parent), `collection` (flat, `url_prefix`-based),
   or `singleton` (exactly one item, no create/delete).
+- **Richtext is sanitised on write, inside `validateItemData`.** It is stored as HTML and rendered
+  with `set:html`, so an unsanitised value is stored XSS against every visitor and every editor.
+  **The editor is not the boundary — the REST API is**, because it accepts richtext from any client
+  holding a session. Never move sanitising to render time, and never add a write path that skips
+  validation. `sanitizeHtml` is an allowlist *serialiser*: it re-emits only what it understands, so
+  anything unparseable becomes nothing rather than itself.
+- **`h1` and `img` are deliberately absent from the richtext allowlist.** The page's `h1` is its
+  title, so body headings start at `h2` or the document outline breaks (WCAG 1.3.1). Images belong
+  to the media library, where they carry alt text and a hotspot.
+- **Richtext length is measured on visible text, not markup.** An empty editor emits `<p></p>`, so
+  a `.min(1)` on the HTML would let a required field be satisfied by nothing.
 - **SEO fallbacks are resolved in core, never in a template.** `resolveSeo` is called by both the
   admin's live preview and the public route, because a preview that resolves its own fallbacks is
   a preview of a page nobody will ever see, and the mismatch only surfaces weeks later in a shared

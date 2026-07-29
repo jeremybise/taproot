@@ -172,11 +172,13 @@ const page = await ensureType(
     {
       api_id: 'body',
       label: 'Body',
-      type: 'text',
+      type: 'richtext',
       required: false,
       localized: false,
       help_text: null,
-      config: { multiline: true },
+      // No `allowedFormats`, so the field gets the full toolbar. The Event type's details field is
+      // left as plain text on purpose, so the demo shows both controls rather than only one.
+      config: {},
     },
     {
       api_id: 'show_in_nav',
@@ -403,7 +405,12 @@ const admissionsId = await ensureItem(
     },
     data: {
       summary: 'Everything you need to join us at Riverbend.',
-      body: 'Our admissions team is here to help at every step, from your first question to your first day on campus.',
+      body:
+        '<p>Our admissions team is here to help at every step, from your first question to your first day on campus.</p>' +
+        '<h2>Before you apply</h2>' +
+        '<ul><li>Request a transcript from every school you have attended</li>' +
+        '<li>Line up two references</li>' +
+        '<li>Check the <a href="/admissions/apply/deadlines">deadlines</a></li></ul>',
       show_in_nav: true,
       departments: [termId('Admissions')],
     },
@@ -422,7 +429,9 @@ const aidId = await ensureItem(
     userId: admin.id,
     data: {
       summary: 'Scholarships, grants, and work-study at Riverbend.',
-      body: 'Most students receive some form of aid. Start here to understand what you qualify for.',
+      body:
+        '<p>Most students receive some form of aid. Start here to understand what you qualify for.</p>' +
+        '<blockquote><p>Roughly four in five Riverbend students receive a grant, a scholarship, or both.</p></blockquote>',
       show_in_nav: true,
       departments: [termId('Financial Aid')],
     },
@@ -443,7 +452,8 @@ await ensureItem(
     userId: admin.id,
     data: {
       summary: 'Start your application to Riverbend College.',
-      body: 'Applications open on 1 September. You will need transcripts and two references.',
+      body:
+        '<p>Applications open on <strong>1 September</strong>. You will need transcripts and two references.</p>',
       show_in_nav: true,
       departments: [termId('Admissions')],
     },
@@ -463,7 +473,7 @@ await ensureItem(
     userId: admin.id,
     data: {
       summary: 'Apply for financial aid — a separate process from admissions.',
-      body: 'Submit the aid application by 1 March for priority consideration.',
+      body: '<p>Submit the aid application by <strong>1 March</strong> for priority consideration.</p>',
       show_in_nav: true,
       // Two departments on one page — it is genuinely about both. Multi-tagging is unremarkable
       // precisely because these terms classify rather than confer edit rights.
@@ -496,7 +506,10 @@ await ensureItem(
     seo: { noIndex: true },
     data: {
       summary: 'Key dates for the coming application cycle.',
-      body: 'Early action: 1 November. Regular decision: 15 January. Transfer: 1 April.',
+      body:
+        '<h2>Undergraduate</h2>' +
+        '<ul><li>Early action — 1 November</li><li>Regular decision — 15 January</li></ul>' +
+        '<h2>Transfer</h2><ul><li>1 April</li></ul>',
       show_in_nav: false,
       departments: [termId('Admissions')],
     },
@@ -515,7 +528,9 @@ await ensureItem(
     userId: admin.id,
     data: {
       summary: 'A small college on the river, founded in 1897.',
-      body: 'Riverbend College is a fictional institution that exists to demonstrate a CMS.',
+      body:
+        '<p>Riverbend College is a fictional institution that exists to demonstrate a CMS.</p>' +
+        '<p>Everything here — the pages, the events, the departments — is seed data you can delete.</p>',
       show_in_nav: true,
     },
   },
@@ -532,7 +547,7 @@ await ensureItem(
     title: 'Campus Housing',
     status: 'draft',
     userId: admin.id,
-    data: { summary: 'Still being written.', body: 'Draft content.', show_in_nav: false },
+    data: { summary: 'Still being written.', body: '<p>Draft content.</p>', show_in_nav: false },
   },
   '/campus-housing',
 );
@@ -550,7 +565,7 @@ await ensureItem(
     userId: admin.id,
     data: {
       summary: 'Clubs, athletics, and life on the river.',
-      body: 'Waiting on a read from the Student Affairs office before this goes live.',
+      body: '<p>Waiting on a read from the Student Affairs office before this goes live.</p>',
       show_in_nav: false,
     },
   },
@@ -568,7 +583,8 @@ await ensureItem(
     userId: admin.id,
     data: {
       summary: 'Superseded by the current registration page.',
-      body: 'Kept for reference. Archived rather than deleted so its URL keeps resolving.',
+      body:
+        '<p>Kept for reference. Archived rather than deleted so its URL keeps resolving.</p>',
       show_in_nav: false,
     },
   },
