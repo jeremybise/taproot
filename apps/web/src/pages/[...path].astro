@@ -14,7 +14,9 @@ import {
   resolveSeo,
 } from '@taproot/core';
 import { getTaproot, canEditContent } from '@taproot/astro/runtime/guards';
+import { BlockRenderer } from '@taproot/astro/components';
 import { PUBLIC_TERM_TAXONOMIES } from '../site.ts';
+import { BLOCK_COMPONENTS } from '../blocks/index.ts';
 
 export const prerender = false;
 
@@ -134,6 +136,15 @@ const renderable = (contentType?.fields ?? [])
   .map((field) => ({ field, value: item?.data[field.api_id] }))
   .filter((entry) => entry.value !== undefined && entry.value !== null && entry.value !== '');
 
+/**
+ * Block fields, rendered through the site's own templates.
+ *
+ * The map is the whole contract between Taproot and this site: the CMS stores a block's type and
+ * its validated field values, and the site decides what each type looks like. A block type with no
+ * entry here renders nothing in production and a visible note in development.
+ */
+const blockFields = (contentType?.fields ?? []).filter((field) => field.type === 'block');
+
 if (!isPreview) {
   Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
 }
@@ -234,6 +245,12 @@ const noIndex = isPreview || seo?.noIndex === true;
             </p>
           )}
         </section>
+      ))
+    }
+
+    {
+      blockFields.map((field) => (
+        <BlockRenderer blocks={item!.data[field.api_id]} components={BLOCK_COMPONENTS} />
       ))
     }
 

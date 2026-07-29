@@ -1,0 +1,115 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import FieldBuilder from '../../../islands/FieldBuilder.tsx';
+import {
+  countBlockUsage,
+  getContentType,
+  itemsUsingBlock,
+  listBlockTypes,
+  listContentTypes,
+  listTaxonomies,
+} from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../../runtime/guards.js';
+
+/**
+ * One block type: its fields, built with the same builder content types use.
+ *
+ * That reuse is the point of storing block types in `content_types` at all — a block type is a
+ * user-defined schema with fields, which is exactly what a content type is, so it gets the field
+ * builder, the field API, and validation without a parallel implementation of any of them.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageSchema(user)) return Astro.redirect('/admin');
+
+const blockType = await getContentType(taproot.db.db, Astro.params.id!);
+if (!blockType) return new Response('Block type not found', { status: 404 });
+
+// Reached by editing the URL to a content type's id. Redirect rather than 404 — the record exists,
+// it is just managed on the other screen.
+if (blockType.kind !== 'block') {
+  return Astro.redirect(`/admin/settings/types/${blockType.id}`);
+}
+
+const contentTypes = await listContentTypes(taproot.db.db);
+const taxonomies = await listTaxonomies(taproot.db.db);
+const blockTypes = await listBlockTypes(taproot.db.db);
+
+const usage = await countBlockUsage(taproot.db.db, blockType.api_id);
+const usedBy = usage > 0 ? await itemsUsingBlock(taproot.db.db, blockType.api_id) : [];
+
+const created = Astro.url.searchParams.get('created') === '1';
+---
+
+<AdminLayout
+  title={blockType.name}
+  user={user}
+  breadcrumbs={[
+    { label: 'Settings', href: '/admin/settings' },
+    { label: 'Block types', href: '/admin/settings/blocks' },
+    { label: blockType.name },
+  ]}
+  flash={created ? 'Block type created. Add its fields below.' : null}
+>
+  <header class="mb-8">
+    <h1 class="text-2xl font-semibold tracking-tight">{blockType.name}</h1>
+    <p class="mt-1 text-sm text-content-muted">
+      Block type · <code class="font-mono">{blockType.api_id}</code>
+      {blockType.description && ` · ${blockType.description}`}
+    </p>
+  </header>
+
+  <section aria-labelledby="usage-heading" class="mb-10">
+    <h2 id="usage-heading" class="mb-1 text-base font-semibold">Where it is used</h2>
+    {
+      usage === 0 ? (
+        <p class="text-sm text-content-muted">
+          Not placed on any content yet. Add a “Blocks” field to a content type, allow this block in
+          it, and editors can start using it.
+        </p>
+      ) : (
+        <>
+          <p class="mb-3 max-w-prose text-sm text-content-muted">
+            Changing or removing a field here changes every one of these. Removing a field discards
+            what editors have written into it.
+          </p>
+          <ul class="flex flex-wrap gap-2">
+            {usedBy.map((item) => (
+              <li>
+                <a
+                  href={`/admin/content/${item.id}`}
+                  class="inline-block rounded-md border border-border bg-surface-raised px-3 py-1.5 text-sm transition-colors hover:border-border-strong"
+                >
+                  {item.title}
+                </a>
+              </li>
+            ))}
+            {usage > usedBy.length && (
+              <li class="self-center text-sm text-content-subtle">
+                and {usage - usedBy.length} more
+              </li>
+            )}
+          </ul>
+        </>
+      )
+    }
+  </section>
+
+  <section aria-labelledby="fields-heading">
+    <h2 id="fields-heading" class="mb-1 text-base font-semibold">Fields</h2>
+    <p class="mb-4 max-w-prose text-sm text-content-muted">
+      What an editor fills in for each {blockType.name.toLowerCase()} they place.
+    </p>
+
+    <FieldBuilder
+      client:load
+      contentTypeId={blockType.id}
+      initialFields={blockType.fields}
+      contentTypes={contentTypes}
+      taxonomies={taxonomies}
+      blockTypes={blockTypes}
+      itemCount={usage}
+    />
+  </section>
+</AdminLayout>

@@ -8,9 +8,8 @@ A DB-backed, Astro-native CMS for a campus website with many non-technical depar
 contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the relevant phase section
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
-**Status:** Phase 1 is complete — foundation, visual content-type builder, revisions, taxonomies,
-menus, SEO sidebar, richtext editor, and the media hotspot/crop editor. Phase 2 (blocks and page
-composition) is next; read its SCOPE.md section before starting.
+**Status:** Phase 1 is complete. Phase 2 is in progress: block types, page composition, and
+`BlockRenderer` are done; Reusable Blocks are not.
 
 ## Commands
 
@@ -19,7 +18,7 @@ composition) is next; read its SCOPE.md section before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 368 tests |
+| `npm test` | Vitest, 403 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -113,7 +112,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-20 routes, 0 violations, all 32 token pairs passing in both themes.
+23 routes, 0 violations, all 32 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
@@ -218,8 +217,26 @@ many), *Block*, *Reusable Block*, *Content Type*.
 - **Image dimensions are read from header bytes on upload**, not decoded — the crop maths needs the
   source's real proportions, and every library that could decode is a native dependency. An
   unrecognised format returns null and the editor degrades rather than the upload failing.
-- `block` and `repeater` field types have columns and validation seams but no editing UI until
-  Phase 2.
+- **A block type is a content type with `kind: 'block'`.** A block type is a user-defined schema
+  with fields, which is exactly what a content type is — so it reuses the same table, field builder,
+  field API, and validation rather than growing a parallel set of all four. `kind` already answers
+  "how are this type's instances addressed", and "they are not" is a coherent fourth answer
+  alongside page, collection, and singleton.
+  - **`listContentTypes` excludes blocks by default.** That default is load-bearing: the sidebar,
+    the "new content item" picker, and the relation target list all call it, and none should ever
+    offer a block. Showing them is what you opt into, via `includeBlocks` or `listBlockTypes`.
+  - **`createItem` refuses a block type**, because a POST carrying one would otherwise create an
+    item with no URL, invisible in every list that filters blocks out.
+- **Block instances live in `content_items.data`, not in rows of their own.** They are content,
+  versioned by the item's revisions. The cost is that "which items use this block type" is a `LIKE`
+  over the data blob rather than an indexed join — acceptable because it only runs when deleting a
+  block type, which is refused while any item still places it.
+- **Two blocks of the same type share one `FieldRow`.** `FieldControl` therefore takes an
+  `idPrefix`; without it both render inputs with the same DOM id and a label focuses the wrong one.
+- **Taproot ships no block templates.** `BlockRenderer` takes a map from block `api_id` to an Astro
+  component, supplied by the host site — a CMS that shipped a hero component would be shipping a
+  design. `apps/web/src/blocks/index.ts` is the worked example.
+- `repeater` has columns and a validation seam but no editing UI.
 
 ## Definition of done for a phase
 

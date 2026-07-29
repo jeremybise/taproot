@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { slugify, type ContentStatus, type FieldRow, type SeoData } from '@taproot/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
+import type { BlockTypeOption } from './fields/BlockListEditor.js';
 import SeoPanel, { type MediaOption } from './SeoPanel.js';
 import { STATUS_META, STATUS_ORDER } from '../status.js';
 
@@ -34,6 +35,8 @@ interface Props {
   parents: { id: string; title: string; path: string }[];
   /** Selectable terms for any taxonomy fields, keyed by taxonomy id. Resolved server-side. */
   termsByTaxonomy?: Record<string, TermOption[]>;
+  /** Block types with their fields, for any block fields on this type. */
+  blockTypes?: BlockTypeOption[];
   canPublish: boolean;
   isHierarchical: boolean;
   /** Image assets selectable as a social card, with their resolved public URLs. */
@@ -66,6 +69,7 @@ export default function ItemEditor({
   initial,
   parents,
   termsByTaxonomy,
+  blockTypes,
   canPublish,
   isHierarchical,
   images = [],
@@ -226,6 +230,8 @@ export default function ItemEditor({
               errors={errors[field.api_id]}
               onChange={(value) => setValue(field.api_id, value)}
               termsByTaxonomy={termsByTaxonomy}
+              blockTypes={blockTypes}
+              media={images}
             />
           ))}
         </section>

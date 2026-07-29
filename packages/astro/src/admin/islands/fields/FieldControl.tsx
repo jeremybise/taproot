@@ -1,5 +1,6 @@
-import { FIELD_TYPE_META, type FieldRow } from '@taproot/core';
+import { FIELD_TYPE_META, type BlockInstance, type FieldRow } from '@taproot/core';
 
+import { BlockListEditor, type BlockTypeOption } from './BlockListEditor.js';
 import { RichTextEditor } from './RichTextEditor.js';
 
 /**
@@ -36,10 +37,26 @@ export interface FieldControlProps {
    */
   termsByTaxonomy?: Record<string, TermOption[]>;
   /**
+   * Block types with their fields, for `block` fields. Resolved on the server for the same reason
+   * terms are: the editor page already reads the content type, so the block schemas ride along
+   * rather than costing a request per block field.
+   */
+  blockTypes?: BlockTypeOption[];
+  /** Media assets selectable by a `media` field, resolved server-side with their public URLs. */
+  media?: { id: string; filename: string; url: string }[];
+  /**
    * Preview mode: inputs are inert and ids are namespaced so a preview rendered next to the real
    * editor cannot collide with it or steal its label associations.
    */
   preview?: boolean;
+  /**
+   * Extra id namespace, for the same field definition rendered more than once on a page.
+   *
+   * Two blocks of the same type render the *same* `FieldRow`, so without this both of their inputs
+   * would get `id="field-<row id>"` — duplicate ids, and a label that focuses the first block's
+   * input no matter which one was clicked. The block editor passes the block instance's id.
+   */
+  idPrefix?: string;
 }
 
 export function FieldControl({
@@ -48,9 +65,12 @@ export function FieldControl({
   errors,
   onChange,
   termsByTaxonomy,
+  blockTypes,
+  media,
   preview = false,
+  idPrefix,
 }: FieldControlProps) {
-  const id = preview ? `preview-field-${field.id}` : `field-${field.id}`;
+  const id = [preview ? 'preview' : 'field', idPrefix, field.id].filter(Boolean).join('-');
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
   // Needed by controls that cannot be the target of a `<label for>` — see the richtext case.
@@ -316,6 +336,74 @@ export function FieldControl({
             disabled={preview}
           />
         );
+
+      case 'media': {
+        /**
+         * A select of the library rather than a browsing modal.
+         *
+         * The full picker — a grid with search and upload in place — is a real piece of work, and
+         * shipping a second bespoke one here would mean two to replace. The SEO panel uses the
+         * same shape for the same reason, and both move together when the picker lands.
+         *
+         * Multiple selection is not offered yet, so a field configured for it edits only its first
+         * value; that is stated rather than silently discarding the rest.
+         */
+        const selected = Array.isArray(value) ? ((value as string[])[0] ?? '') : ((value as string) ?? '');
+        const multiple = config.multiple === true;
+
+        return (
+          <>
+            <select
+              {...shared}
+              value={selected}
+              onChange={(e) => {
+                const next = e.target.value || null;
+                onChange(multiple ? (next ? [next] : []) : next);
+              }}
+            >
+              <option value="">— None —</option>
+              {(media ?? []).map((asset) => (
+                <option key={asset.id} value={asset.id}>
+                  {asset.filename}
+                </option>
+              ))}
+            </select>
+            {media && media.length === 0 && (
+              <p className="mt-1 text-xs text-content-subtle">
+                No images in the library yet. Upload one under Media.
+              </p>
+            )}
+            {multiple && (
+              <p className="mt-1 text-xs text-content-subtle">
+                This field allows several files, but only one can be chosen until the media picker
+                arrives.
+              </p>
+            )}
+          </>
+        );
+      }
+
+      case 'block': {
+        const allowed = stringArrayOr(config.allowedBlocks, []) ?? [];
+        const available = (blockTypes ?? []).filter(
+          // An empty allow-list means "any block type", matching the field config's default and
+          // what the server validates against.
+          (blockType) => allowed.length === 0 || allowed.includes(blockType.api_id),
+        );
+
+        return (
+          <BlockListEditor
+            value={Array.isArray(value) ? (value as BlockInstance[]) : []}
+            onChange={(blocks) => onChange(blocks)}
+            blockTypes={available}
+            maxBlocks={numberOr(config.maxBlocks, undefined)}
+            termsByTaxonomy={termsByTaxonomy}
+            media={media}
+            labelledBy={labelId}
+            disabled={preview}
+          />
+        );
+      }
 
       default:
         return <PendingControl type={field.type} />;

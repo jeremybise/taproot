@@ -72,13 +72,24 @@ export interface SessionsTable {
 // ---------------------------------------------------------------------------
 
 /**
- * How a content type behaves in the URL space and in the admin.
+ * How a content type's instances are addressed.
  *
  * - `page`       nests under a parent; path is the materialised chain of slugs (`/admissions/apply`)
  * - `collection` flat and type-prefixed (`/events/spring-open-house`)
  * - `singleton`  exactly one item ever exists; no create/delete, just edit. Not routable on its own.
+ * - `block`      never addressed at all. Instances live inside another item's `data`, placed into a
+ *                `block` field, and have no row in `content_items`.
+ *
+ * A block type is a user-defined schema with fields that content conforms to — which is exactly
+ * what a content type is, so it reuses the same table, the same field builder, the same validation,
+ * and the same API rather than growing a parallel set of all four. `kind` already answers "how does
+ * this type's content get addressed", and "it does not" is a coherent fourth answer.
+ *
+ * The cost is that every read of `content_types` meant for *content* has to exclude blocks, so
+ * `listContentTypes` excludes them by default and callers opt in — the safe behaviour is the one
+ * you get by not thinking about it.
  */
-export type ContentTypeKind = 'page' | 'collection' | 'singleton';
+export type ContentTypeKind = 'page' | 'collection' | 'singleton' | 'block';
 
 export interface ContentTypesTable {
   id: string;

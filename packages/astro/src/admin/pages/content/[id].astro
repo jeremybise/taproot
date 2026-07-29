@@ -3,6 +3,7 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
 import ItemEditor from '../../islands/ItemEditor.tsx';
 import RevisionHistory from '../../components/RevisionHistory.astro';
 import { termOptionsForFields } from '../../termOptions.js';
+import { blockTypeOptionsForFields } from '../../blockTypeOptions.js';
 import { findImage, imageOptions } from '../../mediaOptions.js';
 import { getContentType, getItem, listItems } from '@taproot/core';
 import {
@@ -34,6 +35,8 @@ if (contentType.kind === 'page') {
 }
 
 const termsByTaxonomy = await termOptionsForFields(taproot.db.db, contentType.fields);
+
+const blockTypes = await blockTypeOptionsForFields(taproot.db.db, contentType.fields);
 
 const images = await imageOptions(taproot.db.db, taproot.storage);
 const defaultOgImage = findImage(images, contentType.default_og_image_id);
@@ -110,6 +113,7 @@ const flash = saved
     }}
     parents={parents}
     termsByTaxonomy={termsByTaxonomy}
+    blockTypes={blockTypes}
     canPublish={canPublishContent(user)}
     isHierarchical={contentType.kind === 'page'}
     images={images}

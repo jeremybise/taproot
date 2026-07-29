@@ -3,7 +3,7 @@ import AdminLayout from '../../../layouts/AdminLayout.astro';
 import FieldBuilder from '../../../islands/FieldBuilder.tsx';
 import ContentTypeSettings from '../../../islands/ContentTypeSettings.tsx';
 import { imageOptions } from '../../../mediaOptions.js';
-import { getContentType, listContentTypes, listTaxonomies } from '@taproot/core';
+import { getContentType, listBlockTypes, listContentTypes, listTaxonomies } from '@taproot/core';
 import { getTaproot, loginRedirect, canManageSchema } from '../../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -18,6 +18,8 @@ if (!contentType) return new Response('Content type not found', { status: 404 })
 const contentTypes = await listContentTypes(taproot.db.db);
 // Likewise for the taxonomy field's source picker.
 const taxonomies = await listTaxonomies(taproot.db.db);
+// And for the block field's allowed-blocks picker.
+const blockTypes = await listBlockTypes(taproot.db.db);
 // And for this type's default social card.
 const images = await imageOptions(taproot.db.db, taproot.storage);
 
@@ -110,6 +112,7 @@ const kindLabels: Record<string, string> = {
       initialFields={contentType.fields}
       contentTypes={contentTypes}
       taxonomies={taxonomies}
+      blockTypes={blockTypes}
       itemCount={itemCount}
     />
   </section>

@@ -1,0 +1,104 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { listBlockTypes, countBlockUsage } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../../runtime/guards.js';
+
+/**
+ * Block types: the schemas an editor can place into a page's regions.
+ *
+ * Listed apart from content types even though they share a table, because they answer a different
+ * question. A content type is a kind of thing the site publishes; a block type is a piece a page is
+ * built from. Mixing them in one list would make the "new content item" decision harder for the
+ * sake of an implementation detail.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageSchema(user)) return Astro.redirect('/admin');
+
+const blockTypes = await listBlockTypes(taproot.db.db);
+
+const counts = await taproot.db.db
+  .selectFrom('fields')
+  .select(['content_type_id'])
+  .select((eb) => eb.fn.countAll<number>().as('n'))
+  .groupBy('content_type_id')
+  .execute();
+
+const fieldCount = new Map(counts.map((row) => [row.content_type_id, Number(row.n)]));
+
+// Usage is a LIKE over each item's data blob, so it is counted here rather than in the list query.
+// Only ever a handful of block types, and the number is what tells an editor whether a change is
+// safe to make.
+const usage = new Map<string, number>();
+for (const blockType of blockTypes) {
+  usage.set(blockType.id, await countBlockUsage(taproot.db.db, blockType.api_id));
+}
+
+const error = Astro.url.searchParams.get('error');
+---
+
+<AdminLayout
+  title="Block types"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Block types' }]}
+>
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Block types</h1>
+      <p class="mt-1 max-w-prose text-sm text-content-muted">
+        The pieces a page is composed from. A block type has fields exactly like a content type
+        does; the difference is that its content lives inside a page rather than at a URL of its
+        own.
+      </p>
+    </div>
+    <a
+      href="/admin/settings/blocks/new"
+      class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+    >
+      New block type
+    </a>
+  </header>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  {
+    blockTypes.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No block types yet. Create one, then add a “Blocks” field to a content type to place them.
+      </p>
+    ) : (
+      <ul class="space-y-2">
+        {blockTypes.map((blockType) => (
+          <li>
+            <a
+              href={`/admin/settings/blocks/${blockType.id}`}
+              class="block rounded-lg border border-border bg-surface-raised px-4 py-3 transition-colors hover:border-border-strong"
+            >
+              <span class="flex flex-wrap items-baseline justify-between gap-2">
+                <span class="font-medium">{blockType.name}</span>
+                <code class="font-mono text-xs text-content-subtle">{blockType.api_id}</code>
+              </span>
+              <span class="mt-1 block text-sm text-content-muted">
+                {fieldCount.get(blockType.id) ?? 0}
+                {(fieldCount.get(blockType.id) ?? 0) === 1 ? ' field' : ' fields'} ·{' '}
+                {usage.get(blockType.id) === 0
+                  ? 'not used yet'
+                  : `used on ${usage.get(blockType.id)} item${usage.get(blockType.id) === 1 ? '' : 's'}`}
+                {blockType.description && ` · ${blockType.description}`}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</AdminLayout>

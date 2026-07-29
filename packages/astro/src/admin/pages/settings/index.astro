@@ -1,6 +1,6 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { listContentTypes } from '@taproot/core';
+import { listBlockTypes, listContentTypes } from '@taproot/core';
 import {
   getTaproot,
   loginRedirect,
@@ -21,6 +21,7 @@ if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
 const user = taproot.user;
 
 const typeCount = canManageSchema(user) ? (await listContentTypes(taproot.db.db)).length : 0;
+const blockCount = canManageSchema(user) ? (await listBlockTypes(taproot.db.db)).length : 0;
 
 const redirectCount = (
   await taproot.db.db
@@ -47,6 +48,13 @@ const sections = [
           description:
             'The shape of your content — types, their fields, and the order they appear in the sidebar.',
           meta: `${typeCount} ${typeCount === 1 ? 'type' : 'types'}`,
+        },
+        {
+          href: '/admin/settings/blocks',
+          title: 'Block types',
+          description:
+            'The pieces a page is composed from. Same fields as a content type; lives inside a page rather than at its own URL.',
+          meta: `${blockCount} ${blockCount === 1 ? 'block' : 'blocks'}`,
         },
       ]
     : []),

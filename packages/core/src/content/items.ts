@@ -21,6 +21,7 @@ import {
   RevisionError,
 } from './revisions.js';
 import { planAssignmentIndex } from './taxonomies.js';
+import { blockTypeRegistry } from './types.js';
 import {
   buildCollectionPath,
   buildPath,
@@ -280,6 +281,21 @@ export async function createItem(
 ): Promise<ContentItem> {
   const { db } = handle;
 
+  /**
+   * A block type has no addressable instances, so it can never have a content item.
+   *
+   * Guarded here rather than only in the admin because block types share a table with content
+   * types: a POST carrying a block type's id would otherwise create an item with no URL, invisible
+   * in every list that filters blocks out.
+   */
+  if (contentType.kind === 'block') {
+    throw new ContentItemError(
+      `"${contentType.name}" is a block type. Blocks are placed into a block field on a content ` +
+        `item; they do not have items of their own.`,
+      'invalid_parent',
+    );
+  }
+
   // A singleton exists exactly once — that is the whole point of the kind.
   if (contentType.kind === 'singleton') {
     const existing = await db
@@ -296,7 +312,9 @@ export async function createItem(
     }
   }
 
-  const validation = validateItemData(fields, input.data ?? {});
+  const validation = validateItemData(fields, input.data ?? {}, {
+    blockTypes: await blockTypeRegistry(db),
+  });
   if (!validation.success) {
     throw new ContentItemError('Content failed validation.', 'validation_failed', validation.errors);
   }
@@ -406,7 +424,9 @@ export async function updateItem(
 
   let data = existing.data;
   if (input.data !== undefined) {
-    const validation = validateItemData(fields, input.data);
+    const validation = validateItemData(fields, input.data, {
+      blockTypes: await blockTypeRegistry(db),
+    });
     if (!validation.success) {
       throw new ContentItemError(
         'Content failed validation.',
@@ -635,6 +655,14 @@ export function resolveItemPath(
     case 'singleton':
       // Singletons are edited and rendered through other content, never routed to directly.
       return `/__singleton/${contentType.api_id}`;
+    case 'block':
+      // Unreachable through the normal path: `createItem` refuses a block type before it gets
+      // here. Kept explicit rather than folded into the default so the exhaustiveness check keeps
+      // working, and so reaching it names the actual mistake.
+      throw new Error(
+        `Block types have no items and therefore no path. "${contentType.api_id}" should never ` +
+          `have reached path resolution.`,
+      );
     default: {
       const exhaustive: never = contentType.kind;
       throw new Error(`Unhandled content type kind: ${String(exhaustive)}`);

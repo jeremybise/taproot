@@ -33,13 +33,73 @@ export class ContentTypeError extends Error {
 }
 
 /**
- * Every content type, in sidebar order.
+ * Content types, in sidebar order.
  *
  * `position` then `name`: a site that has never reordered has all-zero positions and so keeps an
  * alphabetical list, which is what this returned before ordering existed.
+ *
+ * **Block types are excluded by default.** They share this table because a block type is the same
+ * thing as a content type — a user-defined schema with fields — but their instances are embedded
+ * rather than addressed, so they must never appear in the sidebar, the "new content item" picker,
+ * or a relation field's target list. Defaulting to exclusion means every existing caller is correct
+ * without being edited, and showing blocks is the thing you have to ask for.
  */
-export async function listContentTypes(db: Kysely<Database>): Promise<ContentTypeRow[]> {
-  return db.selectFrom('content_types').selectAll().orderBy('position').orderBy('name').execute();
+export async function listContentTypes(
+  db: Kysely<Database>,
+  options: { includeBlocks?: boolean } = {},
+): Promise<ContentTypeRow[]> {
+  let query = db.selectFrom('content_types').selectAll();
+  if (!options.includeBlocks) query = query.where('kind', '!=', 'block');
+
+  return query.orderBy('position').orderBy('name').execute();
+}
+
+/** Block types only — the schemas that can be placed into a `block` field. */
+export async function listBlockTypes(db: Kysely<Database>): Promise<ContentTypeRow[]> {
+  return db
+    .selectFrom('content_types')
+    .selectAll()
+    .where('kind', '=', 'block')
+    .orderBy('position')
+    .orderBy('name')
+    .execute();
+}
+
+/**
+ * Block types with their fields, keyed by `api_id`.
+ *
+ * Validation needs this: a block instance carries only its type's `api_id` and a data bag, so
+ * checking it means looking up that type's field definitions. Loaded in one pass rather than per
+ * block, because a page with twelve blocks of three types should cost three lookups, not twelve.
+ */
+export async function blockTypeRegistry(
+  db: Kysely<Database>,
+): Promise<Map<string, ContentTypeWithFields>> {
+  const types = await listBlockTypes(db);
+  if (types.length === 0) return new Map();
+
+  const fields = await db
+    .selectFrom('fields')
+    .selectAll()
+    .where(
+      'content_type_id',
+      'in',
+      types.map((type) => type.id),
+    )
+    .orderBy('position')
+    .orderBy('created_at')
+    .execute();
+
+  const byType = new Map<string, FieldRow[]>();
+  for (const field of fields) {
+    const list = byType.get(field.content_type_id);
+    if (list) list.push(field);
+    else byType.set(field.content_type_id, [field]);
+  }
+
+  return new Map(
+    types.map((type) => [type.api_id, { ...type, fields: byType.get(type.id) ?? [] }]),
+  );
 }
 
 /** Persist a new sidebar order. Positions are rewritten to match array order. */
@@ -197,6 +257,28 @@ export async function updateContentType(
  * that. The caller must delete or move the items first.
  */
 export async function deleteContentType(db: Kysely<Database>, id: string): Promise<void> {
+  const existing = await db
+    .selectFrom('content_types')
+    .selectAll()
+    .where('id', '=', id)
+    .executeTakeFirst();
+
+  if (!existing) throw new ContentTypeError(`Content type ${id} not found.`, 'not_found');
+
+  if (existing.kind === 'block') {
+    const usage = await countBlockUsage(db, existing.api_id);
+    if (usage > 0) {
+      throw new ContentTypeError(
+        `Cannot delete the "${existing.name}" block while ${usage} content item(s) still place ` +
+          `it. Remove those blocks first.`,
+        'in_use',
+      );
+    }
+
+    await db.deleteFrom('content_types').where('id', '=', id).execute();
+    return;
+  }
+
   const itemCount = await db
     .selectFrom('content_items')
     .select((eb) => eb.fn.countAll<number>().as('count'))
@@ -212,6 +294,46 @@ export async function deleteContentType(db: Kysely<Database>, id: string): Promi
   }
 
   await db.deleteFrom('content_types').where('id', '=', id).execute();
+}
+
+/**
+ * How many content items place a block of this type.
+ *
+ * A `LIKE` over the stored `data` blob rather than a join, because block instances live inside a
+ * content item's JSON and have no rows of their own. That is a deliberate part of the model —
+ * blocks are content, versioned by the item's revisions, not separate records that could drift out
+ * of sync with the item that contains them.
+ *
+ * The consequence is that this cannot be an indexed lookup. It is only ever run when deleting a
+ * block type, which is rare and deserves to be correct rather than fast. The pattern matches the
+ * exact JSON shape `"type":"<api_id>"` that the block envelope schema guarantees, so a block type
+ * named `hero` cannot be confused with one named `hero_wide`.
+ */
+export async function countBlockUsage(db: Kysely<Database>, blockApiId: string): Promise<number> {
+  const needle = `%"type":"${blockApiId}"%`;
+
+  const row = await db
+    .selectFrom('content_items')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .where('data', 'like', needle)
+    .executeTakeFirst();
+
+  return Number(row?.count ?? 0);
+}
+
+/** Which content items place a block of this type, for the "still in use" list in the admin. */
+export async function itemsUsingBlock(
+  db: Kysely<Database>,
+  blockApiId: string,
+  limit = 20,
+): Promise<{ id: string; title: string; path: string }[]> {
+  return db
+    .selectFrom('content_items')
+    .select(['id', 'title', 'path'])
+    .where('data', 'like', `%"type":"${blockApiId}"%`)
+    .orderBy('path')
+    .limit(limit)
+    .execute();
 }
 
 export async function createField(

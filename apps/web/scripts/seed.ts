@@ -198,6 +198,168 @@ const page = await ensureType(
       help_text: 'Which parts of the college this page relates to.',
       config: { taxonomyId: departments.taxonomy.id, multiple: true },
     },
+    {
+      api_id: 'sections',
+      label: 'Sections',
+      type: 'block',
+      required: false,
+      localized: false,
+      help_text: 'Composed blocks rendered under the body.',
+      // Named by `api_id` rather than by id, so the list survives a block type being recreated and
+      // reads meaningfully in the stored config.
+      config: { allowedBlocks: ['hero', 'call_to_action', 'prose', 'quote'] },
+    },
+  ],
+);
+
+// --- Block types ------------------------------------------------------------
+//
+// The pieces a page is composed from. They are content types with `kind: 'block'` — a block type
+// is a user-defined schema with fields, which is what a content type is; the only difference is
+// that its instances live inside a page rather than at a URL.
+//
+// Deliberately generic: a hero, a call to action, a gallery, and a quote are shapes any site has.
+// The templates that give them a look live in apps/web/src/blocks, because that is the site's
+// decision and not the CMS's.
+
+const hero = await ensureType(
+  {
+    api_id: 'hero',
+    name: 'Hero',
+    name_plural: 'Heroes',
+    description: 'A headline, a short lead, and an optional image.',
+    kind: 'block',
+    icon: null,
+    url_prefix: null,
+    title_field: null,
+  },
+  [
+    {
+      api_id: 'heading',
+      label: 'Heading',
+      type: 'text',
+      required: true,
+      localized: false,
+      help_text: null,
+      config: { maxLength: 120 },
+    },
+    {
+      api_id: 'lead',
+      label: 'Lead',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: 'One or two sentences under the heading.',
+      config: { multiline: true, maxLength: 300 },
+    },
+    {
+      api_id: 'image',
+      label: 'Background image',
+      type: 'media',
+      required: false,
+      localized: false,
+      help_text: null,
+      config: { multiple: false, accept: ['image/'] },
+    },
+  ],
+);
+
+const callToAction = await ensureType(
+  {
+    api_id: 'call_to_action',
+    name: 'Call to action',
+    name_plural: 'Calls to action',
+    description: 'A short prompt with a single link.',
+    kind: 'block',
+    icon: null,
+    url_prefix: null,
+    title_field: null,
+  },
+  [
+    {
+      api_id: 'text',
+      label: 'Text',
+      type: 'text',
+      required: true,
+      localized: false,
+      help_text: null,
+      config: { multiline: true, maxLength: 200 },
+    },
+    {
+      api_id: 'link_label',
+      label: 'Button label',
+      type: 'text',
+      required: true,
+      localized: false,
+      help_text: null,
+      config: { maxLength: 60 },
+    },
+    {
+      api_id: 'link_href',
+      label: 'Button link',
+      type: 'text',
+      required: true,
+      localized: false,
+      help_text: 'A path on this site, or a full address.',
+      config: {},
+    },
+  ],
+);
+
+const prose = await ensureType(
+  {
+    api_id: 'prose',
+    name: 'Rich text',
+    name_plural: 'Rich text blocks',
+    description: 'A run of formatted text.',
+    kind: 'block',
+    icon: null,
+    url_prefix: null,
+    title_field: null,
+  },
+  [
+    {
+      api_id: 'body',
+      label: 'Body',
+      type: 'richtext',
+      required: true,
+      localized: false,
+      help_text: null,
+      config: {},
+    },
+  ],
+);
+
+const quote = await ensureType(
+  {
+    api_id: 'quote',
+    name: 'Quote',
+    name_plural: 'Quotes',
+    description: 'A pull quote with an attribution.',
+    kind: 'block',
+    icon: null,
+    url_prefix: null,
+    title_field: null,
+  },
+  [
+    {
+      api_id: 'quote',
+      label: 'Quote',
+      type: 'text',
+      required: true,
+      localized: false,
+      help_text: null,
+      config: { multiline: true, maxLength: 400 },
+    },
+    {
+      api_id: 'attribution',
+      label: 'Attributed to',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: null,
+      config: { maxLength: 120 },
+    },
   ],
 );
 
@@ -515,6 +677,70 @@ await ensureItem(
     },
   },
   '/admissions/apply/deadlines',
+);
+
+// A page built out of blocks rather than a single body field — the Phase 2 case. The block ids are
+// generated because they are what keeps a block's editor mounted across a reorder.
+await ensureItem(
+  handle,
+  page.type,
+  page.fields,
+  {
+    contentTypeId: page.type.id,
+    title: 'Visit Riverbend',
+    // Explicit, because `ensureItem` finds an existing row by path: letting the slug derive from
+    // the title would put it at /visit-riverbend, never match the /visit it looks for, and create
+    // another copy on every reseed.
+    slug: 'visit',
+    status: 'published',
+    userId: admin.id,
+    data: {
+      summary: 'Come and see the place before you decide.',
+      show_in_nav: false,
+      sections: [
+        {
+          id: newId(),
+          type: 'hero',
+          data: {
+            heading: 'Spend a day on the river',
+            lead: 'Tours run every weekday at 10am and 2pm, and most Saturdays in term time.',
+            image: socialCardId,
+          },
+        },
+        {
+          id: newId(),
+          type: 'prose',
+          data: {
+            body:
+              '<p>A campus visit is the fastest way to work out whether somewhere fits. ' +
+              'You will see a class, eat in the refectory, and meet current students.</p>' +
+              '<h2>What to expect</h2>' +
+              '<ul><li>Ninety minutes on foot, mostly outdoors</li>' +
+              '<li>A short session with an admissions counsellor</li></ul>',
+          },
+        },
+        {
+          id: newId(),
+          type: 'quote',
+          data: {
+            quote:
+              'I applied the week after my tour. Standing in the middle of it made the decision for me.',
+            attribution: 'Nia, second year',
+          },
+        },
+        {
+          id: newId(),
+          type: 'call_to_action',
+          data: {
+            text: 'Tours fill up quickly in the spring.',
+            link_label: 'Book a visit',
+            link_href: '/admissions/apply',
+          },
+        },
+      ],
+    },
+  },
+  '/visit',
 );
 
 await ensureItem(

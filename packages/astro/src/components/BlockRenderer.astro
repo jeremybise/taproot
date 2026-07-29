@@ -2,36 +2,79 @@
 /**
  * Renders a block field's contents.
  *
- * Phase 2 stub. The block registry, the region model, and the starter block presets (hero, CTA,
- * gallery, rich text, staff card) all land with the Blocks phase; this exists now so the component
- * name and import path are stable and host templates written in Phase 1 do not have to change.
+ * **The host site supplies the templates.** Taproot stores what a block *is* — a type name and a
+ * bag of validated field values — and has no opinion about what it looks like. A CMS that shipped
+ * a hero component would be shipping a design, and the whole point of user-defined block types is
+ * that a site invents the pieces it needs.
  *
- * Unknown block types render nothing in production rather than throwing — a single bad block
- * should not take down the page around it — and surface a visible placeholder in development so
- * the problem is not silent while building.
+ * So this takes a map from block `api_id` to an Astro component:
+ *
+ * ```astro
+ * import { BlockRenderer } from '@taproot/astro/components';
+ * import Hero from '../blocks/Hero.astro';
+ * import CallToAction from '../blocks/CallToAction.astro';
+ *
+ * <BlockRenderer blocks={item.data.sections} components={{ hero: Hero, cta: CallToAction }} />
+ * ```
+ *
+ * Each component receives the block's own fields as props, plus `block` for anything that needs the
+ * envelope.
+ *
+ * A block with no registered component renders nothing in production rather than throwing — one
+ * unmapped block must not take down the page around it — and shows a visible note in development,
+ * because a silent gap while building is how a block goes missing from a live page unnoticed.
  */
-interface Block {
-  type: string;
-  [key: string]: unknown;
-}
+import type { BlockInstance } from '@taproot/core';
 
 interface Props {
-  blocks?: Block[];
+  blocks?: BlockInstance[] | unknown;
+  /** Block `api_id` → Astro component. Anything not listed renders nothing. */
+  components?: Record<string, any>;
+  /** Wrapper element for each block. `null` renders the component bare. */
+  as?: string | null;
 }
 
-const { blocks = [] } = Astro.props;
+const { blocks, components = {}, as = null } = Astro.props;
+
+/**
+ * Tolerate a value that is not a block list.
+ *
+ * The field is validated on write, so this should always be an array — but a template reading
+ * `item.data.whatever` can easily point at the wrong field, and a page that renders nothing is
+ * easier to diagnose than one that throws on `.map`.
+ */
+const list: BlockInstance[] = Array.isArray(blocks)
+  ? (blocks as BlockInstance[]).filter(
+      (block) => block && typeof block === 'object' && typeof block.type === 'string',
+    )
+  : [];
+
 const isDev = import.meta.env.DEV;
+const Wrapper = as;
 ---
 
 {
-  blocks.map((block) =>
-    isDev ? (
-      <div
-        data-taproot-block={block.type}
-        style="border:1px dashed currentColor;padding:0.75rem;margin:0.5rem 0;opacity:0.7"
-      >
-        <code>{block.type}</code> — block rendering arrives in Phase 2
-      </div>
-    ) : null,
-  )
+  list.map((block) => {
+    const Component = components[block.type];
+
+    if (!Component) {
+      return isDev ? (
+        <div
+          data-taproot-block={block.type}
+          style="border:1px dashed currentColor;padding:0.75rem;margin:0.5rem 0;opacity:0.7"
+        >
+          <code>{block.type}</code> — no component registered for this block type. Pass one in
+          <code> components</code>.
+        </div>
+      ) : null;
+    }
+
+    const rendered = <Component {...block.data} block={block} />;
+
+    return Wrapper ? (
+      <Wrapper data-taproot-block={block.type}>{rendered}</Wrapper>
+    ) : (
+      rendered
+    );
+  })
 }

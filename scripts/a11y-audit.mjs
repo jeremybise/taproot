@@ -31,6 +31,8 @@ const ROUTES = [
   '/admin/content/new',
   '/admin/settings/types',
   '/admin/settings/types/new',
+  '/admin/settings/blocks',
+  '/admin/settings/blocks/new',
   '/admin/settings/users',
   '/admin/settings/system',
   '/admin/media',
@@ -66,6 +68,12 @@ if (items?.[0]) ROUTES.push(`/admin/content/${items[0].id}`);
 const typesResponse = await fetch(`${base}/api/taproot/content-types`, { headers: { cookie } });
 const { contentTypes } = await typesResponse.json();
 if (contentTypes?.[0]) ROUTES.push(`/admin/settings/types/${contentTypes[0].id}`);
+
+// One block type's field builder. Block types are excluded from the content-types endpoint on
+// purpose, so the id comes from the listing page rather than the API.
+const blocksHtml = await (await fetch(`${base}/admin/settings/blocks`, { headers: { cookie } })).text();
+const firstBlockId = blocksHtml.match(/blocks\/([0-9a-f-]{36})/)?.[1];
+if (firstBlockId) ROUTES.push(`/admin/settings/blocks/${firstBlockId}`);
 
 // One per-type content list and one singleton, since each content type is now its own destination
 // and the two render quite differently.

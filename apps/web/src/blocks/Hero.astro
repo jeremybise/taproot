@@ -1,0 +1,72 @@
+---
+import { getTaproot } from '@taproot/astro/runtime/guards';
+
+/**
+ * A block template.
+ *
+ * Taproot stores what a block *is* — a type name and validated field values — and has no opinion
+ * about what it looks like. The props are the block type's fields, by `api_id`, exactly as an
+ * editor filled them in.
+ */
+interface Props {
+  heading: string;
+  lead?: string | null;
+  /** A media id, resolved to a URL here because the storage adapter only exists on the server. */
+  image?: string | null;
+}
+
+const { heading, lead, image } = Astro.props;
+const taproot = getTaproot(Astro.locals);
+
+const asset = image
+  ? await taproot.db.db
+      .selectFrom('media')
+      .select(['storage_key', 'alt_text'])
+      .where('id', '=', image)
+      .executeTakeFirst()
+  : undefined;
+---
+
+<section class="hero">
+  {
+    asset && (
+      /* Decorative: the heading beside it carries the meaning, and repeating it as alt text would
+         make a screen reader announce the same words twice. A hero image that genuinely conveyed
+         something would want its alt text instead. */
+      <img src={taproot.storage.publicUrl(asset.storage_key)} alt="" loading="lazy" />
+    )
+  }
+  <div>
+    {/* h2, not h1: the page title is the h1, and a second one breaks the document outline. */}
+    <h2>{heading}</h2>
+    {lead && <p>{lead}</p>}
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    margin: 2rem 0;
+    background: color-mix(in oklch, var(--accent) 12%, transparent);
+  }
+  .hero img {
+    display: block;
+    width: 100%;
+    height: 14rem;
+    object-fit: cover;
+  }
+  .hero div {
+    padding: 1.25rem 1.5rem;
+  }
+  .hero h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    line-height: 1.2;
+  }
+  .hero p {
+    margin: 0.5rem 0 0;
+    color: var(--muted);
+  }
+</style>

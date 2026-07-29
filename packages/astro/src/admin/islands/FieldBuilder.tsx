@@ -30,6 +30,8 @@ interface Props {
   contentTypes: ContentTypeRow[];
   /** All taxonomies, for the taxonomy field's source picker. */
   taxonomies: TaxonomyRow[];
+  /** All block types, for the block field's allowed-blocks picker. */
+  blockTypes?: ContentTypeRow[];
   /** Item counts per field api_id that are currently empty, for the "required" warning. */
   itemCount: number;
 }
@@ -59,6 +61,7 @@ export default function FieldBuilder({
   initialFields,
   contentTypes,
   taxonomies,
+  blockTypes = [],
   itemCount,
 }: Props) {
   const [fields, setFields] = useState<FieldRow[]>(initialFields);
@@ -363,6 +366,7 @@ export default function FieldBuilder({
                     config={draft.config}
                     contentTypes={contentTypes}
                     taxonomies={taxonomies}
+                    blockTypes={blockTypes}
                     currentContentTypeId={contentTypeId}
                     onChange={(config) => setDraft({ ...draft, config })}
                   />

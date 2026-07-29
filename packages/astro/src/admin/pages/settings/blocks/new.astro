@@ -1,0 +1,133 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { contentTypeInputSchema, createContentType, slugify } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageSchema(user)) return Astro.redirect('/admin');
+
+let error: string | null = null;
+
+// A plain form post, like the content type form: no interactive state worth shipping JavaScript
+// for, and it keeps working if the island fails to hydrate.
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const name = String(form.get('name') ?? '').trim();
+
+  const parsed = contentTypeInputSchema.safeParse({
+    name,
+    // A block type is never listed in the plural anywhere, but the column is not nullable and a
+    // sensible value beats an empty string in a debugging session.
+    name_plural: `${name}s`,
+    api_id: String(form.get('api_id') ?? '').trim() || slugify(name).replace(/-/g, '_'),
+    kind: 'block',
+    description: String(form.get('description') ?? '').trim() || null,
+    url_prefix: null,
+    icon: null,
+    title_field: null,
+  });
+
+  if (!parsed.success) {
+    error = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
+  } else {
+    try {
+      const created = await createContentType(taproot.db.db, parsed.data);
+      return Astro.redirect(`/admin/settings/blocks/${created.id}?created=1`);
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : 'Could not create the block type.';
+    }
+  }
+}
+---
+
+<AdminLayout
+  title="New block type"
+  user={user}
+  breadcrumbs={[
+    { label: 'Settings', href: '/admin/settings' },
+    { label: 'Block types', href: '/admin/settings/blocks' },
+    { label: 'New' },
+  ]}
+>
+  <h1 class="mb-2 text-2xl font-semibold tracking-tight">New block type</h1>
+  <p class="mb-6 max-w-prose text-sm text-content-muted">
+    Give it a name, then add fields on the next screen — the same field builder content types use.
+  </p>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">{error}</p>
+      )
+    }
+  </div>
+
+  <form method="post" class="max-w-2xl space-y-6">
+    <div>
+      <label for="name" class="block text-sm font-medium">Name</label>
+      <p id="name-hint" class="mt-0.5 text-xs text-content-subtle">
+        What an editor picks from the "Add a block" list — "Hero", "Call to action", "Gallery".
+      </p>
+      <input
+        id="name"
+        name="name"
+        required
+        maxlength="120"
+        aria-describedby="name-hint"
+        class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      />
+    </div>
+
+    <div>
+      <label for="api_id" class="block text-sm font-medium">
+        API id <span class="font-normal text-content-subtle">(optional)</span>
+      </label>
+      <p id="api-hint" class="mt-0.5 text-xs text-content-subtle">
+        The machine name stored on every block of this type and used to pick its template. Cannot be
+        changed later. Derived from the name if left blank.
+      </p>
+      <input
+        id="api_id"
+        name="api_id"
+        pattern="[a-z][a-z0-9_]*"
+        maxlength="64"
+        aria-describedby="api-hint"
+        class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+      />
+    </div>
+
+    <div>
+      <label for="description" class="block text-sm font-medium">
+        Description <span class="font-normal text-content-subtle">(optional)</span>
+      </label>
+      <p id="description-hint" class="mt-0.5 text-xs text-content-subtle">
+        Shown to editors choosing which block to add.
+      </p>
+      <textarea
+        id="description"
+        name="description"
+        rows="2"
+        maxlength="500"
+        aria-describedby="description-hint"
+        class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      ></textarea>
+    </div>
+
+    <div class="flex gap-3">
+      <button
+        type="submit"
+        class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+      >
+        Create block type
+      </button>
+      <a
+        href="/admin/settings/blocks"
+        class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+      >
+        Cancel
+      </a>
+    </div>
+  </form>
+</AdminLayout>

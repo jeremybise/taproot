@@ -19,6 +19,8 @@ export interface ConfigFormProps {
   taxonomies: TaxonomyRow[];
   /** Content type being edited, so a relation cannot silently target nothing. */
   currentContentTypeId: string;
+  /** Block types available to place in a block field. */
+  blockTypes?: ContentTypeRow[];
 }
 
 type ConfigForm = (props: ConfigFormProps) => React.ReactElement | null;
@@ -501,9 +503,65 @@ const TaxonomyConfig: ConfigForm = ({ config, onChange, taxonomies }) => (
   </div>
 );
 
-const BlockConfig: ConfigForm = () => (
-  <NoOptions note="Blocks and their region model arrive in Phase 2. No options to configure yet." />
-);
+const BlockConfig: ConfigForm = ({ config, onChange, blockTypes = [] }) => {
+  const allowed = Array.isArray(config.allowedBlocks) ? (config.allowedBlocks as string[]) : [];
+
+  const toggle = (apiId: string, checked: boolean) =>
+    onChange({
+      ...config,
+      allowedBlocks: checked ? [...allowed, apiId] : allowed.filter((entry) => entry !== apiId),
+    });
+
+  return (
+    <div className="space-y-4">
+      {blockTypes.length === 0 ? (
+        <p className="rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-xs text-content-subtle">
+          No block types exist yet. Create some under Settings → Block types, then come back and
+          choose which of them belong in this region — the field can be saved meanwhile and will
+          accept any block type.
+        </p>
+      ) : (
+        <fieldset>
+          <legend className="text-sm font-medium">Allowed blocks</legend>
+          {/*
+            An empty selection means "any", which is the field config's documented default. Said
+            out loud here because an empty checkbox group otherwise reads as "none allowed" — the
+            opposite of what it does.
+          */}
+          <p className="mt-0.5 text-xs text-content-subtle">
+            {allowed.length === 0
+              ? 'Nothing selected, so every block type is allowed here.'
+              : `${allowed.length} of ${blockTypes.length} block types allowed.`}
+          </p>
+
+          <div className="mt-2 space-y-1.5 rounded-md border border-border-strong bg-surface px-3 py-2.5">
+            {blockTypes.map((blockType) => (
+              <div key={blockType.id} className="flex items-center gap-2">
+                <input
+                  id={`allowed-${blockType.api_id}`}
+                  type="checkbox"
+                  checked={allowed.includes(blockType.api_id)}
+                  onChange={(e) => toggle(blockType.api_id, e.target.checked)}
+                />
+                <label htmlFor={`allowed-${blockType.api_id}`} className="text-sm">
+                  {blockType.name}
+                </label>
+              </div>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      <NumberInput
+        label="Maximum blocks"
+        hint="Leave blank for no limit."
+        min={1}
+        value={config.maxBlocks}
+        onChange={(maxBlocks) => onChange({ ...config, maxBlocks })}
+      />
+    </div>
+  );
+};
 
 const RepeaterConfig: ConfigForm = () => (
   <NoOptions note="Repeaters arrive in Phase 2 alongside blocks. No options to configure yet." />

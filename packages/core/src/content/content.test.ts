@@ -15,7 +15,16 @@ import {
   uniqueSlug,
   wouldCreateCycle,
 } from './paths.js';
-import { createContentType, createField, deleteContentType, updateField } from './types.js';
+import {
+  blockTypeRegistry,
+  countBlockUsage,
+  createContentType,
+  createField,
+  deleteContentType,
+  listBlockTypes,
+  listContentTypes,
+  updateField,
+} from './types.js';
 import {
   countItemsByStatus,
   createItem,
@@ -26,7 +35,7 @@ import {
   listItems,
   updateItem,
 } from './items.js';
-import { validateItemData } from '../validation/fields.js';
+import { contentTypeInputSchema, validateItemData } from '../validation/fields.js';
 
 let handle: TaprootDb;
 
@@ -646,6 +655,128 @@ describe('field validation', () => {
       expect(result.data?.body).toBe('Heading<strong>kept</strong>');
     });
   });
+
+  describe('blocks', () => {
+    const blockField = (config: Record<string, unknown> = {}) =>
+      field({ api_id: 'sections', type: 'block', config: JSON.stringify(config) });
+
+    const heroType = {
+      fields: [
+        field({ id: 'h1', api_id: 'heading', type: 'text', required: 1 }),
+        field({ id: 'h2', api_id: 'lead', type: 'text' }),
+      ],
+    };
+
+    const registry = new Map([['hero', heroType]]);
+
+    const block = (data: Record<string, unknown>, type = 'hero') => ({ id: 'b1', type, data });
+
+    it('validates each block against its own type', () => {
+      const result = validateItemData(
+        [blockField()],
+        { sections: [block({ heading: 'Hello', lead: 'There' })] },
+        { blockTypes: registry },
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data?.sections).toEqual([
+        { id: 'b1', type: 'hero', data: { heading: 'Hello', lead: 'There' } },
+      ]);
+    });
+
+    it('reports a missing required field inside a block, with its position', () => {
+      // The editor renders blocks as a list under one label and has nowhere to put a per-block
+      // error map, so the message has to say which block and which field itself.
+      const result = validateItemData(
+        [blockField()],
+        { sections: [block({ heading: 'ok' }), block({ lead: 'no heading' })] },
+        { blockTypes: registry },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors.sections?.join(' ')).toMatch(/Block 2.*heading/);
+    });
+
+    it('rejects an unknown block type rather than dropping it', () => {
+      // Silently dropping would delete an editor's content on the next save.
+      const result = validateItemData(
+        [blockField()],
+        { sections: [block({}, 'nope')] },
+        { blockTypes: registry },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors.sections?.join(' ')).toContain('unknown block type');
+    });
+
+    it('enforces allowedBlocks', () => {
+      const result = validateItemData(
+        [blockField({ allowedBlocks: ['quote'] })],
+        { sections: [block({ heading: 'x' })] },
+        { blockTypes: registry },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors.sections?.join(' ')).toContain('not allowed');
+    });
+
+    it('treats an empty allowedBlocks as "any", matching the config default', () => {
+      const result = validateItemData(
+        [blockField({ allowedBlocks: [] })],
+        { sections: [block({ heading: 'x' })] },
+        { blockTypes: registry },
+      );
+
+      expect(result.success).toBe(true);
+    });
+
+    it('enforces maxBlocks', () => {
+      const result = validateItemData(
+        [blockField({ maxBlocks: 1 })],
+        { sections: [block({ heading: 'a' }), { ...block({ heading: 'b' }), id: 'b2' }] },
+        { blockTypes: registry },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors.sections?.join(' ')).toContain('At most 1 block');
+    });
+
+    it('requires the envelope, so a bare object cannot pose as a block', () => {
+      const result = validateItemData(
+        [blockField()],
+        { sections: [{ heading: 'no id or type' }] },
+        { blockTypes: registry },
+      );
+
+      expect(result.success).toBe(false);
+    });
+
+    it('sanitises richtext inside a block, exactly as at the top level', () => {
+      // The recursion is the point: a block's fields go through the same validation, so nothing is
+      // safe outside a block and hostile inside one.
+      const withRichtext = new Map([
+        ['prose', { fields: [field({ id: 'p1', api_id: 'body', type: 'richtext' })] }],
+      ]);
+
+      const result = validateItemData(
+        [blockField()],
+        { sections: [block({ body: '<p>hi</p><script>alert(1)</script>' }, 'prose')] },
+        { blockTypes: withRichtext },
+      );
+
+      expect(result.success).toBe(true);
+      expect((result.data?.sections as { data: { body: string } }[])[0]!.data.body).toBe('<p>hi</p>');
+    });
+
+    it('leaves block contents alone when no registry is supplied', () => {
+      // The content-type builder's preview has no blocks loaded and must not reject content it
+      // cannot check.
+      const result = validateItemData([blockField()], { sections: [block({ heading: 'x' })] });
+
+      expect(result.success).toBe(true);
+    });
+  });
+
 });
 
 describe('deletion', () => {
@@ -666,6 +797,141 @@ describe('deletion', () => {
     // Deliberate: silently deleting a whole page tree is not a recoverable mistake.
     const { items } = await listItems(handle.db, {});
     expect(items.map((i) => i.id)).toEqual([child.id]);
+  });
+});
+
+describe('block types share the content_types table', () => {
+  async function seedBlockType(apiId = 'hero') {
+    return createContentType(handle.db, {
+      api_id: apiId,
+      name: 'Hero',
+      name_plural: 'Heroes',
+      kind: 'block',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      title_field: null,
+    });
+  }
+
+  it('accepts kind "block" through the input schema', () => {
+    // `createContentType` takes a typed object and does no runtime validation, so the seed passed
+    // while the admin form — which parses through this schema — did not. Only the form path caught
+    // it, and only a test on the schema itself keeps it caught.
+    const parsed = contentTypeInputSchema.safeParse({
+      api_id: 'hero',
+      name: 'Hero',
+      name_plural: 'Heroes',
+      kind: 'block',
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it('keeps block types out of listContentTypes by default', async () => {
+    // The load-bearing default: the sidebar, the "new content item" picker, and the relation
+    // target list all call this, and none of them should ever offer a block.
+    await seedPageType();
+    await seedBlockType();
+
+    const listed = await listContentTypes(handle.db);
+
+    expect(listed.map((type) => type.api_id)).toEqual(['page']);
+  });
+
+  it('returns them when asked', async () => {
+    await seedPageType();
+    await seedBlockType();
+
+    expect((await listContentTypes(handle.db, { includeBlocks: true })).length).toBe(2);
+    expect((await listBlockTypes(handle.db)).map((t) => t.api_id)).toEqual(['hero']);
+  });
+
+  it('refuses to create a content item of a block type', async () => {
+    // A POST carrying a block type's id would otherwise create an item with no URL, invisible in
+    // every list that filters blocks out.
+    const blockType = await seedBlockType();
+
+    await expect(
+      createItem(handle, blockType, [], { contentTypeId: blockType.id, title: 'Nope' }),
+    ).rejects.toThrow(/block type/i);
+  });
+
+  it('builds a registry of block types with their fields', async () => {
+    const blockType = await seedBlockType();
+    await createField(handle.db, blockType.id, {
+      api_id: 'heading',
+      label: 'Heading',
+      type: 'text',
+      required: true,
+      localized: false,
+      position: 0,
+      config: {},
+      help_text: null,
+    });
+
+    const registry = await blockTypeRegistry(handle.db);
+
+    expect(registry.get('hero')?.fields.map((f) => f.api_id)).toEqual(['heading']);
+  });
+
+  it('refuses to delete a block type still placed on an item', async () => {
+    // Deleting one that is in use would quietly empty pages on their next save.
+    const { type: pageType } = await seedPageType();
+    const sections = await createField(handle.db, pageType.id, {
+      api_id: 'sections',
+      label: 'Sections',
+      type: 'block',
+      required: false,
+      localized: false,
+      position: 1,
+      config: {},
+      help_text: null,
+    });
+    const blockType = await seedBlockType();
+
+    await createItem(handle, pageType, [sections], {
+      contentTypeId: pageType.id,
+      title: 'Composed',
+      data: { sections: [{ id: 'b1', type: 'hero', data: {} }] },
+    });
+
+    await expect(deleteContentType(handle.db, blockType.id)).rejects.toThrow(/still place it/);
+    expect(await countBlockUsage(handle.db, 'hero')).toBe(1);
+  });
+
+  it('allows deleting an unused block type', async () => {
+    const blockType = await seedBlockType();
+
+    await deleteContentType(handle.db, blockType.id);
+
+    expect(await listBlockTypes(handle.db)).toEqual([]);
+  });
+
+  it('does not confuse a block type with one whose name it prefixes', async () => {
+    // The usage query matches the exact `"type":"hero"` shape the block envelope guarantees, so
+    // `hero` and `hero_wide` cannot be mistaken for each other.
+    const { type: pageType } = await seedPageType();
+    const sections = await createField(handle.db, pageType.id, {
+      api_id: 'sections',
+      label: 'Sections',
+      type: 'block',
+      required: false,
+      localized: false,
+      position: 1,
+      config: {},
+      help_text: null,
+    });
+    await seedBlockType('hero_wide');
+
+    await createItem(handle, pageType, [sections], {
+      contentTypeId: pageType.id,
+      title: 'Composed',
+      data: { sections: [{ id: 'b1', type: 'hero_wide', data: {} }] },
+    });
+
+    expect(await countBlockUsage(handle.db, 'hero_wide')).toBe(1);
+    expect(await countBlockUsage(handle.db, 'hero')).toBe(0);
   });
 });
 

@@ -3,7 +3,8 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 and 1 complete.** Sign in, define a content type and its fields visually, write
+**Status: Phases 0 and 1 complete; Phase 2 in progress** — blocks and page composition work,
+Reusable Blocks are next. Sign in, define a content type and its fields visually, write
 content with a real rich text editor, classify it, put it in a menu, set its focal point, and see it
 render at a real nested URL. See [SCOPE.md](SCOPE.md) for the full plan and
 [what's next](#whats-next).
@@ -49,6 +50,11 @@ toolchain — Taproot has zero native dependencies.
 - **Content lists built for scanning.** Colour-coded status badges, a faceted status filter whose
   counts tell you what each option would return, and created/updated columns that tighten to a
   time for today's edits and widen to a year for old ones.
+- **Page composition with blocks.** Block types are built with the same visual field builder as
+  content types, because a block type *is* a user-defined schema with fields. Editors add, reorder,
+  and edit blocks inline; reordering works by dragging and by buttons. Taproot ships no block
+  templates — `BlockRenderer` takes a map from block name to your own Astro component, because a
+  CMS that shipped a hero component would be shipping a design.
 - **Focal point and crop, stored as data rather than baked in.** Set one focal point and watch it
   play out in a wide banner, a social card, a square thumbnail, and a portrait card at once —
   because that is the decision being made, and it cannot be judged from a single frame. Drag it, or
@@ -184,7 +190,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-368 tests. The ones worth knowing about:
+403 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -214,6 +220,10 @@ npm test
   clamps to the crop instead of wrapping to the far side of the image.
 - Crop resolution across every combination of source orientation, target ratio, and focal position,
   asserting the result is always a real region inside a real image.
+- That `listContentTypes` excludes block types by default — the behaviour the sidebar, the item
+  picker, and the relation target list all depend on without asking for it.
+- That richtext inside a block is sanitised exactly as it is at the top level, because block
+  validation recurses through the same function.
 - Image headers built byte by byte rather than committed as binary files, so a diff shows exactly
   which bytes the parser depends on — including that width and height are not transposed, which is
   the likeliest bug and invisible on a square fixture.
@@ -222,10 +232,10 @@ npm test
 
 ## What's next
 
-**Phase 2**, per [SCOPE.md](SCOPE.md): the block field type, region-based page composition,
-Reusable Block promotion with usage tracking, and a `BlockRenderer` for Astro. The `block` and
-`repeater` field types already have their columns and validation seams; only the editing UI is
-missing.
+The rest of **Phase 2**, per [SCOPE.md](SCOPE.md): Reusable Blocks — promoting a block instance to
+a shared library, referencing it from several content items, and usage tracking that warns before
+deletion. The block field type, page composition, and `BlockRenderer` are done. `repeater` still
+has only its columns and validation seam.
 
 Phase 0 deliberately left seams rather than stubs that would need unpicking, and Phase 1 filled
 every one of them — `fields` was already a real table, `content_items` already carried

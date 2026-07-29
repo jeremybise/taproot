@@ -261,8 +261,21 @@ export function buildValueSchema(field: FieldRow): z.ZodType {
       break;
 
     case 'block':
-      // Block payloads are validated by the block registry in Phase 2.
-      schema = z.array(z.record(z.string(), z.unknown()));
+      /**
+       * Only the envelope is checked here; each block's own fields are validated separately.
+       *
+       * The contents depend on the block type's schema, which this function has no access to —
+       * `validateItemData` resolves them against the registry it is given. Splitting it that way
+       * keeps `buildValueSchema` a pure function of one field definition, which is what lets it be
+       * called from the content-type builder's preview with nothing else loaded.
+       */
+      schema = z.array(
+        z.object({
+          id: z.string().min(1),
+          type: z.string().min(1),
+          data: z.record(z.string(), z.unknown()).default({}),
+        }),
+      );
       break;
 
     case 'repeater':
@@ -286,13 +299,37 @@ export interface ItemValidationResult {
   errors: Record<string, string[]>;
 }
 
+/** One block placed into a `block` field. */
+export interface BlockInstance {
+  /** Stable across saves, so reordering does not remount every editor and lose focus. */
+  id: string;
+  /** The block type's `api_id`. */
+  type: string;
+  data: Record<string, unknown>;
+}
+
+export interface ValidateItemOptions {
+  /**
+   * Block type schemas keyed by `api_id`, from `blockTypeRegistry`.
+   *
+   * Omitted, block contents pass through unvalidated — which is right for the content-type
+   * builder's preview, where no blocks exist, and wrong for a write. `createItem` and `updateItem`
+   * always pass it.
+   */
+  blockTypes?: Map<string, { fields: FieldRow[] }>;
+}
+
 /**
  * Validate a content item's field values against its content type's fields.
  *
  * Unknown keys are dropped rather than rejected: a field removed from the content type should not
  * make every existing item unsavable, and keeping stale keys would let deleted fields resurface.
  */
-export function validateItemData(fields: FieldRow[], data: unknown): ItemValidationResult {
+export function validateItemData(
+  fields: FieldRow[],
+  data: unknown,
+  options: ValidateItemOptions = {},
+): ItemValidationResult {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     return { success: false, errors: { _: ['Field data must be an object.'] } };
   }
@@ -305,16 +342,91 @@ export function validateItemData(fields: FieldRow[], data: unknown): ItemValidat
     const schema = buildValueSchema(field);
     const result = schema.safeParse(input[field.api_id]);
 
-    if (result.success) {
-      if (result.data !== undefined) parsed[field.api_id] = result.data;
-    } else {
+    if (!result.success) {
       errors[field.api_id] = result.error.issues.map(formatIssue);
+      continue;
     }
+
+    if (result.data === undefined) continue;
+
+    if (field.type === 'block' && options.blockTypes) {
+      const blocks = validateBlocks(
+        field,
+        result.data as BlockInstance[],
+        options.blockTypes,
+        options,
+      );
+      if (blocks.errors.length > 0) errors[field.api_id] = blocks.errors;
+      else parsed[field.api_id] = blocks.value;
+      continue;
+    }
+
+    parsed[field.api_id] = result.data;
   }
 
   return Object.keys(errors).length > 0
     ? { success: false, errors }
     : { success: true, data: parsed, errors: {} };
+}
+
+/**
+ * Validate each block against its own type's fields.
+ *
+ * Errors are flattened onto the parent field rather than returned per block, because the editor
+ * shows blocks as a list under one label and has nowhere to put a per-block error map. The message
+ * carries the position and the block type so it still says which one to fix.
+ *
+ * A block whose type no longer exists is an error rather than a silent drop: deleting a block type
+ * that is still in use should be visible, not something that quietly empties pages. The block type
+ * delete path refuses while blocks reference it, so reaching this means something unusual happened.
+ */
+function validateBlocks(
+  field: FieldRow,
+  blocks: BlockInstance[],
+  registry: Map<string, { fields: FieldRow[] }>,
+  options: ValidateItemOptions,
+): { value: BlockInstance[]; errors: string[] } {
+  const config = parseJson<Record<string, unknown>>(field.config, {});
+  const allowed = Array.isArray(config.allowedBlocks) ? (config.allowedBlocks as string[]) : [];
+  const max = typeof config.maxBlocks === 'number' ? config.maxBlocks : undefined;
+
+  const errors: string[] = [];
+  const value: BlockInstance[] = [];
+
+  if (max !== undefined && blocks.length > max) {
+    errors.push(`At most ${max} block${max === 1 ? '' : 's'} allowed (found ${blocks.length}).`);
+  }
+
+  blocks.forEach((block, index) => {
+    const position = `Block ${index + 1}`;
+    const blockType = registry.get(block.type);
+
+    if (!blockType) {
+      errors.push(`${position}: unknown block type "${block.type}".`);
+      return;
+    }
+
+    // An empty allow-list means "any block type", matching the field config's documented default.
+    if (allowed.length > 0 && !allowed.includes(block.type)) {
+      errors.push(`${position}: "${block.type}" is not allowed in this field.`);
+      return;
+    }
+
+    // Recursive, so a block containing a block field is validated all the way down. The registry is
+    // passed through unchanged; depth is bounded in practice by the editor, which does not offer a
+    // block field inside a block type.
+    const nested = validateItemData(blockType.fields, block.data, options);
+
+    if (nested.success) {
+      value.push({ id: block.id, type: block.type, data: nested.data ?? {} });
+    } else {
+      for (const [apiId, messages] of Object.entries(nested.errors)) {
+        errors.push(`${position} (${block.type}) — ${apiId}: ${messages.join(' ')}`);
+      }
+    }
+  });
+
+  return { value, errors };
 }
 
 function formatIssue(issue: z.core.$ZodIssue): string {
@@ -341,7 +453,7 @@ export const contentTypeInputSchema = z.object({
   name: z.string().min(1).max(120),
   name_plural: z.string().min(1).max(120),
   description: z.string().max(500).nullish(),
-  kind: z.enum(['page', 'collection', 'singleton']),
+  kind: z.enum(['page', 'collection', 'singleton', 'block']),
   icon: z.string().max(64).nullish(),
   url_prefix: z
     .string()

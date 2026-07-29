@@ -1,0 +1,38 @@
+---
+interface Props {
+  body: string;
+}
+
+const { body } = Astro.props;
+---
+
+{/*
+  `set:html` on stored content is only safe because richtext is sanitised on write, inside
+  `validateItemData` — see sanitizeHtml.ts. Never render a richtext value that has not been through
+  that path, and never move sanitising to render time.
+*/}
+<div class="prose" set:html={body} />
+
+<style>
+  .prose {
+    margin: 2rem 0;
+  }
+  .prose :global(h2) {
+    font-size: 1.35rem;
+    margin: 1.75rem 0 0.5rem;
+  }
+  .prose :global(h3) {
+    font-size: 1.1rem;
+    margin: 1.5rem 0 0.5rem;
+  }
+  .prose :global(ul),
+  .prose :global(ol) {
+    padding-left: 1.5rem;
+  }
+  .prose :global(blockquote) {
+    margin: 1rem 0;
+    padding-left: 1rem;
+    border-left: 3px solid var(--rule);
+    color: var(--muted);
+  }
+</style>
