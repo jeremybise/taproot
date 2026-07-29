@@ -194,8 +194,9 @@ export function buildTermTree(terms: TermRow[]): TermNode[] {
 /**
  * A term and every descendant, in one recursive query.
  *
- * This is the query taxonomy-scoped permissions are built on in Phase 3 — "everything under
- * Admissions" has to be one round trip, not a walk.
+ * "Everything under Academics" has to be one round trip rather than a walk, because it backs
+ * ordinary reads: filtering a content list by a branch, and counting a term's usage before
+ * offering to delete it.
  */
 export async function getTermSubtree(
   db: Kysely<Database>,
@@ -434,7 +435,12 @@ export async function reorderTerms(
 // Assignments
 // ---------------------------------------------------------------------------
 
-/** Every item id carrying any term in a branch. The Phase 3 permission query. */
+/**
+ * Every item id carrying any term in a branch.
+ *
+ * Classification only. A term says what content is about, never who may edit it — permissions are
+ * a separate model in Phase 3, deliberately not built on this. See SCOPE.md.
+ */
 export async function itemIdsInTermBranch(
   db: Kysely<Database>,
   rootTermId: string,
@@ -480,7 +486,8 @@ export interface AssignmentPlan {
  *
  * The delete is unconditional rather than scoped to the taxonomy fields currently on the type.
  * Removing a taxonomy field from a content type would otherwise strand that field's rows in the
- * index forever, and a stale row here is invisible until it wrongly answers a permission query.
+ * index forever, and a stale row here is invisible until it wrongly answers a filtered listing —
+ * showing an editor content that is no longer tagged the way the index claims.
  *
  * Returned as statements so the index lands in the same atomic batch as the item write. The reads
  * it needs — checking the referenced terms exist — all happen here, before the batch is built.

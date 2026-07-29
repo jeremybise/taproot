@@ -121,12 +121,17 @@ many), *Block*, *Reusable Block*, *Content Type*.
 - **Content type `kind`** is `page` (nests under a parent), `collection` (flat, `url_prefix`-based),
   or `singleton` (exactly one item, no create/delete).
 - **Field values live in `content_items.data`** keyed by field `api_id`, validated against the type.
+- **Taxonomies carry no authority.** A term classifies content — what it is about — and never
+  determines who may edit it. Departments-as-permissions are a separate Phase 3 model, on purpose:
+  classification is editable by contributors and ownership must not be, so tying them would let
+  someone tag a page for discoverability and silently hand another department edit rights. Do not
+  reintroduce permission checks that read taxonomy terms.
 - **`taxonomy_assignments` is a derived index, not the source of truth.** Tags are authored into
   `data` like every other field and the table is rebuilt from them inside the same atomic batch as
   the item write. This looks like redundancy worth removing — it isn't. Storing tags only in the
   join table would make a restored revision silently lose them, because revisions snapshot `data`.
-  The index exists purely to make "every item in this branch" an indexed query, which is what
-  Phase 3's taxonomy-scoped permissions need and JSON cannot give.
+  What the index buys is filtering a content list by term without scanning every row and parsing
+  its `data` blob.
 - **Terms have no materialised path**, unlike content items. Content items need one because a
   request URL must resolve in one indexed lookup on the hot path; terms have no public URL, and
   their only tree query is a recursive CTE off `parent_id`. Adding a path would mean a second

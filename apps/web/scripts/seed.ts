@@ -70,8 +70,11 @@ if (admin) {
 //
 // Created before the content types, because the page type's taxonomy field has to be configured
 // with this taxonomy's id. The tree is two levels deep on purpose: it is what makes "every item
-// under Student Services" a query worth having, and it is the shape Phase 3's department-scoped
-// permissions assume.
+// under Student Services" a branch query worth having.
+//
+// This classifies content and nothing more. Whichever department is allowed to *edit* a page is a
+// separate model in Phase 3 — see the Roles & permissions section of SCOPE.md for why the two are
+// deliberately not the same rows.
 
 async function ensureTaxonomy(
   input: Parameters<typeof createTaxonomy>[1],
@@ -102,7 +105,7 @@ const departments = await ensureTaxonomy(
     api_id: 'department',
     name: 'Department',
     name_plural: 'Departments',
-    description: 'Who owns a piece of content. Scopes editing permissions from Phase 3 onward.',
+    description: 'Which part of the college a page relates to. Used for navigation and filtering.',
     hierarchical: true,
   },
   [
@@ -180,7 +183,7 @@ const page = await ensureType(
       type: 'taxonomy',
       required: false,
       localized: false,
-      help_text: 'Which department owns this page. Drives permissions from Phase 3 onward.',
+      help_text: 'Which parts of the college this page relates to.',
       config: { taxonomyId: departments.taxonomy.id, multiple: true },
     },
   ],
@@ -388,7 +391,8 @@ await ensureItem(
       summary: 'Apply for financial aid — a separate process from admissions.',
       body: 'Submit the aid application by 1 March for priority consideration.',
       show_in_nav: true,
-      // Two departments on one page: the aid team owns it, admissions links to it.
+      // Two departments on one page — it is genuinely about both. Multi-tagging is unremarkable
+      // precisely because these terms classify rather than confer edit rights.
       departments: [termId('Financial Aid'), termId('Admissions')],
     },
   },

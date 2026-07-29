@@ -40,8 +40,8 @@ toolchain — Taproot has zero native dependencies.
   through the normal update path, so restoring an older slug moves the subtree and writes the
   redirects rather than stranding the children.
 - **Taxonomies.** Term trees any content type can use, attached by giving the type a taxonomy
-  field. "Every item anywhere under this branch" is one indexed query — the one Phase 3's
-  department-scoped permissions are built on.
+  field. "Every item anywhere under this branch" is one indexed query rather than a scan over
+  parsed JSON. Classification only — a term never decides who may edit content.
 - **Auth.** OAuth (Google/GitHub/Microsoft) plus a dev-only password provider that cannot be
   enabled in production.
 - **REST API** with a typed client.

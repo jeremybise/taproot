@@ -7,15 +7,22 @@ import { sql, type Kysely } from 'kysely';
  * field whose config names the taxonomy, which means the existing field system already carries
  * per-type configuration (required, single vs multiple) without a parallel mechanism for it.
  *
+ * Taxonomies classify content. They deliberately carry **no authority**: a term never determines
+ * who may edit an item. Departments-as-permissions are a separate model in Phase 3, because "what
+ * is this about" is editable by contributors and "who is responsible for it" must not be. Tying
+ * them would mean tagging a page for discoverability silently granted another department edit
+ * rights. See the Roles & permissions section of SCOPE.md.
+ *
  * `taxonomy_assignments` is a **derived index**, not the source of truth. The authored value lives
  * in `content_items.data` under the field's `api_id`, like every other field, so that revisions
  * snapshot tags, validation treats them uniformly, and the API contract has one shape. The
  * assignments table is rebuilt from that value inside the same atomic batch as the item write.
  *
- * The duplication buys the one thing JSON cannot give: an indexed answer to "which items are in
- * this branch of the tree", which is exactly the query Phase 3's taxonomy-scoped permissions are
- * built on. Storing tags *only* in the join table was the alternative, and it would have made a
- * restored revision quietly lose its tags.
+ * The duplication buys the one thing JSON cannot: an indexed answer to "which items carry a term
+ * in this branch". Without it, filtering a content list by term means scanning every row and
+ * parsing its `data` blob, which is unindexable and gets worse with every item added. Storing tags
+ * *only* in the join table was the alternative, and it would have made a restored revision quietly
+ * lose its tags.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
@@ -108,7 +115,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     ])
     .execute();
 
-  // The Phase 3 query: every item tagged with any term in a branch.
+  // Every item tagged with any term in a branch — filtered content lists, and term archive pages
+  // on the public site once those exist.
   await db.schema
     .createIndex('taxonomy_assignments_term_idx')
     .on('taxonomy_assignments')

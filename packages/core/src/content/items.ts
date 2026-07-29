@@ -278,7 +278,7 @@ export async function createItem(
 
   // Batched rather than a bare insert so the item, its first revision, and its taxonomy index
   // cannot diverge — an item whose history begins one save late is a gap that can never be
-  // reconstructed, and a stale index row is invisible until it wrongly answers a permission query.
+  // reconstructed, and a stale index row is invisible until it wrongly answers a filtered listing.
   await handle.batch([
     db.insertInto('content_items').values(row),
     ...assignments.statements,

@@ -6,7 +6,9 @@ import type { TaprootContext } from './context.js';
  * Role gates.
  *
  * Phase 0 has a single global role per user; Phase 3 replaces the body of these functions with the
- * scoped model (role assignments narrowed to a content type, a taxonomy branch, or specific items).
+ * scoped model (role assignments narrowed to a content type, a department, or specific items).
+ * Departments there are their own entity — deliberately not taxonomy terms, since classification
+ * is contributor-editable and authority must not be. See SCOPE.md.
  * Keeping every check behind these helpers now means that change lands in one file rather than
  * being spread across every route.
  */

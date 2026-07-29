@@ -37,7 +37,8 @@ This is a standing requirement across every phase, not a one-time setup task —
 - **Framework integration**: Astro integration package exposing admin panel, REST API, typed client, and a `BlockRenderer` component — same shape as Wolly's `@wollycms/astro`.
 - **Auth**: OAuth (Google/GitHub/Microsoft) + TOTP, same as Wolly — no reason to change this part.
 - **Hosting target for v1**: Cloudflare Workers + D1, decided. Keep the data adapter portable regardless, but build and test against this first.
-- **Single site, no multi-tenancy**: departments are taxonomy-scoped permissions within one site, not separate site instances. Simplifies the roles model and removes a whole class of routing/deployment complexity.
+- **Single site, no multi-tenancy**: departments are a permission scope within one site, not separate site instances. Simplifies the roles model and removes a whole class of routing/deployment complexity.
+- **Permissions are their own model, not a taxonomy**: an earlier draft of this doc scoped role assignments to taxonomy branches. That conflated two different questions — _what is this content about_ (classification, editable by contributors) and _who is responsible for it_ (authority, not theirs to change). Tying them means adding a tag for discoverability silently grants another department edit rights, and any contributor who can edit an item can change who else can. The department/permission model gets its own entities in Phase 3; taxonomies stay purely about classification. See the Roles & permissions section.
 
 ## Data model sketch
 
@@ -48,7 +49,7 @@ The relation field is a named gap in Wolly — make it a first-class field type 
 
 **Other entities**, matching what you said you want to keep:
 
-- Taxonomies — content-type-agnostic trees, attachable to any content type
+- Taxonomies — content-type-agnostic trees, attachable to any content type. Classification only: they describe what content is about and never determine who may edit it (see Roles & permissions)
 - Menus — items point to content items, taxonomy terms, or external URLs
 - Media library — assets with alt text, focal point, variants (alt text feeds the accessibility checker)
 - Webhooks, API keys, tracking script manager, audit log — standard admin-config entities, low complexity, defer to later phase
@@ -65,7 +66,10 @@ Directus-style: add a field, pick its type from a list, configure options (label
 This is the reason the git-based approach didn't work, so it's worth designing deliberately rather than bolting on later.
 
 - **Base roles**: Admin, Editor, Contributor, Viewer.
-- **Scoping**: a role assignment can be scoped to a content type, a taxonomy branch (e.g. "Admissions" department), or specific content items — this is what lets each department manage only its own content.
+- **Scoping**: a role assignment can be scoped to a content type, a **department**, or specific content items — this is what lets each department manage only its own content.
+- **Departments are their own entity**, not taxonomy terms. They are an organisational fact about who is responsible for content, and they need properties a taxonomy has no business carrying: membership, and rules about who may reassign ownership. A department tree and a Department _taxonomy_ may well both exist — one for authority, one for "this page is about Admissions" — and they should not be the same rows. An earlier draft of this doc made them the same thing; see the note under Core architecture decisions for why that was wrong.
+- **Ownership is assigned, not tagged**: changing which department owns a content item must require a higher role than editing that item, or a contributor can hand their own work to someone else — or take someone else's.
+- **Unowned content fails closed**: an item with no department is editable by admins only, and the admin surfaces the list so it does not accumulate invisibly.
 - **Workflow states** per content item: Draft → In Review → Scheduled → Published → Archived, with role gates on transitions (Contributor can create/edit Draft and submit to Review; Editor approves and publishes; Admin bypasses).
 - **Field-level permissions**: explicitly a stretch goal, not MVP. Wolly doesn't do this either, and it's a meaningfully bigger lift (per-field write checks at the API layer) — don't let it block v1.
 
@@ -125,7 +129,7 @@ Visual content-type builder (v1 field set above, including relation), content it
 Block field type, region-based page composition, Reusable Block promotion + usage tracking, a starter set of common block presets (hero, CTA, gallery, rich text, staff card), `BlockRenderer` for Astro.
 
 **Phase 3 — Roles & workflow**
-Scoped role model, draft/review/schedule/publish workflow, audit log.
+Departments as a first-class entity (membership, ownership of content items), scoped role model, draft/review/schedule/publish workflow, audit log. Departments are built here rather than in Phase 1 because nothing before this phase consumes them — Phase 1's taxonomies classify content, they do not own it.
 
 **Phase 3.5 — Content Releases**
 Batched staging and coordinated publish (manual or scheduled) across multiple content items. Build only once Phase 3's revisions and workflow states are stable — see the Content Releases section above for why.
@@ -145,7 +149,8 @@ Just capturing it so it's not forgotten: a form builder (fields, validation, con
 
 ## Decisions already made (no longer open)
 
-- Departments are taxonomy-scoped permissions within a single site — no multi-site/multi-tenancy.
+- Departments are a permission scope within a single site — no multi-site/multi-tenancy.
+- Departments are their own entity, designed in Phase 3. They are **not** taxonomy terms, and taxonomies carry no authority — reversed from an earlier draft of this doc, see Core architecture decisions.
 - Hosting target for v1 is Cloudflare Workers + D1.
 - Admin UI library is shadcn/ui, with the accessibility caveats noted above.
 

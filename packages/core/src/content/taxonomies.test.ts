@@ -349,7 +349,7 @@ describe('assignment index', () => {
       data: { departments: [athletics.id] },
     });
 
-    // This is the Phase 3 permission query: everything under Academics, including deeper terms.
+    // Filtering a listing by a branch: everything under Academics, including deeper terms.
     expect(await itemIdsInTermBranch(handle.db, academics.id)).toEqual([tagged.id]);
   });
 
