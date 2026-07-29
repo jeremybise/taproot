@@ -3,9 +3,9 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phase 0 (Foundation) complete.** The model works end to end — sign in, define a content
-type and its fields, create content, and see it render at a real nested URL. See
-[SCOPE.md](SCOPE.md) for the full plan and [what's next](#whats-next).
+**Status: Phase 0 (Foundation) complete; Phase 1 in progress.** The model works end to end — sign
+in, define a content type and its fields visually, create content, and see it render at a real
+nested URL. See [SCOPE.md](SCOPE.md) for the full plan and [what's next](#whats-next).
 
 ---
 
@@ -29,8 +29,9 @@ toolchain — Taproot has zero native dependencies.
 ## What works today
 
 - **Portable data layer.** One codebase on SQLite (dev), Cloudflare D1 (production), or Postgres.
-- **Content types with real fields**, not hand-written JSON — text, richtext, number, boolean,
-  date, select, media, taxonomy, relation, block, repeater.
+- **A visual content-type builder.** Add a field, pick its type, configure it in a form — with a
+  live preview rendered through the same control the real editor uses, so it cannot drift. Text,
+  richtext, number, boolean, date, select, media, taxonomy, relation, block, repeater.
 - **Hierarchical URLs that actually nest.** `/admissions/apply` and `/financial-aid/apply` coexist,
   because slugs are unique among siblings rather than site-wide.
 - **Cascading moves.** Renaming or re-parenting a page rewrites every descendant's path and writes
@@ -51,7 +52,8 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (103 covering dialects, auth, paths, validation) |
+| `npm test` | Unit tests (150 covering dialects, auth, paths, validation, the field builder) |
+| `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
 | `npm run deploy` | Build and `wrangler deploy` (see [DEPLOYMENT.md](DEPLOYMENT.md)) |
@@ -141,9 +143,9 @@ the design tokens numerically, because jsdom cannot compute contrast — it caug
 during Phase 0, including input borders at 1.81:1 against a 3:1 requirement.
 
 Two things these do **not** cover, and which need a real browser and a human: post-hydration
-behaviour of the React islands, and screen-reader output. The keyboard paths in the field builder
-are deliberately buttons rather than drag-and-drop; when drag-and-drop arrives in Phase 1 it must be
-added *alongside* them, not instead.
+behaviour of the React islands, and screen-reader output. The field builder's drag-and-drop
+reordering is layered on *alongside* its keyboard buttons rather than replacing them — that is the
+pattern any future drag interaction should follow.
 
 ---
 
@@ -153,7 +155,7 @@ added *alongside* them, not instead.
 npm test
 ```
 
-103 tests. The ones worth knowing about:
+150 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -168,14 +170,14 @@ npm test
 
 ## What's next
 
-Phase 1, per [SCOPE.md](SCOPE.md): the visual content-type builder with live preview, rich-text
-editing, the media hotspot/crop editor, taxonomies, menus, revisions, the SEO sidebar, and
-singleton editing.
+The rest of Phase 1, per [SCOPE.md](SCOPE.md): taxonomies, menus, revisions, the SEO sidebar,
+singleton editing, rich-text editing, and the media hotspot/crop editor.
 
 Phase 0 deliberately left seams for these rather than stubs that would need unpicking — `fields` is
-a real table, `content_items` already carries `parent_id`/`path`/`depth`, and every media asset
-already has hotspot and crop columns.
+a real table, `content_items` already carries `parent_id`/`path`/`depth` and a `seo` column, and
+every media asset already has hotspot and crop columns. Taxonomies, menus, and revisions still need
+their own tables.
 
-Known gaps closing in Phase 1: the richtext field edits as a plain textarea (values round-trip
-correctly), the TOTP enrolment UI is not built though the core is implemented and tested, and image
-dimensions are not read on upload.
+Known gaps closing in the rest of Phase 1: the richtext field edits as a plain textarea (values
+round-trip correctly), the TOTP enrolment UI is not built though the core is implemented and
+tested, and image dimensions are not read on upload.

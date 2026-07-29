@@ -20,24 +20,31 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const taproot = await createContext(env, bindings);
   const token = context.cookies.get(SESSION_COOKIE_NAME)?.value;
 
+  // Sliding expiry: when `validateSession` extends the stored expiry it has only updated the row,
+  // so the cookie has to be re-issued or the browser still drops it at the original 30-day mark
+  // and an active user is signed out mid-task. There is no response to write to until `next()`
+  // has run, hence deferring the header rather than setting it here.
+  let refreshedCookie: string | null = null;
+
   if (token) {
     const session = await validateSession(taproot.db.db, token);
     if (session) {
       taproot.user = session.user;
       taproot.sessionToken = token;
 
-      // Sliding expiry: re-issue the cookie when the session was extended so an active user is
-      // never signed out mid-task.
       if (session.refreshed) {
-        context.response?.headers?.append?.(
-          'set-cookie',
-          buildSessionCookie(token, session.expiresAt, { secure: taproot.auth.secureCookies }),
-        );
+        refreshedCookie = buildSessionCookie(token, session.expiresAt, {
+          secure: taproot.auth.secureCookies,
+        });
       }
     }
   }
 
   (context.locals as { taproot: typeof taproot }).taproot = taproot;
 
-  return next();
+  const response = await next();
+  if (refreshedCookie) {
+    response.headers.append('set-cookie', refreshedCookie);
+  }
+  return response;
 });
