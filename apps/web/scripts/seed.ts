@@ -2,9 +2,13 @@ import {
   createContentType,
   createField,
   createItem,
+  createMenu,
+  createMenuItem,
   createTaxonomy,
   createTerm,
   createUser,
+  getMenuByApiId,
+  listMenuItems,
   findUserByEmail,
   getContentTypeByApiId,
   getTaxonomyByApiId,
@@ -511,6 +515,68 @@ if (!bannerExists) {
     userId: admin.id,
     data: { enabled: false, message: '', severity: 'info' },
   });
+}
+
+// --- Menu -------------------------------------------------------------------
+//
+// Built last, because every entry references content that has to exist first. The mix is
+// deliberate: pages, a nested child, a term archive, and an external address, so the resolution
+// rules have something to demonstrate rather than being described in a comment.
+
+const existingMenu = await getMenuByApiId(handle.db, 'main');
+if (existingMenu && (await listMenuItems(handle.db, existingMenu.id)).length > 0) {
+  console.log('  menu main (existing)');
+} else {
+  const menu = existingMenu ?? (await createMenu(handle.db, {
+    api_id: 'main',
+    name: 'Main navigation',
+    description: 'The site header. Entries reference content, so moving a page keeps its link.',
+  }));
+
+  const pathId = async (path: string) =>
+    (
+      await handle.db
+        .selectFrom('content_items')
+        .select('id')
+        .where('path', '=', path)
+        .executeTakeFirstOrThrow()
+    ).id;
+
+  const admissionsEntry = await createMenuItem(handle.db, menu.id, {
+    targetType: 'item',
+    contentItemId: await pathId('/admissions'),
+  });
+
+  // Nested, to exercise the tree. Labelled shorter than the page title, which is the usual reason
+  // to set a label at all.
+  await createMenuItem(handle.db, menu.id, {
+    targetType: 'item',
+    contentItemId: await pathId('/admissions/apply'),
+    label: 'Apply',
+    parentId: admissionsEntry.id,
+  });
+
+  await createMenuItem(handle.db, menu.id, {
+    targetType: 'item',
+    contentItemId: await pathId('/financial-aid'),
+  });
+
+  await createMenuItem(handle.db, menu.id, {
+    targetType: 'item',
+    contentItemId: await pathId('/about'),
+  });
+
+  // A term archive, which is what makes the taxonomy visible on the public site at all.
+  const studentServices = departments.terms.find((term) => term.name === 'Student Services');
+  if (studentServices) {
+    await createMenuItem(handle.db, menu.id, {
+      targetType: 'term',
+      termId: studentServices.id,
+      label: 'Student Services',
+    });
+  }
+
+  console.log(`  menu main (created with ${(await listMenuItems(handle.db, menu.id)).length} items)`);
 }
 
 const counts = await handle.db

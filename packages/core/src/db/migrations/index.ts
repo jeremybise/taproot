@@ -6,6 +6,7 @@ import type { Database } from '../schema.js';
 import * as m0001 from './0001_init.js';
 import * as m0002 from './0002_revisions.js';
 import * as m0003 from './0003_taxonomies.js';
+import * as m0004 from './0004_menus.js';
 
 /**
  * The migration registry.
@@ -22,6 +23,7 @@ export const migrations: Record<string, Migration> = {
   '0001_init': m0001,
   '0002_revisions': m0002,
   '0003_taxonomies': m0003,
+  '0004_menus': m0004,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

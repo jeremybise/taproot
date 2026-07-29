@@ -84,6 +84,8 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/media', 'media/index'],
           ['/taxonomies', 'taxonomies/index'],
           ['/taxonomies/[id]', 'taxonomies/[id]'],
+          ['/menus', 'menus/index'],
+          ['/menus/[id]', 'menus/[id]'],
           ['/redirects', 'redirects/index'],
           ['/settings', 'settings/index'],
         ];
@@ -116,6 +118,10 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/taxonomies/[id]', 'taxonomies/[id]'],
           ['/taxonomies/[id]/terms', 'taxonomies/[id]/terms'],
           ['/terms/[termId]', 'terms/[termId]'],
+          ['/menus', 'menus/index'],
+          ['/menus/[id]', 'menus/[id]'],
+          ['/menus/[id]/items', 'menus/[id]/items'],
+          ['/menu-items/[itemId]', 'menu-items/[itemId]'],
         ];
 
         for (const [suffix, file] of apiRoutes) {

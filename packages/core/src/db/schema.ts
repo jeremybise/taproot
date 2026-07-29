@@ -290,14 +290,55 @@ export interface TaxonomyAssignmentsTable {
 }
 
 // ---------------------------------------------------------------------------
+// Menus
+// ---------------------------------------------------------------------------
+
+/** What a menu item points at. Exactly one of the matching columns is set. */
+export type MenuTargetType = 'item' | 'term' | 'url';
+
+export interface MenusTable {
+  id: string;
+  /** Stable machine name — how a template asks for this menu. Immutable after creation. */
+  api_id: string;
+  name: string;
+  description: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
+ * One entry in a menu.
+ *
+ * References its target rather than storing a URL, so a moved page keeps its menu entry pointing
+ * at the right place and an unpublished one drops out of the public menu on its own.
+ */
+export interface MenuItemsTable {
+  id: string;
+  menu_id: string;
+  /** Self-referential parent, for dropdowns. */
+  parent_id: string | null;
+  position: number;
+  depth: number;
+  /** Null means "use the target's own title", which keeps a renamed page's entry current. */
+  label: string | null;
+  target_type: MenuTargetType;
+  /** Nulled rather than cascaded when the target is deleted, so the broken entry stays visible. */
+  content_item_id: string | null;
+  term_id: string | null;
+  url: string | null;
+  open_in_new_tab: SqlBool;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+// ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
 
 /**
  * The full Kysely database interface.
  *
- * Phase 1 still adds `menus`. Phase 3 adds `role_assignments` and `audit_log`.
- * Phase 3.5 adds `releases`.
+ * Phase 3 adds `departments`, `role_assignments`, and `audit_log`. Phase 3.5 adds `releases`.
  */
 export interface Database {
   users: UsersTable;
@@ -314,6 +355,8 @@ export interface Database {
   taxonomies: TaxonomiesTable;
   terms: TermsTable;
   taxonomy_assignments: TaxonomyAssignmentsTable;
+  menus: MenusTable;
+  menu_items: MenuItemsTable;
 }
 
 export type User = Selectable<UsersTable>;
@@ -354,3 +397,11 @@ export type NewTerm = Insertable<TermsTable>;
 export type TermUpdate = Updateable<TermsTable>;
 
 export type TaxonomyAssignmentRow = Selectable<TaxonomyAssignmentsTable>;
+
+export type MenuRow = Selectable<MenusTable>;
+export type NewMenu = Insertable<MenusTable>;
+export type MenuUpdate = Updateable<MenusTable>;
+
+export type MenuItemRow = Selectable<MenuItemsTable>;
+export type NewMenuItem = Insertable<MenuItemsTable>;
+export type MenuItemUpdate = Updateable<MenuItemsTable>;

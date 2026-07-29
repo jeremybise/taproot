@@ -1,4 +1,7 @@
 ---
+import { resolveMenu } from '@taproot/core';
+import { getTaproot } from '@taproot/astro/runtime/guards';
+
 interface Props {
   title: string;
   description?: string | null;
@@ -6,6 +9,19 @@ interface Props {
 }
 
 const { title, description, breadcrumbs = [] } = Astro.props;
+
+/**
+ * The site navigation, resolved from the `main` menu on every request.
+ *
+ * Published-only by default, so an unpublished page leaves the navigation without anyone editing
+ * the menu, and a moved page keeps its place because the menu stores a reference rather than a
+ * URL. An empty or missing menu renders no nav at all rather than an empty landmark.
+ */
+const taproot = getTaproot(Astro.locals);
+const nav = await resolveMenu(taproot.db.db, 'main');
+
+const path = Astro.url.pathname;
+const isCurrent = (href: string | null) => href !== null && path === href;
 ---
 
 <html lang="en">
@@ -69,6 +85,33 @@ const { title, description, breadcrumbs = [] } = Astro.props;
         text-decoration: none;
         color: var(--ink);
       }
+      nav.primary {
+        margin-top: 0.75rem;
+      }
+      nav.primary ul {
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 1.25rem;
+        margin: 0;
+        padding: 0;
+        font-size: 0.9375rem;
+      }
+      nav.primary ul.sub {
+        gap: 0 0.875rem;
+        margin-top: 0.125rem;
+        font-size: 0.8125rem;
+      }
+      nav.primary a {
+        text-decoration: none;
+      }
+      nav.primary a:hover {
+        text-decoration: underline;
+      }
+      nav.primary a[aria-current='page'] {
+        color: var(--ink);
+        font-weight: 600;
+      }
       nav.crumbs {
         font-size: 0.875rem;
         color: var(--muted);
@@ -105,6 +148,48 @@ const { title, description, breadcrumbs = [] } = Astro.props;
     <header class="site">
       <div class="wrap">
         <a href="/" class="brand">Riverbend College</a>
+
+        {
+          nav.length > 0 && (
+            <nav class="primary" aria-label="Main">
+              <ul>
+                {nav.map((entry) => (
+                  <li>
+                    <a
+                      href={entry.href!}
+                      aria-current={isCurrent(entry.href) ? 'page' : undefined}
+                      {...(entry.openInNewTab ? { target: '_blank', rel: 'noopener' } : {})}
+                    >
+                      {entry.label}
+                      {entry.openInNewTab && (
+                        <span class="skip"> (opens in a new tab)</span>
+                      )}
+                    </a>
+                    {/*
+                      Nested entries render as a plain sublist rather than a hover dropdown.
+                      A dropdown needs real keyboard and focus handling to meet AA, and a menu
+                      that is simply visible needs none of it.
+                    */}
+                    {entry.children.length > 0 && (
+                      <ul class="sub">
+                        {entry.children.map((child) => (
+                          <li>
+                            <a
+                              href={child.href!}
+                              aria-current={isCurrent(child.href) ? 'page' : undefined}
+                            >
+                              {child.label}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )
+        }
       </div>
     </header>
 

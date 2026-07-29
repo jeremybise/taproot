@@ -42,6 +42,8 @@ toolchain — Taproot has zero native dependencies.
 - **Taxonomies.** Term trees any content type can use, attached by giving the type a taxonomy
   field. "Every item anywhere under this branch" is one indexed query rather than a scan over
   parsed JSON. Classification only — a term never decides who may edit content.
+- **Menus that reference rather than record.** A menu item points at a page, so moving that page
+  updates the navigation and unpublishing it removes the entry — without anyone editing the menu.
 - **Auth.** OAuth (Google/GitHub/Microsoft) plus a dev-only password provider that cannot be
   enabled in production.
 - **REST API** with a typed client.
@@ -58,7 +60,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (189 covering dialects, auth, paths, validation, revisions, taxonomies, the field builder) |
+| `npm test` | Unit tests (203 covering dialects, auth, paths, validation, revisions, taxonomies, menus, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -161,7 +163,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-189 tests. The ones worth knowing about:
+203 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -180,12 +182,12 @@ npm test
 
 ## What's next
 
-The rest of Phase 1, per [SCOPE.md](SCOPE.md): menus, the SEO sidebar, singleton editing,
-rich-text editing, and the media hotspot/crop editor.
+The rest of Phase 1, per [SCOPE.md](SCOPE.md): the SEO sidebar, singleton editing, rich-text
+editing, and the media hotspot/crop editor. Every table Phase 1 needs now exists.
 
 Phase 0 deliberately left seams for these rather than stubs that would need unpicking — `fields` is
 a real table, `content_items` already carries `parent_id`/`path`/`depth` and a `seo` column, and
-every media asset already has hotspot and crop columns. Menus still need their own table.
+every media asset already has hotspot and crop columns.
 
 Known gaps closing in the rest of Phase 1: the richtext field edits as a plain textarea (values
 round-trip correctly), the TOTP enrolment UI is not built though the core is implemented and

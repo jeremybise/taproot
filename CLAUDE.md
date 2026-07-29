@@ -8,9 +8,9 @@ A DB-backed, Astro-native CMS for a campus website with many non-technical depar
 contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the relevant phase section
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
-**Status:** Phase 0 (foundation), Phase 1A (visual content-type builder), revisions, and taxonomies
-are complete. The rest of Phase 1 is in progress: menus, SEO sidebar, singleton editing, a real
-richtext editor, and the media hotspot/crop editor.
+**Status:** Phase 0 (foundation), Phase 1A (visual content-type builder), revisions, taxonomies,
+and menus are complete — every table Phase 1 needs now exists. The rest of Phase 1 is in progress:
+SEO sidebar, singleton editing, a real richtext editor, and the media hotspot/crop editor.
 
 ## Commands
 
@@ -132,6 +132,10 @@ many), *Block*, *Reusable Block*, *Content Type*.
   join table would make a restored revision silently lose them, because revisions snapshot `data`.
   What the index buys is filtering a content list by term without scanning every row and parsing
   its `data` blob.
+- **Menu items reference their target, never store a URL.** That is the entire point: a moved page
+  keeps its place in the navigation and an unpublished one leaves it, with no menu edit. A deleted
+  target nulls the reference rather than cascading, so the broken entry stays visible in the admin
+  instead of silently editing the site's navigation. Public rendering skips it either way.
 - **Terms have no materialised path**, unlike content items. Content items need one because a
   request URL must resolve in one indexed lookup on the hot path; terms have no public URL, and
   their only tree query is a recursive CTE off `parent_id`. Adding a path would mean a second

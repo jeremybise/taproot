@@ -33,6 +33,7 @@ const ROUTES = [
   '/admin/types/new',
   '/admin/media',
   '/admin/taxonomies',
+  '/admin/menus',
   '/admin/redirects',
   '/admin/settings',
 ];
@@ -69,6 +70,12 @@ if (contentTypes?.[0]) ROUTES.push(`/admin/types/${contentTypes[0].id}`);
 const taxonomiesResponse = await fetch(`${base}/api/taproot/taxonomies`, { headers: { cookie } });
 const { taxonomies } = await taxonomiesResponse.json();
 if (taxonomies?.[0]) ROUTES.push(`/admin/taxonomies/${taxonomies[0].id}`);
+
+// The menu editor carries three add-forms plus a form per item, which makes it the densest
+// screen in the admin and the most likely to repeat an accessible name.
+const menusResponse = await fetch(`${base}/api/taproot/menus`, { headers: { cookie } });
+const { menus } = await menusResponse.json();
+if (menus?.[0]) ROUTES.push(`/admin/menus/${menus[0].id}`);
 
 let totalViolations = 0;
 const summary = [];

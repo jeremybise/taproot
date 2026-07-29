@@ -1,0 +1,130 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listMenuItems, listMenus } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const menus = await listMenus(taproot.db.db);
+const withCounts = await Promise.all(
+  menus.map(async (menu) => ({
+    ...menu,
+    itemCount: (await listMenuItems(taproot.db.db, menu.id)).length,
+  })),
+);
+
+const error = Astro.url.searchParams.get('error');
+---
+
+<AdminLayout title="Menus" user={user} breadcrumbs={[{ label: 'Menus' }]}>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Menus</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      Navigation, built from references rather than typed-in addresses. A menu item points at a
+      page, so moving that page updates the menu automatically and unpublishing it takes the entry
+      out of the public navigation.
+    </p>
+  </header>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  {
+    canManageSchema(user) && (
+      <form
+        method="post"
+        action="/api/taproot/menus"
+        class="mb-8 max-w-xl space-y-4 rounded-lg border border-border bg-surface-raised p-5"
+      >
+        <h2 class="text-base font-semibold">Add a menu</h2>
+
+        <div>
+          <label for="name" class="block text-sm font-medium">
+            Name
+          </label>
+          <input
+            id="name"
+            name="name"
+            required
+            maxlength="120"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div>
+          <label for="api_id" class="block text-sm font-medium">
+            API id
+          </label>
+          <p id="api-hint" class="mt-0.5 text-xs text-content-subtle">
+            How a template asks for this menu, e.g. <code class="font-mono">main</code>. Fixed
+            after creation.
+          </p>
+          <input
+            id="api_id"
+            name="api_id"
+            required
+            maxlength="64"
+            aria-describedby="api-hint"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+          />
+        </div>
+
+        <button
+          type="submit"
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          Create menu
+        </button>
+      </form>
+    )
+  }
+
+  {
+    withCounts.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No menus yet.
+      </p>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only-focusable">Menus</caption>
+          <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Name
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                API id
+              </th>
+              <th scope="col" class="px-4 py-2.5 font-medium">
+                Items
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {withCounts.map((menu) => (
+              <tr class="border-t border-border">
+                <th scope="row" class="px-4 py-2.5 font-normal">
+                  <a href={`/admin/menus/${menu.id}`} class="font-medium hover:underline">
+                    {menu.name}
+                  </a>
+                </th>
+                <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{menu.api_id}</td>
+                <td class="px-4 py-2.5 tabular-nums">{menu.itemCount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</AdminLayout>
