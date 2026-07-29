@@ -74,6 +74,12 @@ const singleton = (contentTypes ?? []).find((type) => type.kind === 'singleton')
 if (listable[0]) ROUTES.push(`/admin/content/type/${listable[0].api_id}`);
 if (singleton) ROUTES.push(`/admin/singleton/${singleton.api_id}`);
 
+// The media detail screen: the hotspot editor's server-rendered shell plus the alt-text form.
+// The editor's hydrated state is covered by HotspotEditor.test.tsx, which axe cannot reach here.
+const mediaResponse = await fetch(`${base}/api/taproot/media?limit=1`, { headers: { cookie } });
+const { media } = await mediaResponse.json();
+if (media?.[0]) ROUTES.push(`/admin/media/${media[0].id}`);
+
 // The term editor is the densest screen in the admin — a repeated form per row — so it is the one
 // most worth auditing, and it only exists once a taxonomy does.
 const taxonomiesResponse = await fetch(`${base}/api/taproot/taxonomies`, { headers: { cookie } });

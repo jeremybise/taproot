@@ -3,9 +3,10 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phase 0 (Foundation) complete; Phase 1 in progress.** The model works end to end — sign
-in, define a content type and its fields visually, create content, and see it render at a real
-nested URL. See [SCOPE.md](SCOPE.md) for the full plan and [what's next](#whats-next).
+**Status: Phases 0 and 1 complete.** Sign in, define a content type and its fields visually, write
+content with a real rich text editor, classify it, put it in a menu, set its focal point, and see it
+render at a real nested URL. See [SCOPE.md](SCOPE.md) for the full plan and
+[what's next](#whats-next).
 
 ---
 
@@ -48,6 +49,10 @@ toolchain — Taproot has zero native dependencies.
 - **Content lists built for scanning.** Colour-coded status badges, a faceted status filter whose
   counts tell you what each option would return, and created/updated columns that tighten to a
   time for today's edits and widen to a year for old ones.
+- **Focal point and crop, stored as data rather than baked in.** Set one focal point and watch it
+  play out in a wide banner, a social card, a square thumbnail, and a portrait card at once —
+  because that is the decision being made, and it cannot be judged from a single frame. Drag it, or
+  focus the image and use the arrow keys.
 - **A rich text editor that cannot be used as an attack.** TipTap with an ARIA-pattern toolbar —
   one tab stop, arrow keys between buttons, `aria-pressed` state. Values are sanitised **on the
   server, on write**, through an allowlist serialiser, because the REST API accepts richtext from
@@ -179,7 +184,7 @@ pattern any future drag interaction should follow.
 npm test
 ```
 
-318 tests. The ones worth knowing about:
+368 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -205,22 +210,31 @@ npm test
 - The richtext toolbar's keyboard contract, run in jsdom. The axe script cannot see it: ProseMirror
   needs a real DOM, so the server renders an empty placeholder and the toolbar only exists after
   hydration.
+- The focal point's keyboard contract — arrows, Shift, Home/End, PageUp/PageDown, and that it
+  clamps to the crop instead of wrapping to the far side of the image.
+- Crop resolution across every combination of source orientation, target ratio, and focal position,
+  asserting the result is always a real region inside a real image.
+- Image headers built byte by byte rather than committed as binary files, so a diff shows exactly
+  which bytes the parser depends on — including that width and height are not transposed, which is
+  the likeliest bug and invisible on a square fixture.
 
 ---
 
 ## What's next
 
-The last of Phase 1, per [SCOPE.md](SCOPE.md): the media hotspot/crop editor. Every table Phase 1
-needs now exists.
+**Phase 2**, per [SCOPE.md](SCOPE.md): the block field type, region-based page composition,
+Reusable Block promotion with usage tracking, and a `BlockRenderer` for Astro. The `block` and
+`repeater` field types already have their columns and validation seams; only the editing UI is
+missing.
 
-Phase 0 deliberately left seams for these rather than stubs that would need unpicking — `fields` is
-a real table, `content_items` carries `parent_id`/`path`/`depth`, the `seo` column it left empty is
-now the SEO sidebar, and every media asset already has hotspot and crop columns.
+Phase 0 deliberately left seams rather than stubs that would need unpicking, and Phase 1 filled
+every one of them — `fields` was already a real table, `content_items` already carried
+`parent_id`/`path`/`depth`, the empty `seo` column is now the SEO sidebar, and the hotspot and crop
+columns are now the focal point editor.
 
-Known gaps closing in the rest of Phase 1: the TOTP enrolment UI is not built though the core is
-implemented and tested, and image dimensions are not read on upload. The SEO panel picks a social
-image from a select rather than a media browser — the real library picker arrives with the `media`
-field type and this moves to it then.
+Known gaps: the TOTP enrolment UI is not built, though the core is implemented and tested. The SEO
+panel and the hotspot editor both reach the media library through a select rather than a browser —
+the real picker arrives with the `media` field type, and both move to it then.
 
 The richtext editor needs JavaScript, unlike the rest of the admin. That is unavoidable for a
 document editor, and the item editor around it is already an island; the trade is noted rather than

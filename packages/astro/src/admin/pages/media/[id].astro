@@ -1,0 +1,131 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import HotspotEditor from '../../islands/HotspotEditor.tsx';
+import Timestamp from '../../components/Timestamp.astro';
+import { cropOf, hotspotOf } from '@taproot/core';
+import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
+
+/**
+ * One media asset: its metadata, and the focal point and crop editor.
+ *
+ * A route of its own rather than a modal on the library grid, matching the rest of the admin —
+ * the editor is a real screen with a real URL, so it can be linked to and its permission check
+ * runs before any HTML is sent.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const asset = await taproot.db.db
+  .selectFrom('media')
+  .selectAll()
+  .where('id', '=', Astro.params.id!)
+  .executeTakeFirst();
+
+if (!asset) return new Response('Media asset not found', { status: 404 });
+
+const url = taproot.storage.publicUrl(asset.storage_key);
+const isImage = asset.mime_type.startsWith('image/');
+const canEdit = canUploadMedia(user);
+
+const saved = Astro.url.searchParams.get('saved') === '1';
+---
+
+<AdminLayout
+  title={asset.filename}
+  user={user}
+  breadcrumbs={[{ label: 'Media', href: '/admin/media' }, { label: asset.filename }]}
+  flash={saved ? 'Saved.' : null}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight break-all">{asset.filename}</h1>
+    <p class="mt-1 text-sm text-content-muted">
+      {asset.mime_type} · {(asset.size_bytes / 1024).toFixed(0)} KB
+      {asset.width && asset.height && ` · ${asset.width}×${asset.height}`}
+      {' · uploaded '}
+      <Timestamp value={asset.created_at} />
+    </p>
+  </header>
+
+  {
+    !isImage ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        This asset is not an image, so it has no focal point or crop.{' '}
+        <a href={url} class="underline">
+          Open the file
+        </a>
+        .
+      </p>
+    ) : (
+      <>
+        {!asset.width && (
+          <p class="mb-6 rounded-md border border-warning bg-warning-subtle px-4 py-3 text-sm">
+            <strong class="font-semibold">Dimensions unknown.</strong> This file was uploaded before
+            Taproot read image dimensions, or its format is not recognised. The focal point still
+            works; the shape previews are approximate until it is re-uploaded.
+          </p>
+        )}
+
+        <HotspotEditor
+          client:load
+          mediaId={asset.id}
+          url={url}
+          altText={asset.alt_text}
+          width={asset.width}
+          height={asset.height}
+          initialHotspot={hotspotOf(asset)}
+          initialCrop={cropOf(asset)}
+          canEdit={canEdit}
+        />
+      </>
+    )
+  }
+
+  <section aria-labelledby="asset-meta" class="mt-10 max-w-xl">
+    <h2 id="asset-meta" class="text-base font-semibold">Description</h2>
+
+    {/*
+      A plain form post rather than an island. Alt text is two fields and a submit; making it
+      JavaScript would mean it stops working for no gain.
+    */}
+    <form method="post" action={`/api/taproot/media/${asset.id}/details`} class="mt-3 space-y-4">
+      <div>
+        <label for="alt" class="block text-sm font-medium">Alt text</label>
+        <p id="alt-hint" class="mt-0.5 text-xs text-content-subtle">
+          What the image conveys, for anyone who cannot see it. Leave blank only if it is purely
+          decorative.
+        </p>
+        <input
+          id="alt"
+          name="alt_text"
+          value={asset.alt_text ?? ''}
+          aria-describedby="alt-hint"
+          disabled={!canEdit}
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label for="title" class="block text-sm font-medium">Title</label>
+        <input
+          id="title"
+          name="title"
+          value={asset.title ?? ''}
+          disabled={!canEdit}
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+      </div>
+
+      {
+        canEdit && (
+          <button
+            type="submit"
+            class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+          >
+            Save description
+          </button>
+        )
+      }
+    </form>
+  </section>
+</AdminLayout>

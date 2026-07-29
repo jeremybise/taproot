@@ -1,4 +1,10 @@
-import { buildStorageKey, contentTypeFromFilename, newId, now } from '@taproot/core';
+import {
+  buildStorageKey,
+  contentTypeFromFilename,
+  newId,
+  now,
+  readImageDimensions,
+} from '@taproot/core';
 
 import { apiError, handle, json } from '../_shared.js';
 
@@ -55,6 +61,17 @@ export const POST = handle(
 
     const stored = await taproot.storage.put(key, bytes, { contentType });
 
+    /**
+     * Dimensions are read from the header bytes, not decoded.
+     *
+     * The crop editor needs the source's real proportions to fit a target shape inside a
+     * normalised crop rectangle — without them it can only show the crop as-is. Unrecognised
+     * formats return null and stay null, which is a degraded editor rather than a failed upload.
+     */
+    const dimensions = stored.contentType.startsWith('image/')
+      ? readImageDimensions(bytes)
+      : null;
+
     const timestamp = now();
     const row = {
       id,
@@ -62,10 +79,8 @@ export const POST = handle(
       filename: file.name,
       mime_type: stored.contentType,
       size_bytes: stored.size,
-      // Dimensions are left null in Phase 0. Reading them needs an image decoder that works on
-      // Workers; the hotspot/crop editor in Phase 1 is where they start to matter.
-      width: null,
-      height: null,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null,
       alt_text: (form.get('alt') as string | null) ?? null,
       title: (form.get('title') as string | null) ?? null,
       hotspot_x: null,

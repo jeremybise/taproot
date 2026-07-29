@@ -8,9 +8,9 @@ A DB-backed, Astro-native CMS for a campus website with many non-technical depar
 contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the relevant phase section
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
-**Status:** Phase 0 (foundation), Phase 1A (visual content-type builder), revisions, taxonomies,
-menus, the SEO sidebar, and the richtext editor are complete. The media hotspot/crop editor is the
-last of Phase 1.
+**Status:** Phase 1 is complete — foundation, visual content-type builder, revisions, taxonomies,
+menus, SEO sidebar, richtext editor, and the media hotspot/crop editor. Phase 2 (blocks and page
+composition) is next; read its SCOPE.md section before starting.
 
 ## Commands
 
@@ -19,7 +19,7 @@ last of Phase 1.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 318 tests |
+| `npm test` | Vitest, 368 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -113,7 +113,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-19 routes, 0 violations, all 32 token pairs passing in both themes.
+20 routes, 0 violations, all 32 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
@@ -210,8 +210,16 @@ many), *Block*, *Reusable Block*, *Content Type*.
   request URL must resolve in one indexed lookup on the hot path; terms have no public URL, and
   their only tree query is a recursive CTE off `parent_id`. Adding a path would mean a second
   cascading-rewrite implementation serving no read.
+- **Hotspot and crop are stored normalised and resolved on demand**, never baked into a file. One
+  asset drives a 16:9 hero, a square thumbnail, and a portrait card; `resolveCrop` takes the crop
+  first, then fits the target ratio inside it and slides that frame to centre the hotspot, clamped.
+  Baking a crop per use would mean re-cropping every image whenever a template changes, and an
+  image reused in an unanticipated shape would simply be wrong.
+- **Image dimensions are read from header bytes on upload**, not decoded — the crop maths needs the
+  source's real proportions, and every library that could decode is a native dependency. An
+  unrecognised format returns null and the editor degrades rather than the upload failing.
 - `block` and `repeater` field types have columns and validation seams but no editing UI until
-  Phase 2. Media hotspot/crop columns exist with no editor yet.
+  Phase 2.
 
 ## Definition of done for a phase
 

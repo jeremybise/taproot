@@ -118,27 +118,35 @@ const uploadError = Astro.url.searchParams.get('error');
     ) : (
       <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {withUrls.map((asset) => (
-          <li class="overflow-hidden rounded-lg border border-border bg-surface-raised">
-            <div class="flex aspect-4/3 items-center justify-center bg-surface-sunken">
-              {asset.isImage ? (
-                /* Decorative in this grid: the filename below is the accessible name, so
-                   repeating it as alt would make screen readers announce it twice. */
-                <img src={asset.url} alt="" class="h-full w-full object-cover" loading="lazy" />
-              ) : (
-                <span class="text-xs text-content-subtle">{asset.mime_type}</span>
-              )}
-            </div>
-            <div class="px-3 py-2.5">
-              <p class="truncate text-sm font-medium" title={asset.filename}>
-                {asset.filename}
-              </p>
-              <p class="mt-0.5 text-xs text-content-subtle">
-                {(asset.size_bytes / 1024).toFixed(0)} KB
-              </p>
-              {asset.isImage && !asset.alt_text && (
-                <p class="mt-1 text-xs text-warning">Missing alt text</p>
-              )}
-            </div>
+          <li class="overflow-hidden rounded-lg border border-border bg-surface-raised transition-colors hover:border-border-strong">
+            {/*
+              The whole card is one link rather than a link on the filename with a separate
+              thumbnail: two controls to the same place would double every entry in a screen
+              reader's link list, and the image is the part a pointer user aims at.
+            */}
+            <a href={`/admin/media/${asset.id}`} class="block">
+              <div class="flex aspect-4/3 items-center justify-center bg-surface-sunken">
+                {asset.isImage ? (
+                  /* Decorative in this grid: the filename below is the accessible name, so
+                     repeating it as alt would make screen readers announce it twice. */
+                  <img src={asset.url} alt="" class="h-full w-full object-cover" loading="lazy" />
+                ) : (
+                  <span class="text-xs text-content-subtle">{asset.mime_type}</span>
+                )}
+              </div>
+              <div class="px-3 py-2.5">
+                <p class="truncate text-sm font-medium" title={asset.filename}>
+                  {asset.filename}
+                </p>
+                <p class="mt-0.5 text-xs text-content-subtle">
+                  {(asset.size_bytes / 1024).toFixed(0)} KB
+                  {asset.width && asset.height && ` · ${asset.width}×${asset.height}`}
+                </p>
+                {asset.isImage && !asset.alt_text && (
+                  <p class="mt-1 text-xs text-warning">Missing alt text</p>
+                )}
+              </div>
+            </a>
           </li>
         ))}
       </ul>
@@ -146,7 +154,7 @@ const uploadError = Astro.url.searchParams.get('error');
   }
 
   <p class="mt-8 max-w-prose text-sm text-content-subtle">
-    The hotspot and crop editor — a focal point plus multiple aspect-ratio previews — is the next
-    increment on the media library in Phase 1. The data model for it already exists on every asset.
+    Open an asset to set its focal point and crop, and to see how it lands in every shape the site
+    uses it in.
   </p>
 </AdminLayout>
