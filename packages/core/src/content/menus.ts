@@ -383,11 +383,23 @@ export interface ResolvedMenuItem {
   openInNewTab: boolean;
   targetType: MenuTargetType;
   /**
-   * Why there is no href, for the admin. `deleted` means the referenced row is gone;
-   * `unpublished` means it exists but is not visible to the public.
+   * Why there is no href, for the admin.
+   *
+   * - `deleted` — the referenced row is gone.
+   * - `unpublished` — it exists but is not visible to the public.
+   * - `no_route` — a term the site publishes no page for. Not an error: most taxonomies are
+   *   internal classification, and whether a term has a public URL is the site's decision.
    */
-  brokenReason: 'deleted' | 'unpublished' | null;
+  brokenReason: 'deleted' | 'unpublished' | 'no_route' | null;
   children: ResolvedMenuItem[];
+}
+
+/** A term, as handed to a site's `termHref` resolver. */
+export interface TermLinkTarget {
+  id: string;
+  name: string;
+  slug: string;
+  taxonomyApiId: string;
 }
 
 export interface ResolveMenuOptions {
@@ -396,6 +408,22 @@ export interface ResolveMenuOptions {
    * which needs to show a broken entry in order to let someone fix it.
    */
   publishedOnly?: boolean;
+  /**
+   * Where a term's page lives on this site, or null if it has none.
+   *
+   * **Taproot has no opinion about term URLs**, which is why this is a callback rather than a
+   * convention baked in here. Plenty of taxonomies exist purely to classify content — a review
+   * status, an internal owner, an audience segment — and publishing a page per term of those
+   * would be wrong. Others genuinely want archives. Which is which depends on the routes the site
+   * actually serves, so it is the site's call, not the CMS's.
+   *
+   * Omit it and term entries resolve to no href with `brokenReason: 'no_route'`, which is the
+   * correct default: a CMS that invented URLs its host does not serve would produce menu links
+   * that 404.
+   *
+   * `termArchivePath` is one ready-made convention to pass through, if it suits.
+   */
+  termHref?: (term: TermLinkTarget) => string | null;
 }
 
 /**
@@ -469,8 +497,17 @@ export async function resolveMenu(
         if (!target) {
           brokenReason = 'deleted';
         } else {
-          href = termArchivePath(target.taxonomy_api_id, target.slug);
           title = target.name;
+          // No resolver, or one that declines this term, means the site publishes no page for it.
+          // Distinct from `deleted`: nothing is wrong, there is simply nowhere to link to.
+          href =
+            options.termHref?.({
+              id: target.id,
+              name: target.name,
+              slug: target.slug,
+              taxonomyApiId: target.taxonomy_api_id,
+            }) ?? null;
+          if (href === null) brokenReason = 'no_route';
         }
         break;
       }
@@ -517,11 +554,12 @@ export async function resolveMenu(
 }
 
 /**
- * Where a term's archive lives.
+ * One ready-made term-URL convention: `/{taxonomy}/{term}`.
  *
- * A convention rather than stored data, so there is one definition of the URL shape and a menu
- * link cannot disagree with the route that serves it. The host app's catch-all is what implements
- * it — see `apps/web/src/pages/[...path].astro`.
+ * Offered, not imposed. Nothing in Taproot calls this — a site opts in by passing it (or anything
+ * else) as `resolveMenu`'s `termHref`, and by serving the matching route. `apps/web` does both and
+ * is the worked example; a site wanting `/topics/{term}`, term pages for one taxonomy only, or
+ * none at all, writes its own resolver instead.
  */
 export function termArchivePath(taxonomyApiId: string, termSlug: string): string {
   return `/${taxonomyApiId}/${termSlug}`;

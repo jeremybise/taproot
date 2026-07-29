@@ -132,6 +132,12 @@ many), *Block*, *Reusable Block*, *Content Type*.
   join table would make a restored revision silently lose them, because revisions snapshot `data`.
   What the index buys is filtering a content list by term without scanning every row and parsing
   its `data` blob.
+- **Taproot has no opinion about term URLs.** Whether a taxonomy's terms get public pages is the
+  host site's decision, passed to `resolveMenu` as a `termHref` callback — most taxonomies (review
+  status, internal owner, audience segment) classify content without deserving a page each, so the
+  default is no URL. `termArchivePath` is a convention offered, not applied; nothing in core calls
+  it. `apps/web/src/site.ts` is the worked example, and both the catch-all route and the menu
+  resolver read the same set so they cannot disagree.
 - **Menu items reference their target, never store a URL.** That is the entire point: a moved page
   keeps its place in the navigation and an unpublished one leaves it, with no menu edit. A deleted
   target nulls the reference rather than cascading, so the broken entry stays visible in the admin

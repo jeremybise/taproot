@@ -134,7 +134,7 @@ const inputClass =
           {
             key: 'term',
             legend: 'Link to a term',
-            hint: 'Points at a term archive listing everything filed under it.',
+            hint: 'Works only if this site publishes a page for that taxonomy — many do not.',
           },
           {
             key: 'url',
@@ -345,6 +345,16 @@ const inputClass =
                     ) : node?.brokenReason === 'unpublished' ? (
                       <span class="text-content-subtle">
                         Target is not published — hidden from visitors
+                      </span>
+                    ) : node?.brokenReason === 'no_route' ? (
+                      /*
+                        Not a fault, so it is not styled as one — and worded as ignorance rather
+                        than a verdict. This screen resolves the menu without the site's term-URL
+                        resolver, because the CMS has no way to run the host app's routing. It can
+                        say a term link exists; it cannot say where the site sends it.
+                      */
+                      <span class="text-content-subtle">
+                        Term link — the address is decided by the site's templates
                       </span>
                     ) : (
                       <code class="font-mono text-content-subtle">{node?.href}</code>

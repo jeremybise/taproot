@@ -241,7 +241,7 @@ describe('resolution', () => {
     expect(forAdmin[0]).toMatchObject({ label: 'Doomed', brokenReason: 'deleted' });
   });
 
-  it('resolves a term to its archive path and survives the term being deleted', async () => {
+  it('leaves a term link unresolved unless the site supplies a URL for it', async () => {
     const taxonomy = await createTaxonomy(handle.db, {
       api_id: 'department',
       name: 'Department',
@@ -251,13 +251,65 @@ describe('resolution', () => {
     const menu = await createMenu(handle.db, { api_id: 'main', name: 'Main' });
     await createMenuItem(handle.db, menu.id, { targetType: 'term', termId: term.id });
 
-    expect((await resolveMenu(handle.db, 'main'))[0]).toMatchObject({
-      href: '/department/admissions',
+    // The default has to be "no URL". Most taxonomies classify content without deserving a page
+    // each, so a CMS that invented one would produce menu links that 404 on most sites.
+    expect(await resolveMenu(handle.db, 'main')).toEqual([]);
+    expect(
+      (await resolveMenu(handle.db, 'main', { publishedOnly: false }))[0],
+    ).toMatchObject({ href: null, brokenReason: 'no_route', label: 'Admissions' });
+  });
+
+  it('uses the site’s resolver, which may serve some taxonomies and not others', async () => {
+    const departments = await createTaxonomy(handle.db, {
+      api_id: 'department',
+      name: 'Department',
+      name_plural: 'Departments',
+    });
+    const statuses = await createTaxonomy(handle.db, {
+      api_id: 'review-status',
+      name: 'Review status',
+      name_plural: 'Review statuses',
+    });
+    const published = await createTerm(handle.db, departments.id, { name: 'Admissions' });
+    const internal = await createTerm(handle.db, statuses.id, { name: 'Needs legal review' });
+
+    const menu = await createMenu(handle.db, { api_id: 'main', name: 'Main' });
+    await createMenuItem(handle.db, menu.id, { targetType: 'term', termId: published.id });
+    await createMenuItem(handle.db, menu.id, { targetType: 'term', termId: internal.id });
+
+    // A site publishing department archives but not its internal editorial taxonomy.
+    const tree = await resolveMenu(handle.db, 'main', {
+      termHref: (term) =>
+        term.taxonomyApiId === 'department' ? `/departments/${term.slug}` : null,
+    });
+
+    expect(tree).toHaveLength(1);
+    expect(tree[0]).toMatchObject({ href: '/departments/admissions', label: 'Admissions' });
+  });
+
+  it('reports a deleted term as deleted rather than unroutable', async () => {
+    const taxonomy = await createTaxonomy(handle.db, {
+      api_id: 'department',
+      name: 'Department',
+      name_plural: 'Departments',
+    });
+    const term = await createTerm(handle.db, taxonomy.id, { name: 'Admissions' });
+    const menu = await createMenu(handle.db, { api_id: 'main', name: 'Main' });
+    await createMenuItem(handle.db, menu.id, {
+      targetType: 'term',
+      termId: term.id,
       label: 'Admissions',
     });
 
     await deleteTerm(handle, term.id);
-    expect(await resolveMenu(handle.db, 'main')).toEqual([]);
+
+    // The two look the same to a visitor and must not to an editor: one is fixable content, the
+    // other is a routing choice.
+    const forAdmin = await resolveMenu(handle.db, 'main', {
+      publishedOnly: false,
+      termHref: (term) => `/x/${term.slug}`,
+    });
+    expect(forAdmin[0]).toMatchObject({ brokenReason: 'deleted' });
   });
 
   it('nests children under their parent', async () => {

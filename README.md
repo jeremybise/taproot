@@ -44,6 +44,8 @@ toolchain — Taproot has zero native dependencies.
   parsed JSON. Classification only — a term never decides who may edit content.
 - **Menus that reference rather than record.** A menu item points at a page, so moving that page
   updates the navigation and unpublishing it removes the entry — without anyone editing the menu.
+  Menu items can also point at taxonomy terms, though whether a term has a public page at all is
+  the site's decision, not Taproot's.
 - **Auth.** OAuth (Google/GitHub/Microsoft) plus a dev-only password provider that cannot be
   enabled in production.
 - **REST API** with a typed client.

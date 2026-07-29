@@ -1,6 +1,7 @@
 ---
-import { resolveMenu } from '@taproot/core';
+import { resolveMenu, termArchivePath } from '@taproot/core';
 import { getTaproot } from '@taproot/astro/runtime/guards';
+import { PUBLIC_TERM_TAXONOMIES } from '../site.ts';
 
 interface Props {
   title: string;
@@ -18,7 +19,13 @@ const { title, description, breadcrumbs = [] } = Astro.props;
  * URL. An empty or missing menu renders no nav at all rather than an empty landmark.
  */
 const taproot = getTaproot(Astro.locals);
-const nav = await resolveMenu(taproot.db.db, 'main');
+const nav = await resolveMenu(taproot.db.db, 'main', {
+  // This site's answer to "which terms have a public page". Taproot has no opinion — see site.ts.
+  termHref: (term) =>
+    PUBLIC_TERM_TAXONOMIES.has(term.taxonomyApiId)
+      ? termArchivePath(term.taxonomyApiId, term.slug)
+      : null,
+});
 
 const path = Astro.url.pathname;
 const isCurrent = (href: string | null) => href !== null && path === href;

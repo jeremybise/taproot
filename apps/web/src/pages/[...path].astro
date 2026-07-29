@@ -12,6 +12,7 @@ import {
   normalizePath,
 } from '@taproot/core';
 import { getTaproot, canEditContent } from '@taproot/astro/runtime/guards';
+import { PUBLIC_TERM_TAXONOMIES } from '../site.ts';
 
 export const prerender = false;
 
@@ -50,6 +51,10 @@ const item = await getItemByPath(taproot.db.db, path, { publishedOnly: !isPrevie
 /**
  * Term archive: everything filed under a term, including its descendants.
  *
+ * This site's choice, not Taproot's — only the taxonomies in `PUBLIC_TERM_TAXONOMIES` get pages,
+ * and the menu resolver in SiteLayout reads the same set so a link can never point somewhere this
+ * route declines to serve.
+ *
  * Only attempted when no content item claims the path, so a real page always wins — which is what
  * keeps this from being a reserved prefix nobody may use.
  */
@@ -58,7 +63,7 @@ let archive: { title: string; description: string | null; items: { title: string
 
 if (!item) {
   const segments = path.split('/').filter(Boolean);
-  if (segments.length === 2) {
+  if (segments.length === 2 && PUBLIC_TERM_TAXONOMIES.has(segments[0]!)) {
     const taxonomy = await getTaxonomyByApiId(taproot.db.db, segments[0]!);
     if (taxonomy) {
       const term = await taproot.db.db
