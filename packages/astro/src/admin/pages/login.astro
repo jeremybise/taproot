@@ -2,6 +2,7 @@
 import '../admin.css';
 import { getConfiguredProviders } from '@taproot/core';
 import { getTaproot } from '../../runtime/guards.js';
+import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
 
 const taproot = getTaproot(Astro.locals);
 
@@ -21,9 +22,12 @@ const providerLabels: Record<string, string> = {
 
 // Only ever redirect to a path on this site.
 const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/admin';
+
+// The login screen honours the choice too, so signing out does not flip the theme back.
+const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
 ---
 
-<html lang="en">
+<html lang="en" data-theme={themeAttribute(theme)}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

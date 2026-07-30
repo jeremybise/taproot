@@ -2,6 +2,8 @@
 import '../admin.css';
 import { listContentTypes, type User } from '@taproot/core';
 import { getTaproot, canManageSchema } from '../../runtime/guards.js';
+import ThemeSwitcher from '../components/ThemeSwitcher.astro';
+import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
 
 interface Props {
   title: string;
@@ -14,6 +16,17 @@ interface Props {
 
 const { title, user, breadcrumbs = [], flash = null } = Astro.props;
 const path = Astro.url.pathname;
+
+/**
+ * Resolved here rather than in a script, so `data-theme` is in the HTML the browser first parses.
+ * A `localStorage` theme has to be applied by an inline blocking script, and the gap before it
+ * runs is the flash of the wrong palette that every such implementation spends effort hiding.
+ */
+const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
+
+// The query string comes too: switching theme from a filtered content list must not silently
+// discard the filters.
+const themeReturnPath = `${Astro.url.pathname}${Astro.url.search}`;
 
 /**
  * The sidebar is built from the content types that exist, not from a fixed list.
@@ -96,7 +109,7 @@ const navLinkClass = (current: boolean) =>
   ].join(' ');
 ---
 
-<html lang="en">
+<html lang="en" data-theme={themeAttribute(theme)}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -211,6 +224,8 @@ const navLinkClass = (current: boolean) =>
                 Sign out
               </button>
             </form>
+
+            <ThemeSwitcher current={theme} redirectTo={themeReturnPath} />
           </div>
         </div>
       </header>

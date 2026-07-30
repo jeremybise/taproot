@@ -82,6 +82,10 @@ const PAIRS = [
   ['content-muted', 'surface-raised', 4.5, 'secondary text on cards'],
   ['content-subtle', 'surface', 4.5, 'hint and help text'],
   ['content-subtle', 'surface-raised', 4.5, 'hint text on cards'],
+  // The sidebar is the one place `surface-sunken` carries small text: inactive nav links, the
+  // group headings, and the theme switcher's labels all sit on it.
+  ['content-muted', 'surface-sunken', 4.5, 'inactive nav links in the sidebar'],
+  ['content-subtle', 'surface-sunken', 4.5, 'group headings in the sidebar'],
   ['accent-content', 'accent', 4.5, 'primary button label'],
   ['content', 'accent-subtle', 4.5, 'text on the active nav item and flash messages'],
   ['content', 'danger-subtle', 4.5, 'text in error banners'],

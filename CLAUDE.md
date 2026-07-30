@@ -19,7 +19,7 @@ before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 461 tests |
+| `npm test` | Vitest, 467 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -113,7 +113,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-25 routes, 0 violations, all 34 token pairs passing in both themes.
+25 routes, 0 violations, all 36 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
@@ -121,6 +121,21 @@ them — which means a token added to the CSS alone is simply unchecked. The sam
 *pairing* of existing tokens: `axe` runs with `color-contrast` disabled precisely because this
 script is the authority, so a colour put on a background it has never been checked against is
 unchecked no matter how many routes pass.
+
+**Light, dark, and system are one `color-scheme` declaration, not a class.** Every colour token is
+a `light-dark()` pair in the single `@theme` block, so the entire switch is three rules in
+`admin.css`: `html` follows the OS, `html[data-theme='light'|'dark']` overrides it. A second
+`@theme` inside a `prefers-color-scheme` media query — which is what this had before — cannot be
+overridden by an attribute or a class at all, so the switcher would have nothing to switch. Setting
+`color-scheme` also hands the UA its half of the work (form controls, scrollbars, the canvas behind
+the page), which a class-based dark mode has to restate by hand and usually misses.
+
+**The choice is a cookie, read on the server, and `system` is stored by deleting it.** The layout
+stamps `data-theme` on `<html>` before any CSS is sent, which is why there is no inline blocking
+script and no flash of the wrong palette. `localStorage` cannot do that — the server cannot see it.
+`system` writes no cookie and renders no attribute, because "never chose anything" and "chose
+System" must be the same state; a third value would be a second encoding of one thing, free to
+drift. `resolveTheme` sends anything unrecognised back to `system` for the same reason.
 
 **A `<label for>` must point at a labelable element** — button, input, meter, output, progress,
 select, textarea. Anything else is silently inert: the control is still named through

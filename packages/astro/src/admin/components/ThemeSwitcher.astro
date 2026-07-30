@@ -1,0 +1,69 @@
+---
+import { THEME_CHOICES, type ThemeChoice } from '../theme.js';
+
+/**
+ * The light / dark / system control in the sidebar footer.
+ *
+ * Three submit buttons in one form rather than a select or a pair of radios plus a save button:
+ * one press both chooses and applies, and each option carries its own visible label, so the
+ * current state is readable without opening anything.
+ */
+interface Props {
+  current: ThemeChoice;
+  /** The page this was rendered on, so the round trip returns to it with its query intact. */
+  redirectTo: string;
+}
+
+const { current, redirectTo } = Astro.props;
+---
+
+<form method="post" action="/api/taproot/theme" class="mt-2 px-2">
+  <input type="hidden" name="redirectTo" value={redirectTo} />
+
+  {/*
+    A `<span id>` with `aria-labelledby`, not a `<label for>`. The group is a `div`, which is not a
+    labelable element, so a `<label for>` pointing at it would be inert — the audit checks for
+    exactly this, and `FieldControl`'s `labelsAControl()` is the worked example.
+  */}
+  <span
+    id="theme-label"
+    class="block px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-content-subtle"
+  >
+    Theme
+  </span>
+
+  <div
+    role="group"
+    aria-labelledby="theme-label"
+    class="flex overflow-hidden rounded-md border border-border"
+  >
+    {
+      THEME_CHOICES.map((choice, index) => {
+        const selected = current === choice.value;
+        return (
+          <button
+            type="submit"
+            name="theme"
+            value={choice.value}
+            /*
+             * `aria-pressed` rather than `aria-current`: these are toggle buttons over a setting,
+             * not navigation. The pressed one is still a working button — pressing it re-submits
+             * the same value, which is a no-op rather than something to disable, because a
+             * disabled control drops out of the tab order and takes the group's state with it.
+             */
+            aria-pressed={selected}
+            class={[
+              'flex-1 px-2 py-1.5 text-xs transition-colors',
+              index > 0 ? 'border-l border-border' : '',
+              selected
+                ? 'bg-accent-subtle font-medium text-content'
+                : 'text-content-muted hover:bg-surface-raised hover:text-content',
+            ].join(' ')}
+          >
+            {choice.label}
+          </button>
+        );
+      })
+    }
+  </div>
+</form>

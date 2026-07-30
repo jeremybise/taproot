@@ -12,30 +12,37 @@
  *
  * Every colour is expressed as a semantic role rather than a raw hue, so the light and dark
  * palettes stay in sync and a future theming pass has one place to change.
+ *
+ * Both palettes live in one `light-dark()` per token rather than a second `@theme` nested in a
+ * `prefers-color-scheme` media query. That is what makes an explicit theme choice possible at all:
+ * a media query cannot be overridden by an attribute or a class, so a palette defined inside one
+ * can only ever follow the OS, and the switcher would have nothing to switch. Here the entire
+ * mechanism is `color-scheme` — three rules in `base` below — and each token's two values sit on
+ * one line, where a drifting pair is visible instead of sixty lines apart.
  */
 @theme {
-  --color-surface: oklch(99% 0 0);
-  --color-surface-raised: oklch(100% 0 0);
-  --color-surface-sunken: oklch(97% 0.003 250);
-  --color-border: oklch(90% 0.005 250);
-  --color-border-strong: oklch(64% 0.008 250);
+  --color-surface: light-dark(oklch(99% 0 0), oklch(21% 0.008 250));
+  --color-surface-raised: light-dark(oklch(100% 0 0), oklch(25% 0.009 250));
+  --color-surface-sunken: light-dark(oklch(97% 0.003 250), oklch(17% 0.008 250));
+  --color-border: light-dark(oklch(90% 0.005 250), oklch(32% 0.01 250));
+  --color-border-strong: light-dark(oklch(64% 0.008 250), oklch(53% 0.012 250));
 
-  --color-content: oklch(25% 0.01 250);
-  --color-content-muted: oklch(50% 0.012 250);
-  --color-content-subtle: oklch(54% 0.012 250);
+  --color-content: light-dark(oklch(25% 0.01 250), oklch(95% 0.004 250));
+  --color-content-muted: light-dark(oklch(50% 0.012 250), oklch(74% 0.01 250));
+  --color-content-subtle: light-dark(oklch(54% 0.012 250), oklch(64% 0.012 250));
 
-  --color-accent: oklch(52% 0.15 155);
-  --color-accent-hover: oklch(46% 0.15 155);
-  --color-accent-content: oklch(99% 0 0);
-  --color-accent-subtle: oklch(95% 0.04 155);
+  --color-accent: light-dark(oklch(52% 0.15 155), oklch(70% 0.15 155));
+  --color-accent-hover: light-dark(oklch(46% 0.15 155), oklch(76% 0.15 155));
+  --color-accent-content: light-dark(oklch(99% 0 0), oklch(18% 0.02 155));
+  --color-accent-subtle: light-dark(oklch(95% 0.04 155), oklch(28% 0.05 155));
 
-  --color-danger: oklch(52% 0.19 25);
-  --color-danger-hover: oklch(46% 0.19 25);
-  --color-danger-content: oklch(99% 0 0);
-  --color-danger-subtle: oklch(96% 0.03 25);
+  --color-danger: light-dark(oklch(52% 0.19 25), oklch(66% 0.18 25));
+  --color-danger-hover: light-dark(oklch(46% 0.19 25), oklch(72% 0.18 25));
+  --color-danger-content: light-dark(oklch(99% 0 0), oklch(18% 0.02 25));
+  --color-danger-subtle: light-dark(oklch(96% 0.03 25), oklch(28% 0.06 25));
 
-  --color-warning: oklch(62% 0.14 75);
-  --color-warning-subtle: oklch(96% 0.04 75);
+  --color-warning: light-dark(oklch(62% 0.14 75), oklch(75% 0.13 75));
+  --color-warning-subtle: light-dark(oklch(96% 0.04 75), oklch(30% 0.05 75));
 
   /*
    * Content status colours.
@@ -48,66 +55,51 @@
    * Draft and archived are the pair most at risk of reading alike — both are "not live" — so
    * archived takes a mauve rather than a second grey.
    */
-  --color-status-draft: oklch(58% 0.01 250);
-  --color-status-draft-subtle: oklch(95% 0.004 250);
-  --color-status-review: oklch(62% 0.14 75);
-  --color-status-review-subtle: oklch(96% 0.04 75);
-  --color-status-scheduled: oklch(55% 0.16 285);
-  --color-status-scheduled-subtle: oklch(95% 0.04 285);
-  --color-status-published: oklch(52% 0.15 155);
-  --color-status-published-subtle: oklch(95% 0.04 155);
-  --color-status-archived: oklch(55% 0.12 320);
-  --color-status-archived-subtle: oklch(95% 0.03 320);
+  --color-status-draft: light-dark(oklch(58% 0.01 250), oklch(70% 0.015 250));
+  --color-status-draft-subtle: light-dark(oklch(95% 0.004 250), oklch(30% 0.008 250));
+  --color-status-review: light-dark(oklch(62% 0.14 75), oklch(75% 0.13 75));
+  --color-status-review-subtle: light-dark(oklch(96% 0.04 75), oklch(30% 0.05 75));
+  --color-status-scheduled: light-dark(oklch(55% 0.16 285), oklch(74% 0.13 285));
+  --color-status-scheduled-subtle: light-dark(oklch(95% 0.04 285), oklch(30% 0.06 285));
+  --color-status-published: light-dark(oklch(52% 0.15 155), oklch(70% 0.15 155));
+  --color-status-published-subtle: light-dark(oklch(95% 0.04 155), oklch(28% 0.05 155));
+  --color-status-archived: light-dark(oklch(55% 0.12 320), oklch(72% 0.12 320));
+  --color-status-archived-subtle: light-dark(oklch(95% 0.03 320), oklch(30% 0.05 320));
 
-  --color-focus: oklch(55% 0.19 250);
+  --color-focus: light-dark(oklch(55% 0.19 250), oklch(72% 0.16 250));
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  @theme {
-    --color-surface: oklch(21% 0.008 250);
-    --color-surface-raised: oklch(25% 0.009 250);
-    --color-surface-sunken: oklch(17% 0.008 250);
-    --color-border: oklch(32% 0.01 250);
-    --color-border-strong: oklch(53% 0.012 250);
-
-    --color-content: oklch(95% 0.004 250);
-    --color-content-muted: oklch(74% 0.01 250);
-    --color-content-subtle: oklch(64% 0.012 250);
-
-    --color-accent: oklch(70% 0.15 155);
-    --color-accent-hover: oklch(76% 0.15 155);
-    --color-accent-content: oklch(18% 0.02 155);
-    --color-accent-subtle: oklch(28% 0.05 155);
-
-    --color-danger: oklch(66% 0.18 25);
-    --color-danger-hover: oklch(72% 0.18 25);
-    --color-danger-content: oklch(18% 0.02 25);
-    --color-danger-subtle: oklch(28% 0.06 25);
-
-    --color-warning: oklch(75% 0.13 75);
-    --color-warning-subtle: oklch(30% 0.05 75);
-
-    --color-status-draft: oklch(70% 0.015 250);
-    --color-status-draft-subtle: oklch(30% 0.008 250);
-    --color-status-review: oklch(75% 0.13 75);
-    --color-status-review-subtle: oklch(30% 0.05 75);
-    --color-status-scheduled: oklch(74% 0.13 285);
-    --color-status-scheduled-subtle: oklch(30% 0.06 285);
-    --color-status-published: oklch(70% 0.15 155);
-    --color-status-published-subtle: oklch(28% 0.05 155);
-    --color-status-archived: oklch(72% 0.12 320);
-    --color-status-archived-subtle: oklch(30% 0.05 320);
-
-    --color-focus: oklch(72% 0.16 250);
-  }
-}
-
 @layer base {
+  /*
+   * The theme switch, in its entirety.
+   *
+   * Every token above is a `light-dark()` pair, so `color-scheme` alone selects the palette.
+   * `data-theme` is written server-side from a cookie, which is why there is no inline script here
+   * and no flash of the wrong palette: the attribute is in the HTML before the first byte of CSS.
+   *
+   * No attribute means "follow the OS" — the behaviour this admin had before a switcher existed,
+   * and what anyone who never touches it keeps. That is also why the cookie stores `system` by
+   * deleting itself rather than by writing a third value: the absent state and the default state
+   * have to be the same state, or a signed-out browser would render differently from a signed-in
+   * one that chose "System".
+   *
+   * Setting `color-scheme` rather than toggling a class also hands the UA its half of the job —
+   * form controls, scrollbars, and the canvas behind the page — which a class-based dark mode has
+   * to restate by hand and usually misses.
+   */
   html {
     color-scheme: light dark;
+  }
+
+  html[data-theme='light'] {
+    color-scheme: light;
+  }
+
+  html[data-theme='dark'] {
+    color-scheme: dark;
   }
 
   body {

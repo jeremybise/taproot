@@ -146,6 +146,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/menus/[id]/items', 'menus/[id]/items'],
           ['/menus/[id]/reorder', 'menus/[id]/reorder'],
           ['/menu-items/[itemId]', 'menu-items/[itemId]'],
+          ['/theme', 'theme'],
         ];
 
         for (const [suffix, file] of apiRoutes) {

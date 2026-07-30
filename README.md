@@ -212,7 +212,7 @@ degradation is asserted; the measured behaviour needs eyes.
 npm test
 ```
 
-461 tests. The ones worth knowing about:
+467 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
