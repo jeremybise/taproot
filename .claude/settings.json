@@ -54,7 +54,16 @@
       "Read(//Users/jeremybise/code/taproot/**)",
       "Bash(perl -0pi -e \"s|import \\\\{ FieldControl \\\\} from './fields/FieldControl.js';\\\\n||\" packages/astro/src/admin/islands/FieldBuilder.tsx)",
       "Bash(perl -0pi -e \"s|  // The field as it would be stored, so the preview renders through exactly the same path as the\\\\n  // real editor rather than a parallel approximation of it\\\\.\\\\n  const previewField: FieldRow = \\\\{.*?\\\\} as FieldRow;\\\\n\\\\n||s\" packages/astro/src/admin/islands/FieldBuilder.tsx)",
-      "Bash(rm -rf public/uploads)"
+      "Bash(rm -rf public/uploads)",
+      "Bash(awk '{print \" \"$NF}')",
+      "Bash(awk '{print \"  \"$NF}')",
+      "Bash(xargs -n1 basename)",
+      "Bash(curl -s -o /dev/null -w \"GET /      -> %{http_code}\\\\n\" http://localhost:4321/)",
+      "Bash(curl -s -o /dev/null -w \"GET /admin -> %{http_code}\\\\n\" http://localhost:4321/admin)",
+      "Bash(grep -oE '<a href=\"[^\"]*\"[^>]*>[^<]{1,40}</a>')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4321/)",
+      "Bash(npm test *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4321/__singleton/weather_banner)"
     ]
   }
 }
