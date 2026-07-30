@@ -250,29 +250,24 @@ export async function updateContentType(
 }
 
 /**
- * Delete a content type.
+ * Every reason this type cannot be deleted right now, worst first.
  *
- * Refuses while items still exist rather than cascading: dropping a department's entire content
- * because someone deleted a type is not a recoverable mistake, and the FK cascade would do exactly
- * that. The caller must delete or move the items first.
+ * Exported because the admin's delete affordance must not disagree with the guard. A screen that
+ * decided for itself whether a delete would succeed drifts the moment a blocker is added here, and
+ * the failure mode is a button that is offered and then refused — so the admin renders this list
+ * and `deleteContentType` throws its first entry. Each reason is a standalone clause so it reads
+ * correctly both bulleted on screen and after the "Cannot delete X:" prefix in the error.
  */
-export async function deleteContentType(db: Kysely<Database>, id: string): Promise<void> {
-  const existing = await db
-    .selectFrom('content_types')
-    .selectAll()
-    .where('id', '=', id)
-    .executeTakeFirst();
+export async function contentTypeDeleteBlockers(
+  db: Kysely<Database>,
+  contentType: ContentTypeRow,
+): Promise<string[]> {
+  const blockers: string[] = [];
 
-  if (!existing) throw new ContentTypeError(`Content type ${id} not found.`, 'not_found');
-
-  if (existing.kind === 'block') {
-    const usage = await countBlockUsage(db, existing.api_id);
+  if (contentType.kind === 'block') {
+    const usage = await countBlockUsage(db, contentType.api_id);
     if (usage > 0) {
-      throw new ContentTypeError(
-        `Cannot delete the "${existing.name}" block while ${usage} content item(s) still place ` +
-          `it. Remove those blocks first.`,
-        'in_use',
-      );
+      blockers.push(`${usage} content item(s) still place it. Remove those blocks first.`);
     }
 
     /**
@@ -285,31 +280,104 @@ export async function deleteContentType(db: Kysely<Database>, id: string): Promi
     const library = await db
       .selectFrom('reusable_blocks')
       .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where('block_type', '=', existing.api_id)
+      .where('block_type', '=', contentType.api_id)
       .executeTakeFirst();
 
-    if (Number(library?.count ?? 0) > 0) {
-      throw new ContentTypeError(
-        `Cannot delete the "${existing.name}" block while ${library?.count} reusable block(s) of ` +
-          `that type exist. Delete those from the library first.`,
-        'in_use',
+    const libraryCount = Number(library?.count ?? 0);
+    if (libraryCount > 0) {
+      blockers.push(
+        `${libraryCount} reusable block(s) of that type exist. Delete those from the library first.`,
       );
     }
+  } else {
+    const itemCount = await db
+      .selectFrom('content_items')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('content_type_id', '=', contentType.id)
+      .executeTakeFirst();
 
-    await db.deleteFrom('content_types').where('id', '=', id).execute();
-    return;
+    const items = Number(itemCount?.count ?? 0);
+    if (items > 0) {
+      blockers.push(`${items} content item(s) still use it. Delete or move those items first.`);
+    }
   }
 
-  const itemCount = await db
-    .selectFrom('content_items')
-    .select((eb) => eb.fn.countAll<number>().as('count'))
-    .where('content_type_id', '=', id)
+  /**
+   * A relation field on another type still pointing here.
+   *
+   * The FK cascade reaches this type's own rows and nothing else. A relation field's target is a
+   * `targetContentTypeId` inside another type's JSON `config`, which no constraint can see and no
+   * cascade cleans up — deleting anyway leaves that field pointing at a type that no longer exists,
+   * so its picker offers nothing and every id already stored against it resolves to no type. This
+   * is the same reason `deleteTaxonomy` refuses, and it is checked the same way.
+   *
+   * Fields belonging to the type being deleted are excluded. A self-referencing relation — "related
+   * pages" on Page, targeting Page — cascades away with its own type, so counting it would make an
+   * otherwise-empty type permanently undeletable by a reference that is about to stop existing.
+   *
+   * Checked for block types too. Nothing in the admin offers a block as a relation target, because
+   * every target picker is fed by `listContentTypes`, which excludes them — but the REST API takes
+   * `targetContentTypeId` as an arbitrary string, and the API is the boundary, not the editor.
+   */
+  const relationFields = await db
+    .selectFrom('fields')
+    .selectAll()
+    .where('type', '=', 'relation')
+    .where('content_type_id', '!=', contentType.id)
+    .execute();
+
+  const referencing = relationFields.filter((field) => {
+    try {
+      const config = JSON.parse(field.config) as { targetContentTypeId?: string | null };
+      return config.targetContentTypeId === contentType.id;
+    } catch {
+      return false;
+    }
+  });
+
+  if (referencing.length > 0) {
+    // Named, not just counted: the fields live on *other* types, so a count alone leaves someone
+    // opening every type in the site to find which one is holding the delete.
+    const owners = await db
+      .selectFrom('content_types')
+      .select('name')
+      .where(
+        'id',
+        'in',
+        referencing.map((field) => field.content_type_id),
+      )
+      .orderBy('name')
+      .execute();
+
+    blockers.push(
+      `${referencing.length} relation field(s) still target it, on: ` +
+        `${owners.map((owner) => owner.name).join(', ')}. Remove or repoint those fields first.`,
+    );
+  }
+
+  return blockers;
+}
+
+/**
+ * Delete a content type.
+ *
+ * Refuses while anything still depends on it rather than cascading: dropping a department's entire
+ * content because someone deleted a type is not a recoverable mistake, and the FK cascade would do
+ * exactly that. The caller must clear the blockers first.
+ */
+export async function deleteContentType(db: Kysely<Database>, id: string): Promise<void> {
+  const existing = await db
+    .selectFrom('content_types')
+    .selectAll()
+    .where('id', '=', id)
     .executeTakeFirst();
 
-  if (Number(itemCount?.count ?? 0) > 0) {
+  if (!existing) throw new ContentTypeError(`Content type ${id} not found.`, 'not_found');
+
+  const blockers = await contentTypeDeleteBlockers(db, existing);
+  if (blockers.length > 0) {
     throw new ContentTypeError(
-      `Cannot delete this content type while ${itemCount?.count} content item(s) still use it. ` +
-        `Delete or move those items first.`,
+      `Cannot delete the "${existing.name}" type: ${blockers[0]}`,
       'in_use',
     );
   }

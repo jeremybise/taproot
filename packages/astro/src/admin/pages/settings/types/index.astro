@@ -26,6 +26,7 @@ const kindLabels: Record<string, string> = {
 };
 
 const moved = Astro.url.searchParams.get('moved');
+const deleted = Astro.url.searchParams.get('deleted');
 const error = Astro.url.searchParams.get('error');
 ---
 
@@ -33,7 +34,7 @@ const error = Astro.url.searchParams.get('error');
   title="Content types"
   user={user}
   breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Content types' }]}
-  flash={moved ? `Moved ${moved}.` : null}
+  flash={deleted ? `Deleted the ${deleted} content type.` : moved ? `Moved ${moved}.` : null}
 >
   <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
     <div>

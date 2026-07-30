@@ -113,11 +113,14 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-25 routes, 0 violations, all 32 token pairs passing in both themes.
+25 routes, 0 violations, all 34 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
-them — which means a token added to the CSS alone is simply unchecked.
+them — which means a token added to the CSS alone is simply unchecked. The same applies to a new
+*pairing* of existing tokens: `axe` runs with `color-contrast` disabled precisely because this
+script is the authority, so a colour put on a background it has never been checked against is
+unchecked no matter how many routes pass.
 
 **A `<label for>` must point at a labelable element** — button, input, meter, output, progress,
 select, textarea. Anything else is silently inert: the control is still named through
@@ -298,6 +301,20 @@ many), *Block*, *Reusable Block*, *Content Type*.
     renders as a gap on exactly the pages nobody is watching — which is why the content was shared.
   - Deleting a block *type* also checks the library, because `countBlockUsage` only sees blocks
     written into a content item and an entry no page references yet is invisible to it.
+- **Every reason a content type cannot be deleted comes from `contentTypeDeleteBlockers`**, and both
+  the guard and the admin screen read it. `deleteContentType` throws the first entry; the settings
+  screen renders the list and only offers the delete form when it is empty. A screen that worked out
+  for itself whether a delete would succeed drifts the moment a blocker is added, and the failure
+  mode is a button that is offered and then refused. Blockers are phrased as standalone clauses so
+  they read correctly both bulleted and after the error's `Cannot delete X:` prefix.
+  - **A relation field on another type counts as usage**, even with zero items. `targetContentTypeId`
+    lives in another type's JSON `config`, which no FK sees and no cascade cleans up — deleting
+    anyway leaves a picker offering nothing and stored ids resolving to no type. Fields belonging to
+    the type being deleted are excluded, or a self-referencing "related pages" relation would make
+    its own type permanently undeletable.
+  - The delete is confirmed by typing the `api_id`, **checked on the server**: a disabled submit
+    button is bypassed by turning JavaScript off, and this admin is server-rendered precisely so it
+    does not depend on that.
 - `repeater` has columns and a validation seam but no editing UI.
 
 ## Definition of done for a phase

@@ -2,8 +2,15 @@
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import FieldBuilder from '../../../islands/FieldBuilder.tsx';
 import ContentTypeSettings from '../../../islands/ContentTypeSettings.tsx';
+import DeleteContentType from '../../../components/DeleteContentType.astro';
 import { imageOptions } from '../../../mediaOptions.js';
-import { getContentType, listBlockTypes, listContentTypes, listTaxonomies } from '@taproot/core';
+import {
+  contentTypeDeleteBlockers,
+  getContentType,
+  listBlockTypes,
+  listContentTypes,
+  listTaxonomies,
+} from '@taproot/core';
 import { getTaproot, loginRedirect, canManageSchema } from '../../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -30,7 +37,12 @@ const itemCountRow = await taproot.db.db
   .executeTakeFirst();
 const itemCount = Number(itemCountRow?.n ?? 0);
 
+// Asked of core rather than inferred from `itemCount`: a type with no items can still be held by a
+// relation field on another type, and a screen that guessed would offer a delete that is refused.
+const deleteBlockers = await contentTypeDeleteBlockers(taproot.db.db, contentType);
+
 const created = Astro.url.searchParams.get('created') === '1';
+const error = Astro.url.searchParams.get('error');
 
 const kindLabels: Record<string, string> = {
   page: 'Page — nests under a parent',
@@ -77,6 +89,16 @@ const kindLabels: Record<string, string> = {
     </dl>
   </header>
 
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
   <!--
     Settings first: naming and describing the type is what you do when you land here, and the
     field list below can run long enough to bury it.
@@ -116,4 +138,6 @@ const kindLabels: Record<string, string> = {
       itemCount={itemCount}
     />
   </section>
+
+  <DeleteContentType contentType={contentType} blockers={deleteBlockers} />
 </AdminLayout>

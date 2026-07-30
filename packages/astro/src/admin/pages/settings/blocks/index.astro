@@ -36,12 +36,14 @@ for (const blockType of blockTypes) {
 }
 
 const error = Astro.url.searchParams.get('error');
+const deleted = Astro.url.searchParams.get('deleted');
 ---
 
 <AdminLayout
   title="Block types"
   user={user}
   breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Block types' }]}
+  flash={deleted ? `Deleted the ${deleted} block type.` : null}
 >
   <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
     <div>

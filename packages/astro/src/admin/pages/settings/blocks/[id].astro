@@ -1,7 +1,9 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import FieldBuilder from '../../../islands/FieldBuilder.tsx';
+import DeleteContentType from '../../../components/DeleteContentType.astro';
 import {
+  contentTypeDeleteBlockers,
   countBlockUsage,
   getContentType,
   itemsUsingBlock,
@@ -39,7 +41,12 @@ const blockTypes = await listBlockTypes(taproot.db.db);
 const usage = await countBlockUsage(taproot.db.db, blockType.api_id);
 const usedBy = usage > 0 ? await itemsUsingBlock(taproot.db.db, blockType.api_id) : [];
 
+// Not derivable from `usage`: an unreferenced library entry blocks the delete and is invisible to
+// `countBlockUsage`, which is exactly the case the guard was written for.
+const deleteBlockers = await contentTypeDeleteBlockers(taproot.db.db, blockType);
+
 const created = Astro.url.searchParams.get('created') === '1';
+const error = Astro.url.searchParams.get('error');
 ---
 
 <AdminLayout
@@ -59,6 +66,16 @@ const created = Astro.url.searchParams.get('created') === '1';
       {blockType.description && ` · ${blockType.description}`}
     </p>
   </header>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
 
   <section aria-labelledby="usage-heading" class="mb-10">
     <h2 id="usage-heading" class="mb-1 text-base font-semibold">Where it is used</h2>
@@ -112,4 +129,6 @@ const created = Astro.url.searchParams.get('created') === '1';
       itemCount={usage}
     />
   </section>
+
+  <DeleteContentType contentType={blockType} blockers={deleteBlockers} />
 </AdminLayout>

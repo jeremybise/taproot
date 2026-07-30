@@ -21,6 +21,7 @@ import {
   createContentType,
   createField,
   deleteContentType,
+  getContentType,
   listBlockTypes,
   listContentTypes,
   updateField,
@@ -231,6 +232,56 @@ describe('content types', () => {
 
     // Cascading here would silently delete a department's entire content.
     await expect(deleteContentType(handle.db, type.id)).rejects.toThrow(/still use it/);
+  });
+
+  it('refuses to delete a type a relation field on another type still targets', async () => {
+    const { type } = await seedPageType();
+    const author = await createContentType(handle.db, {
+      api_id: 'author',
+      name: 'Author',
+      name_plural: 'Authors',
+      kind: 'collection',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      title_field: null,
+    });
+
+    await createField(handle.db, type.id, {
+      api_id: 'written_by',
+      label: 'Written by',
+      type: 'relation',
+      required: false,
+      localized: false,
+      position: 1,
+      config: { targetContentTypeId: author.id, multiple: false },
+      help_text: null,
+    });
+
+    // No items, so nothing the FK cascade can see — but Page's relation field would be left
+    // pointing at a type that no longer exists. The message names the type holding the delete.
+    await expect(deleteContentType(handle.db, author.id)).rejects.toThrow(/relation field/);
+    await expect(deleteContentType(handle.db, author.id)).rejects.toThrow(/Page/);
+  });
+
+  it('deletes a type whose only relation field targets itself', async () => {
+    const { type } = await seedPageType();
+
+    // A self-reference cascades away with the type that owns it, so it must not count as usage —
+    // otherwise "related pages" on Page makes Page permanently undeletable.
+    await createField(handle.db, type.id, {
+      api_id: 'related',
+      label: 'Related pages',
+      type: 'relation',
+      required: false,
+      localized: false,
+      position: 1,
+      config: { targetContentTypeId: type.id, multiple: true },
+      help_text: null,
+    });
+
+    await deleteContentType(handle.db, type.id);
+    expect(await getContentType(handle.db, type.id)).toBeUndefined();
   });
 
   it('refuses to change a field type after creation', async () => {
