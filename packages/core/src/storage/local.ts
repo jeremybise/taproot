@@ -48,8 +48,17 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async get(key: string): Promise<Uint8Array | undefined> {
     const { fs, path } = await nodeModules();
+    /**
+     * Resolved outside the `try` on purpose.
+     *
+     * The catch below exists for one case — the file is not there — and a key that escapes the
+     * upload directory is a different thing entirely. Resolving inside it reported an attempted
+     * traversal as a plain miss, which is safe (nothing is read) but silent, and left `get`
+     * disagreeing with `put` and `delete`, which both throw for the same key.
+     */
+    const target = this.#resolve(key, path);
     try {
-      return new Uint8Array(await fs.readFile(this.#resolve(key, path)));
+      return new Uint8Array(await fs.readFile(target));
     } catch {
       return undefined;
     }
@@ -62,8 +71,11 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async exists(key: string): Promise<boolean> {
     const { fs, path } = await nodeModules();
+    // Resolved outside the `try` for the same reason as `get`: "outside the directory" is not
+    // "absent", and only the second one is this method's answer to give.
+    const target = this.#resolve(key, path);
     try {
-      await fs.access(this.#resolve(key, path));
+      await fs.access(target);
       return true;
     } catch {
       return false;
