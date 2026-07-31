@@ -1,7 +1,13 @@
 ---
 import AdminLayout from '../layouts/AdminLayout.astro';
-import { MIN_PASSWORD_LENGTH } from '@taproot/core';
+import { MIN_PASSWORD_LENGTH, totpUri, twoFactorStatus } from '@taproot/core';
+import { renderSVG } from 'uqr';
 import { getTaproot, loginRedirect } from '../../runtime/guards.js';
+import {
+  RECOVERY_COOKIE,
+  clearRecoveryCookie,
+  readRecoveryCodes,
+} from '../../api/auth/recoveryCookie.js';
 
 /**
  * Your own account.
@@ -17,13 +23,69 @@ const changed = Astro.url.searchParams.get('changed') === '1';
 const error = Astro.url.searchParams.get('error');
 
 const passwordAuth = taproot.auth.passwordAuthEnabled;
+
+// --- Two-factor ------------------------------------------------------------
+
+const status = await twoFactorStatus(taproot.db.db, user.id);
+
+/**
+ * Freshly issued recovery codes, handed over in a one-render cookie.
+ *
+ * Read and cleared in the same response. The server keeps only their hashes, so this render is the
+ * one chance to write them down — which is the point rather than a limitation.
+ */
+const recoveryCodes = readRecoveryCodes(Astro.cookies.get(RECOVERY_COOKIE)?.value);
+if (recoveryCodes) {
+  Astro.response.headers.append(
+    'set-cookie',
+    clearRecoveryCookie({ secure: taproot.auth.secureCookies }),
+  );
+}
+
+/**
+ * The secret is re-read rather than carried through the redirect.
+ *
+ * A shared secret in a query string would be in browser history and every access log, and it is
+ * the whole of the second factor. It is safe to read back only because enrolment is unconfirmed —
+ * once `verified_at` is set, nothing shows it again.
+ */
+let enrolment: { secret: string; uri: string; qr: string } | null = null;
+if (status.pending) {
+  const row = await taproot.db.db
+    .selectFrom('totp_secrets')
+    .select('secret')
+    .where('user_id', '=', user.id)
+    .executeTakeFirst();
+
+  if (row) {
+    const uri = totpUri(row.secret, user.email);
+    enrolment = { secret: row.secret, uri, qr: renderSVG(uri, { border: 1 }) };
+  }
+}
+
+/** Base32 in groups of four, because this gets typed by hand when a camera will not focus. */
+const groupedSecret = enrolment?.secret.replace(/(.{4})/g, '$1 ').trim();
+
+const twoFactorFlash = Astro.url.searchParams.get('enabled') === '1'
+  ? 'Two-factor authentication is on. Save your recovery codes.'
+  : Astro.url.searchParams.get('regenerated') === '1'
+    ? 'New recovery codes issued. The old ones no longer work.'
+    : Astro.url.searchParams.get('disabled') === '1'
+      ? 'Two-factor authentication is off.'
+      : Astro.url.searchParams.get('disabled') === 'cancelled'
+        ? 'Setup cancelled.'
+        : null;
 ---
 
 <AdminLayout
   title="Your account"
   user={user}
   breadcrumbs={[{ label: 'Your account' }]}
-  flash={error ?? (changed ? 'Password changed. Other sessions have been signed out.' : null)}
+  flash={
+    error ??
+    twoFactorFlash ??
+    (changed ? 'Password changed. Other sessions have been signed out.' : null)
+  }
 >
   <header class="mb-6">
     <h1 class="text-2xl font-semibold tracking-tight">Your account</h1>
@@ -118,6 +180,193 @@ const passwordAuth = taproot.auth.passwordAuthEnabled;
         This deployment signs in through an identity provider, so there is no password to change
         here. Manage it wherever that account lives.
       </p>
+    )
+  }
+
+  {
+    passwordAuth && (
+      <section aria-labelledby="twofactor-heading" class="mt-12 max-w-xl border-t border-border pt-8">
+        <h2 id="twofactor-heading" class="text-base font-semibold">
+          Two-factor authentication
+        </h2>
+
+        {recoveryCodes && (
+          /*
+            Shown once and never again — the server keeps only hashes. Saying so plainly matters
+            more than it looks: someone who assumes they can come back for these is someone a lost
+            phone will lock out.
+          */
+          <div class="mt-4 rounded-lg border border-accent bg-accent-subtle p-4">
+            <h3 class="text-sm font-semibold">Your recovery codes</h3>
+            <p class="mt-1 text-sm">
+              Save these somewhere safe now. Each works once, in place of a code from your app, and
+              they are not shown again.
+            </p>
+            <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-sm">
+              {recoveryCodes.map((code) => (
+                <li>{code}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {status.enabled ? (
+          <>
+            <p class="mt-1 text-sm text-content-muted">
+              On. Signing in asks for a code from your authenticator after your password.{' '}
+              {status.recoveryCodesRemaining === 0
+                ? 'You have no recovery codes left — issue a new set.'
+                : `${status.recoveryCodesRemaining} recovery code${
+                    status.recoveryCodesRemaining === 1 ? '' : 's'
+                  } remaining.`}
+            </p>
+
+            <div class="mt-4 grid gap-4 sm:grid-cols-2">
+              <form
+                method="post"
+                action="/api/taproot/auth/two-factor"
+                class="rounded-lg border border-border p-4"
+              >
+                <input type="hidden" name="action" value="regenerate" />
+                <h3 class="text-sm font-semibold">New recovery codes</h3>
+                <p class="mt-1 text-xs text-content-subtle">
+                  Replaces the current set. The old codes stop working.
+                </p>
+                <label for="password-regenerate" class="mt-3 block text-sm font-medium">
+                  Current password
+                </label>
+                <input
+                  id="password-regenerate"
+                  name="password"
+                  type="password"
+                  required
+                  autocomplete="current-password"
+                  class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+                />
+                <button
+                  type="submit"
+                  class="mt-3 rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+                >
+                  Issue new codes
+                </button>
+              </form>
+
+              <form
+                method="post"
+                action="/api/taproot/auth/two-factor"
+                class="rounded-lg border border-danger p-4"
+              >
+                <input type="hidden" name="action" value="disable" />
+                <h3 class="text-sm font-semibold">Turn two-factor off</h3>
+                <p class="mt-1 text-xs text-content-subtle">
+                  Your password alone will get in again.
+                </p>
+                <label for="password-disable" class="mt-3 block text-sm font-medium">
+                  Current password
+                </label>
+                <input
+                  id="password-disable"
+                  name="password"
+                  type="password"
+                  required
+                  autocomplete="current-password"
+                  class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+                />
+                <button
+                  type="submit"
+                  class="mt-3 rounded-md bg-danger px-4 py-2 text-sm font-medium text-danger-content transition-colors hover:bg-danger-hover"
+                >
+                  Turn off
+                </button>
+              </form>
+            </div>
+
+            <p class="mt-4 text-xs text-content-subtle">
+              Both ask for your password even though you are signed in. A second factor that can be
+              switched off by whoever finds an unlocked laptop is not a second factor.
+            </p>
+          </>
+        ) : enrolment ? (
+          <>
+            <p class="mt-1 text-sm text-content-muted">
+              Scan this with an authenticator app, then enter the code it shows. Nothing changes
+              until you do.
+            </p>
+
+            <div class="mt-4 flex flex-wrap items-start gap-6">
+              {/*
+                Decorative: the same secret sits beside it as text, which is both the accessible
+                path and the one that works when a camera will not focus.
+              */}
+              <div
+                class="w-44 shrink-0 rounded-lg bg-white p-3"
+                aria-hidden="true"
+                set:html={enrolment.qr}
+              />
+
+              <div class="min-w-56 flex-1">
+                <p class="text-sm font-medium">Or enter this key by hand</p>
+                <p class="mt-1.5 rounded-md border border-border bg-surface-sunken px-3 py-2 font-mono text-sm break-all">
+                  {groupedSecret}
+                </p>
+
+                <form method="post" action="/api/taproot/auth/two-factor" class="mt-4">
+                  <input type="hidden" name="action" value="confirm" />
+                  <label for="code" class="block text-sm font-medium">
+                    Code from your app
+                  </label>
+                  <input
+                    id="code"
+                    name="code"
+                    required
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    spellcheck="false"
+                    class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm tracking-widest"
+                  />
+                  <button
+                    type="submit"
+                    class="mt-3 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+                  >
+                    Turn on two-factor
+                  </button>
+                </form>
+
+                {/*
+                  Cancelling reuses `disable`, which is safe without a password here precisely
+                  because nothing is protecting the account yet — an unconfirmed secret guards
+                  nothing, so discarding it takes nothing away.
+                */}
+                <form method="post" action="/api/taproot/auth/two-factor" class="mt-2">
+                  <input type="hidden" name="action" value="disable" />
+                  <button
+                    type="submit"
+                    class="rounded-md px-3 py-1.5 text-sm font-medium text-content-muted transition-colors hover:bg-surface-sunken"
+                  >
+                    Cancel setup
+                  </button>
+                </form>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <p class="mt-1 max-w-prose text-sm text-content-muted">
+              Off. Your password is the only thing protecting this account. Turning this on adds a
+              code from an app on your phone.
+            </p>
+            <form method="post" action="/api/taproot/auth/two-factor" class="mt-4">
+              <input type="hidden" name="action" value="begin" />
+              <button
+                type="submit"
+                class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+              >
+                Set up two-factor
+              </button>
+            </form>
+          </>
+        )}
+      </section>
     )
   }
 </AdminLayout>

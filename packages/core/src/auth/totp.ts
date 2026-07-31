@@ -38,19 +38,40 @@ export async function verifyTotpCode(
   code: string,
   options: { atMs?: number; window?: number } = {},
 ): Promise<boolean> {
+  return (await findTotpStep(secret, code, options)) !== null;
+}
+
+/**
+ * The time step a code matched, or `null`.
+ *
+ * The step is what makes replay protection possible: a code stays valid for its whole period plus
+ * the drift window, so without recording which step was spent, a code observed over someone's
+ * shoulder — or captured by a phishing page and relayed — works a second time for up to ninety
+ * seconds. The caller stores the highest step it has accepted and refuses anything at or below it.
+ *
+ * Returning the step leaks nothing: it is derived from the clock, which is not a secret. The
+ * constant-time property being protected here is *whether an early candidate matched*, and every
+ * candidate is still evaluated.
+ */
+export async function findTotpStep(
+  secret: string,
+  code: string,
+  options: { atMs?: number; window?: number } = {},
+): Promise<number | null> {
   const submitted = code.replace(/\s/g, '');
-  if (!/^\d{6}$/.test(submitted)) return false;
+  if (!/^\d{6}$/.test(submitted)) return null;
 
   const atMs = options.atMs ?? Date.now();
   const window = options.window ?? 1;
   const key = base32Decode(secret);
   const counter = Math.floor(atMs / 1000 / PERIOD_SECONDS);
 
-  let matched = false;
+  let matched: number | null = null;
   // Every candidate is checked even after a match so verification takes constant time.
   for (let offset = -window; offset <= window; offset++) {
-    const candidate = await generateHotpCode(key, counter + offset);
-    if (constantTimeStringEqual(candidate, submitted)) matched = true;
+    const step = counter + offset;
+    const candidate = await generateHotpCode(key, step);
+    if (constantTimeStringEqual(candidate, submitted)) matched = step;
   }
   return matched;
 }

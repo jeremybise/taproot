@@ -3,16 +3,19 @@ import {
   buildSessionCookie,
   checkThrottle,
   clearAttempts,
+  createLoginChallenge,
   createSession,
   emailKey,
   ipKey,
   recordFailedAttempt,
+  twoFactorStatus,
   verifyCredentials,
 } from '@taproot/core';
 import { z } from 'zod';
 
 import { apiError, json, mapError } from '../_shared.js';
 import { getTaproot } from '../../runtime/guards.js';
+import { buildChallengeCookie } from './challengeCookie.js';
 
 const loginSchema = z.object({
   email: z.string().min(1),
@@ -79,6 +82,31 @@ export async function POST(context: APIContext): Promise<Response> {
     }
 
     await clearAttempts(taproot.db.db, identifiers);
+
+    /**
+     * A correct password is not a session when a second factor is enrolled.
+     *
+     * The half-finished sign-in becomes a short-lived, single-use, revocable challenge row, and
+     * the browser gets a cookie naming it rather than a session. Issuing the session first and
+     * "checking 2FA later" would mean the password alone had already granted access.
+     */
+    if ((await twoFactorStatus(taproot.db.db, user.id)).enabled) {
+      const challenge = await createLoginChallenge(taproot.db.db, user.id);
+      const cookie = buildChallengeCookie(challenge.token, challenge.expiresAt, {
+        secure: taproot.auth.secureCookies,
+      });
+
+      if (wantsHtml(context)) {
+        const response = context.redirect(
+          `/admin/verify?next=${encodeURIComponent(safeRedirect(input.redirectTo))}`,
+          303,
+        );
+        response.headers.append('set-cookie', cookie);
+        return response;
+      }
+
+      return json({ twoFactorRequired: true }, { status: 202, headers: { 'set-cookie': cookie } });
+    }
 
     const { token, expiresAt } = await createSession(taproot.db.db, user.id);
     const cookie = buildSessionCookie(token, expiresAt, { secure: taproot.auth.secureCookies });

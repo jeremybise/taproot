@@ -102,6 +102,10 @@ toolchain — Taproot has zero native dependencies.
   on Workers. Sign-in is throttled per address *and* per client IP, because limiting only the
   account leaves password-spraying untouched. OAuth (Google/GitHub/Microsoft) is optional and sits
   alongside it.
+- **Two-factor authentication.** TOTP, with a QR code and a typeable key, ten single-use recovery
+  codes shown once, and a challenge between the password and the session — so a correct password
+  alone is not a way in. A spent code cannot be replayed inside its own window, which is what stops
+  one read over a shoulder working twice.
 - **People, added without knowing their passwords.** An admin creates an account and gets a
   one-time link to hand over; the person sets their own. Nothing temporary is stored, and no
   administrator ever knows a colleague's password. A fresh install bootstraps through a setup
@@ -344,11 +348,8 @@ every one of them — `fields` was already a real table, `content_items` already
 `parent_id`/`path`/`depth`, the empty `seo` column is now the SEO sidebar, and the hotspot and crop
 columns are now the focal point editor.
 
-Known gaps: two-factor authentication is not available. The TOTP implementation in core is complete
-and verified against the RFC 6238 test vectors, but nothing enrols anyone and sign-in never
-challenges for a second factor, so the module is currently unreachable. There is also no
-self-service password reset — an admin generates a link — and no email is sent anywhere, which is
-why Taproot still needs no external service to run.
+Known gaps: there is no self-service password reset — an admin generates a link — and no email is
+sent anywhere, which is why Taproot still needs no external service to run.
 
 The richtext editor needs JavaScript, unlike the rest of the admin. That is unavoidable for a
 document editor, and the item editor around it is already an island; the trade is noted rather than

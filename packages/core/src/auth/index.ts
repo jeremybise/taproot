@@ -6,3 +6,4 @@ export * from './oauth.js';
 export * from './totp.js';
 export * from './throttle.js';
 export * from './passwordReset.js';
+export * from './twoFactor.js';

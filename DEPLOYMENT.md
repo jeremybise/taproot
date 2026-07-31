@@ -194,11 +194,19 @@ Sign-in is throttled — 10 failures in 15 minutes, counted per email address *a
 so neither grinding one account nor spraying one password across many is unlimited. The lock lifts
 on its own as the failures age out; there is nothing for an administrator to clear.
 
+Anyone can turn on **two-factor authentication** from *Your account*. Sign-in then asks for a code
+after the password, and ten single-use recovery codes are shown once at enrolment — the server keeps
+only their hashes, so that screen is the only chance to save them.
+
 > **Recovering a locked-out administrator.** If the only admin loses their password, generate a
 > link for them from another admin account. If there is no other admin, the fallback is a direct
 > database write — delete the row from `users` for a fresh start, or insert a
 > `password_reset_tokens` row by hand. Taproot refuses to demote or deactivate the last active
 > administrator precisely so that this stays a rare situation.
+>
+> The same applies to a lost authenticator: another admin cannot currently clear someone else's
+> second factor from the UI, so it is `DELETE FROM totp_secrets WHERE user_id = ...` until that
+> screen exists. Recovery codes are the intended answer, which is why they are worth saving.
 
 ## Verifying against real Workers locally
 

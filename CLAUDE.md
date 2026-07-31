@@ -27,7 +27,7 @@ of SCOPE.md before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 694 tests |
+| `npm test` | Vitest, 734 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -114,6 +114,14 @@ something. Things that follow, none of them optional now that this is the front 
   went away, and the setup screen refuses because users exist.
 - **Changing your own password asks for the current one**, which is what stops an unattended
   browser becoming a permanent takeover, and drops every *other* session while reissuing this one.
+- **Two-factor is a challenge, not a screen.** A correct password with TOTP enrolled produces a
+  short-lived, single-use, revocable `login_challenges` row — never a session. Issuing the session
+  and checking the code afterwards would mean the password alone had already granted access.
+  `totp_secrets.last_used_step` makes a code single-use *within* its acceptance window, or one
+  observed over a shoulder works again for ninety seconds. The verify step is throttled with the
+  same counters as the password step, because six digits is a million possibilities. Turning it off
+  or reissuing recovery codes needs the password; cancelling an *unconfirmed* enrolment does not,
+  because an unconfirmed secret protects nothing.
 
 **Publish permission is one rule, in `guards.ts`.** `canChangeStatus(user, from, to)` answers every
 "may this person do that" about a status, and both the API routes and the item editor's select read

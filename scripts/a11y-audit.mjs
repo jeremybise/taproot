@@ -30,10 +30,15 @@ const base = process.argv[2] ?? 'http://localhost:4321';
  * token that only exists for one use, and the invalid branch is the one an audit can reach
  * repeatably. The form itself reuses the same markup as `/admin/setup`, which is audited in full.
  *
- * `/admin/setup` is *not* here and cannot be: it redirects the moment any user exists, and the
- * audit runs against a seeded database. Its form is the same shape as the one on
- * `/admin/set-password` — labelled inputs, a described password field, one submit — so this covers
- * the markup without covering that route. Genuinely unaudited, and worth knowing.
+ * Two routes are *not* here and cannot be, both because they close behind themselves:
+ *
+ *  - `/admin/setup` redirects the moment any user exists, and the audit runs seeded.
+ *  - `/admin/verify` needs a live sign-in challenge, which needs an account with two-factor
+ *    enrolled, which the seed deliberately does not create — a demo that demands an authenticator
+ *    app to sign in is a demo nobody can open.
+ *
+ * Both render the same shapes this file does cover: labelled inputs, a described field, one
+ * submit. That is not the same as covering them. Genuinely unaudited, and worth knowing.
  */
 const ANONYMOUS_ROUTES = ['/admin/login', '/admin/set-password?token=not-a-real-token'];
 

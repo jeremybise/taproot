@@ -1,0 +1,96 @@
+---
+import '../admin.css';
+import { resolveLoginChallenge } from '@taproot/core';
+import { getTaproot } from '../../runtime/guards.js';
+import { CHALLENGE_COOKIE } from '../../api/auth/challengeCookie.js';
+import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
+
+/**
+ * The second factor, between a correct password and a session.
+ *
+ * Reached only by holding an open challenge — the cookie names a server-side row, and the row is
+ * what authorises anything. Without one this is not a form to fill in but a sign-in that timed
+ * out, so it says so and sends them back rather than rendering an input that cannot succeed.
+ */
+const taproot = getTaproot(Astro.locals);
+
+if (taproot.user) return Astro.redirect('/admin');
+
+const token = Astro.cookies.get(CHALLENGE_COOKIE)?.value;
+const pending = token ? await resolveLoginChallenge(taproot.db.db, token) : undefined;
+if (!pending) return Astro.redirect('/admin/login');
+
+const error = Astro.url.searchParams.get('error');
+const next = Astro.url.searchParams.get('next') ?? '/admin';
+const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/admin';
+
+const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
+---
+
+<html lang="en" data-theme={themeAttribute(theme)}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Two-factor code · Taproot</title>
+  </head>
+  <body class="min-h-screen bg-surface-sunken text-content">
+    <main class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+      <div class="rounded-xl border border-border bg-surface-raised p-8 shadow-sm">
+        <h1 class="flex items-center gap-2 text-xl font-semibold tracking-tight">
+          <span aria-hidden="true" class="text-accent">◆</span>
+          Enter your code
+        </h1>
+        <p class="mt-2 text-sm text-content-muted">
+          Signing in as <strong>{pending.email}</strong>. Open your authenticator app and enter the
+          current six-digit code, or use one of your recovery codes.
+        </p>
+
+        <div role="alert" aria-live="assertive">
+          {
+            error && (
+              <p class="mt-5 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+                {error}
+              </p>
+            )
+          }
+        </div>
+
+        <form method="post" action="/api/taproot/auth/verify" class="mt-6 space-y-4">
+          <input type="hidden" name="next" value={safeNext} />
+
+          <div>
+            <label for="code" class="block text-sm font-medium">Code</label>
+            <input
+              id="code"
+              name="code"
+              required
+              autofocus
+              autocomplete="one-time-code"
+              inputmode="numeric"
+              spellcheck="false"
+              aria-describedby="code-hint"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm tracking-widest"
+            />
+            <p id="code-hint" class="mt-1.5 text-xs text-content-subtle">
+              Six digits from your authenticator, or a recovery code like
+              <code class="font-mono">ABCDE-FGHJK</code>.
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            class="w-full rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+          >
+            Sign in
+          </button>
+        </form>
+
+        <p class="mt-5 text-xs text-content-subtle">
+          Lost your phone and your recovery codes? An administrator can turn two-factor off for
+          your account.
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

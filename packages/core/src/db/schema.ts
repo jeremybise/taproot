@@ -61,6 +61,14 @@ export interface TotpSecretsTable {
   secret: string;
   /** Null until the user completes enrolment by confirming a code. */
   verified_at: string | null;
+  /**
+   * The highest time step already accepted.
+   *
+   * A code is valid for its whole period plus the drift window, so without this one observed over
+   * a shoulder works again for up to ninety seconds. Refusing anything at or below the last spent
+   * step makes each code single-use.
+   */
+  last_used_step: number | null;
   created_at: Timestamp;
 }
 
@@ -90,6 +98,28 @@ export interface PasswordResetTokensTable {
   user_id: string;
   expires_at: Timestamp;
   created_by: string | null;
+  used_at: Timestamp | null;
+  created_at: Timestamp;
+}
+
+/**
+ * A half-finished sign-in: the password was right, the second factor is outstanding.
+ *
+ * A row rather than a signed cookie, because it has to be revocable and single-use — it represents
+ * most of the way in, and a self-contained token would stay valid however the account changed
+ * underneath it.
+ */
+export interface LoginChallengesTable {
+  id: string;
+  user_id: string;
+  expires_at: Timestamp;
+  created_at: Timestamp;
+}
+
+/** A single-use recovery code, hashed at rest. */
+export interface TotpRecoveryCodesTable {
+  id: string;
+  user_id: string;
   used_at: Timestamp | null;
   created_at: Timestamp;
 }
@@ -421,6 +451,8 @@ export interface MenuItemsTable {
 export interface Database {
   users: UsersTable;
   login_attempts: LoginAttemptsTable;
+  login_challenges: LoginChallengesTable;
+  totp_recovery_codes: TotpRecoveryCodesTable;
   password_reset_tokens: PasswordResetTokensTable;
   user_credentials: UserCredentialsTable;
   oauth_accounts: OauthAccountsTable;
