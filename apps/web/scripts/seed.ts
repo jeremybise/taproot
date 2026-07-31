@@ -479,6 +479,35 @@ const event = await ensureType(
     },
     {
       /**
+       * A repeater, seeded for the same reason as the relation below: an editor nobody's demo data
+       * reaches is an editor nobody notices is broken.
+       *
+       * Session times are the archetypal case — several of one small shape, ordered, and far too
+       * slight to be content items of their own.
+       */
+      api_id: 'schedule',
+      label: 'Schedule',
+      type: 'repeater',
+      required: false,
+      localized: false,
+      help_text: 'Sessions within the event, in the order they run.',
+      config: {
+        maxItems: 12,
+        fields: [
+          { api_id: 'time', label: 'Time', type: 'text', required: true, config: {} },
+          { api_id: 'what', label: 'What', type: 'text', required: true, config: {} },
+          {
+            api_id: 'room',
+            label: 'Room',
+            type: 'text',
+            required: false,
+            config: {},
+          },
+        ],
+      },
+    },
+    {
+      /**
        * The relation field, seeded so the demo exercises it.
        *
        * It points from Event to Page rather than the other way round because Page is defined
@@ -987,6 +1016,11 @@ await ensureItem(
       audience: 'prospective',
       body: 'Tour campus, meet faculty, and sit in on a class.',
       capacity: 300,
+      schedule: [
+        { id: newId(), data: { time: '10:00', what: 'Welcome and campus tour', room: 'Riverbend Quad' } },
+        { id: newId(), data: { time: '11:30', what: 'Subject talks', room: 'Halloway Hall' } },
+        { id: newId(), data: { time: '13:00', what: 'Lunch with current students', room: 'The Refectory' } },
+      ],
       // The relation, pointing at a page that exists — so the editor opens on a resolved title
       // rather than on an empty control that looks the same whether or not the feature works.
       host_page: admissionsId,

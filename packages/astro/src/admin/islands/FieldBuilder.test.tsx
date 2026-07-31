@@ -87,10 +87,15 @@ describe('field type picker', () => {
     expect(within(group).getByRole('radio', { name: /Relation/ })).toBeTruthy();
   });
 
-  it('marks types whose editor is not built yet', () => {
+  it('marks nothing, because every field type has an editor now', () => {
+    /**
+     * `DEFERRED_FIELD_TYPES` is empty and the badge is therefore absent everywhere — which is the
+     * state worth asserting rather than deleting the test for. The mechanism stays because a field
+     * type added later without a control has to be able to say so, and `fieldControls.test.tsx`
+     * fails until it either has one or is listed.
+     */
     renderBuilder();
-    const repeater = screen.getByRole('radio', { name: /Repeater/ });
-    expect(repeater.closest('div')?.textContent).toMatch(/No editor yet/);
+    expect(screen.queryByText(/No editor yet/)).toBeNull();
   });
 
   it('does not mark types whose editor exists', () => {
@@ -102,7 +107,7 @@ describe('field type picker', () => {
      * themselves as forthcoming to campus editors for two phases.
      */
     renderBuilder();
-    for (const name of [/Blocks/, /Rich text/, /Media/, /Taxonomy/, /Relation/]) {
+    for (const name of [/Blocks/, /Rich text/, /Media/, /Taxonomy/, /Relation/, /Repeater/]) {
       const radio = screen.getByRole('radio', { name });
       expect(radio.closest('div')?.textContent).not.toMatch(/No editor yet|Phase \d/);
     }

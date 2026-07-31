@@ -36,9 +36,8 @@ toolchain — Taproot has zero native dependencies.
 - **Portable data layer.** One codebase on SQLite (dev), Cloudflare D1 (production), or Postgres.
 - **A visual content-type builder.** Add a field, pick its type, configure it in a form — with a
   live preview rendered through the same control the real editor uses, so it cannot drift. Text,
-  richtext, number, boolean, date, select, media, taxonomy, relation, and block all have real
-  editing controls; `repeater` is the one that does not, and the builder says so rather than
-  offering it as if it worked.
+  richtext, number, boolean, date, select, media, taxonomy, relation, block, and repeater — every
+  one of them with a real editing control.
 - **Hierarchical URLs that actually nest.** `/admissions/apply` and `/financial-aid/apply` coexist,
   because slugs are unique among siblings rather than site-wide.
 - **Cascading moves.** Renaming or re-parenting a page rewrites every descendant's path and writes
@@ -124,7 +123,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (785 covering dialects, auth, sign-in throttling, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
+| `npm test` | Unit tests (817 covering dialects, auth, sign-in throttling, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -255,7 +254,7 @@ degradation is asserted; the measured behaviour needs eyes.
 npm test
 ```
 
-785 tests. The ones worth knowing about:
+817 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -334,8 +333,6 @@ The honest cost of flat roles is that a contributor who can edit one page can ed
 answer if that starts to bite is a role × content-type matrix, which is a small retrofit precisely
 because there is no ownership to model.
 
-`repeater` is the one field type still with only its columns and a validation seam — the builder
-labels it "No editor yet" rather than offering it as though it worked.
 
 Phase 0 deliberately left seams rather than stubs that would need unpicking, and Phase 1 filled
 every one of them — `fields` was already a real table, `content_items` already carried

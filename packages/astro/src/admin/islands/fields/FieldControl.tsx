@@ -1,4 +1,9 @@
-import { FIELD_TYPE_META, type BlockInstance, type FieldRow } from '@taproot/core';
+import {
+  FIELD_TYPE_META,
+  type BlockInstance,
+  type FieldRow,
+  type RepeaterRow,
+} from '@taproot/core';
 
 import {
   BlockListEditor,
@@ -7,6 +12,7 @@ import {
 } from './BlockListEditor.js';
 import { RichTextEditor } from './RichTextEditor.js';
 import { RelationField } from './RelationField.js';
+import { RepeaterField } from './RepeaterField.js';
 import { MediaField } from '../media/MediaField.js';
 import type { MediaOption } from '../../mediaOptions.js';
 import type { RelationTarget } from '../../relationOptions.js';
@@ -481,6 +487,26 @@ export function FieldControl({
             target={targetId ? (relationTargets?.[targetId] ?? null) : null}
             hasTarget={Boolean(targetId)}
             multiple={multiple}
+            invalid={Boolean(errors?.length)}
+            disabled={preview}
+          />
+        );
+      }
+
+      case 'repeater': {
+        return (
+          <RepeaterField
+            id={id}
+            labelledBy={labelId}
+            describedBy={describedBy || undefined}
+            field={field}
+            value={Array.isArray(value) ? (value as RepeaterRow[]) : []}
+            onChange={(rows) => onChange(rows)}
+            termsByTaxonomy={termsByTaxonomy}
+            relationTargets={relationTargets}
+            media={media}
+            minItems={numberOr(config.minItems, undefined)}
+            maxItems={numberOr(config.maxItems, undefined)}
             invalid={Boolean(errors?.length)}
             disabled={preview}
           />

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { htmlToText, sanitizeHtml } from '../content/sanitizeHtml.js';
 import type { FieldRow, FieldType } from '../db/schema.js';
-import { parseJson } from '../db/values.js';
+import { parseJson, stringifyJson } from '../db/values.js';
 
 /**
  * The field-type registry.
@@ -26,6 +26,50 @@ const selectOption = z.object({
   label: z.string().min(1),
   value: z.string().min(1),
 });
+
+/**
+ * Field types a repeater row may contain.
+ *
+ * Everything that describes *a value*, and nothing that composes a page. `block` is excluded
+ * because blocks are how a page is assembled and a repeater is how one field holds several of
+ * something — nesting the first inside the second confuses two different jobs. `repeater` is
+ * excluded because a table of tables is a data model, not a field, and the person reaching for it
+ * wants a content type with a relation.
+ *
+ * Stated as an allowlist so a field type added later is excluded until somebody decides otherwise,
+ * rather than silently becoming nestable.
+ */
+export const REPEATER_SUB_FIELD_TYPES = [
+  'text',
+  'richtext',
+  'number',
+  'boolean',
+  'date',
+  'select',
+  'media',
+  'taxonomy',
+  'relation',
+] as const satisfies readonly FieldType[];
+
+export type RepeaterSubFieldType = (typeof REPEATER_SUB_FIELD_TYPES)[number];
+
+/**
+ * One sub-field definition.
+ *
+ * Shaped like the parts of `FieldRow` that describe a field rather than locate it — no id, no
+ * position, no content type. `repeaterRowFields` turns these into rows on demand so the same
+ * `FieldControl` and the same validation serve them as serve a top-level field.
+ */
+export const repeaterSubField = z.object({
+  api_id: z.string().min(1).max(64),
+  label: z.string().min(1).max(120),
+  type: z.enum(REPEATER_SUB_FIELD_TYPES),
+  required: z.boolean().default(false),
+  help_text: z.string().max(500).nullish(),
+  config: z.record(z.string(), z.unknown()).default({}),
+});
+
+export type RepeaterSubField = z.infer<typeof repeaterSubField>;
 
 export const fieldConfigSchemas = {
   text: z.object({
@@ -87,8 +131,16 @@ export const fieldConfigSchemas = {
   repeater: z.object({
     minItems: z.number().int().nonnegative().default(0),
     maxItems: z.number().int().positive().optional(),
-    /** Sub-field definitions. The repeater editor is not built yet. */
-    fields: z.array(z.unknown()).default([]),
+    /**
+     * The shape of one row.
+     *
+     * Stored inside this field's own config rather than as rows in the `fields` table, because a
+     * sub-field is part of *this* field's definition — it has no independent existence, no content
+     * item refers to it, and giving it a row would mean every query that loads a content type's
+     * fields learning to exclude the ones that are really parts of another. Same reasoning that
+     * keeps block instances inside `content_items.data`.
+     */
+    fields: z.array(repeaterSubField).default([]),
   }),
 } as const satisfies Record<FieldType, z.ZodType>;
 
@@ -99,16 +151,17 @@ export const FIELD_TYPES = Object.keys(fieldConfigSchemas) as FieldType[];
 /**
  * Field types with no editing control yet.
  *
- * This is the one fact the builder needs, and it has to be a fact rather than a plan. It used to
- * be a `availableIn` phase number on every type, which the picker rendered as a "Phase 1" / "Phase
- * 2" badge — so rich text, media, taxonomy, and blocks all announced themselves as forthcoming to
- * a campus editor long after they shipped, and `relation` claimed to be arriving in a phase that
- * had already been declared complete without it.
+ * **Empty**, and that is the point of keeping it: every field type the builder offers can now be
+ * authored. It was a `availableIn` phase number on every type once, which the picker rendered as a
+ * "Phase 1" / "Phase 2" badge — so rich text, media, taxonomy, and blocks announced themselves as
+ * forthcoming to a campus editor long after they shipped, and `relation` claimed to be arriving in
+ * a phase that had already been declared complete without it.
  *
- * `fieldControls.test.tsx` asserts this list matches what `FieldControl` actually renders, which
- * is what keeps it from drifting again.
+ * `fieldControls.test.tsx` asserts this list matches what `FieldControl` actually renders, which is
+ * what keeps it from drifting again — in either direction. A new field type added without a control
+ * fails that test until it is either built or listed here.
  */
-export const DEFERRED_FIELD_TYPES: FieldType[] = ['repeater'];
+export const DEFERRED_FIELD_TYPES: FieldType[] = [];
 
 export function fieldTypeIsDeferred(type: FieldType): boolean {
   return DEFERRED_FIELD_TYPES.includes(type);
@@ -293,7 +346,19 @@ export function buildValueSchema(field: FieldRow): z.ZodType {
       break;
 
     case 'repeater':
-      schema = z.array(z.record(z.string(), z.unknown()));
+      /**
+       * Only the envelope, like `block`.
+       *
+       * Each row's values depend on this field's own sub-field definitions, which
+       * `validateItemData` applies afterwards — keeping `buildValueSchema` a pure function of one
+       * field definition is what lets the content-type builder call it with nothing else loaded.
+       */
+      schema = z.array(
+        z.object({
+          id: z.string().min(1),
+          data: z.record(z.string(), z.unknown()).default({}),
+        }),
+      );
       break;
 
     default: {
@@ -403,12 +468,119 @@ export function validateItemData(
       continue;
     }
 
+    if (field.type === 'repeater') {
+      const rows = validateRepeater(field, result.data as RepeaterRow[], options);
+      if (rows.errors.length > 0) errors[field.api_id] = rows.errors;
+      else parsed[field.api_id] = rows.value;
+      continue;
+    }
+
     parsed[field.api_id] = result.data;
   }
 
   return Object.keys(errors).length > 0
     ? { success: false, errors }
     : { success: true, data: parsed, errors: {} };
+}
+
+/** One row of a repeater. */
+export interface RepeaterRow {
+  id: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * Turn sub-field definitions into rows the rest of the system already understands.
+ *
+ * `FieldControl` renders a `FieldRow` and `validateItemData` validates against them, so
+ * synthesising rows here means a repeater's sub-fields get the same controls, the same validation,
+ * and the same richtext sanitising as a top-level field — for free, and unable to drift.
+ *
+ * The ids are derived from the parent's, deterministically. They only have to be unique within one
+ * render, and deriving them keeps the DOM ids stable across re-renders where a generated id would
+ * remount every input on every keystroke.
+ */
+export function repeaterRowFields(field: FieldRow): FieldRow[] {
+  const config = parseJson<Record<string, unknown>>(field.config, {});
+  const subFields = Array.isArray(config.fields) ? config.fields : [];
+
+  return subFields.flatMap((raw, index) => {
+    const parsed = repeaterSubField.safeParse(raw);
+    // A malformed definition costs that sub-field, not the whole repeater — the same tolerance
+    // `parseJson` applies everywhere else a stored blob is read back.
+    if (!parsed.success) return [];
+
+    const sub = parsed.data;
+    return [
+      {
+        id: `${field.id}__${sub.api_id}`,
+        content_type_id: field.content_type_id,
+        api_id: sub.api_id,
+        label: sub.label,
+        type: sub.type,
+        help_text: sub.help_text ?? null,
+        position: index,
+        required: sub.required ? 1 : 0,
+        localized: 0,
+        config: stringifyJson(sub.config),
+        created_at: field.created_at,
+        updated_at: field.updated_at,
+      } as FieldRow,
+    ];
+  });
+}
+
+/**
+ * Validate each row against the repeater's own sub-field definitions.
+ *
+ * Recursive through `validateItemData`, exactly like blocks — which is what makes a richtext
+ * sub-field sanitised on write without this function knowing that richtext exists.
+ */
+function validateRepeater(
+  field: FieldRow,
+  rows: RepeaterRow[],
+  options: ValidateItemOptions,
+): { value: RepeaterRow[]; errors: string[] } {
+  const config = parseJson<Record<string, unknown>>(field.config, {});
+  const min = typeof config.minItems === 'number' ? config.minItems : 0;
+  const max = typeof config.maxItems === 'number' ? config.maxItems : undefined;
+
+  const errors: string[] = [];
+  const value: RepeaterRow[] = [];
+
+  if (rows.length < min) {
+    errors.push(`At least ${min} ${min === 1 ? 'entry' : 'entries'} required (found ${rows.length}).`);
+  }
+  if (max !== undefined && rows.length > max) {
+    errors.push(`At most ${max} ${max === 1 ? 'entry' : 'entries'} allowed (found ${rows.length}).`);
+  }
+
+  const subFields = repeaterRowFields(field);
+
+  /**
+   * With no sub-fields defined, rows pass through untouched rather than being emptied.
+   *
+   * A repeater whose shape has not been designed yet is half-built, not invalid — and dropping
+   * whatever an API client stored in it would be destroying content to enforce a schema that does
+   * not exist.
+   */
+  if (subFields.length === 0) return { value: rows, errors };
+
+  rows.forEach((row, index) => {
+    const nested = validateItemData(subFields, row.data, options);
+
+    if (nested.success) {
+      value.push({ id: row.id, data: nested.data ?? {} });
+    } else {
+      for (const [apiId, messages] of Object.entries(nested.errors)) {
+        // Positioned, because the editor renders rows under one label and has nowhere to put a
+        // per-row error map — the same reason block errors carry their index.
+        errors.push(`Entry ${index + 1} — ${apiId}: ${messages.join(' ')}`);
+      }
+    }
+  });
+
+  return { value, errors };
 }
 
 /**

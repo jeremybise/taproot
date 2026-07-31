@@ -1,5 +1,11 @@
 import { useId } from 'react';
-import type { ContentTypeRow, FieldType, TaxonomyRow } from '@taproot/core';
+import {
+  FIELD_TYPE_META,
+  REPEATER_SUB_FIELD_TYPES,
+  type ContentTypeRow,
+  type FieldType,
+  type TaxonomyRow,
+} from '@taproot/core';
 
 /**
  * Per-field-type option forms.
@@ -563,9 +569,228 @@ const BlockConfig: ConfigForm = ({ config, onChange, blockTypes = [] }) => {
   );
 };
 
-const RepeaterConfig: ConfigForm = () => (
-  <NoOptions note="The repeater editor is not built yet, so there is nothing to configure. A field of this type can be defined, and its stored values are preserved." />
-);
+/**
+ * A repeater's shape: the sub-fields one row is made of.
+ *
+ * The sub-field editor is deliberately shallower than the top-level field builder — a label, an
+ * api_id, a type, and required. Per-type options are reached through the *same* `FieldConfigForm`
+ * this file exports, recursing one level, so a select sub-field gets the real options editor and a
+ * media sub-field gets the real accept list rather than a second, poorer copy of each.
+ *
+ * That recursion terminates because `REPEATER_SUB_FIELD_TYPES` excludes `repeater` itself. It is
+ * worth noticing that the recursion is safe *because of a rule in core*, not because of anything
+ * here — which is why that rule is an allowlist rather than a filter.
+ */
+const RepeaterConfig: ConfigForm = ({ config, onChange, ...rest }) => {
+  const id = useId();
+  const subFields = Array.isArray(config.fields)
+    ? (config.fields as Record<string, unknown>[])
+    : [];
+
+  const update = (next: Record<string, unknown>[]) => onChange({ ...config, fields: next });
+
+  const patch = (index: number, changes: Record<string, unknown>) =>
+    update(subFields.map((sub, position) => (position === index ? { ...sub, ...changes } : sub)));
+
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= subFields.length) return;
+    const next = [...subFields];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved!);
+    update(next);
+  };
+
+  return (
+    <div className="space-y-4">
+      <Row>
+        <NumberInput
+          label="Minimum entries"
+          value={config.minItems}
+          onChange={(minItems) => onChange({ ...config, minItems: minItems ?? 0 })}
+          min={0}
+        />
+        <NumberInput
+          label="Maximum entries"
+          value={config.maxItems}
+          onChange={(maxItems) => onChange({ ...config, maxItems })}
+          min={1}
+        />
+      </Row>
+
+      <fieldset>
+        <legend className="text-sm font-medium">Fields in each entry</legend>
+        <p className="mt-0.5 text-xs text-content-subtle">
+          Every entry gets one of each. Order here is the order an editor fills them in.
+        </p>
+
+        {subFields.length === 0 ? (
+          <p className="mt-2 rounded-md border border-dashed border-border px-3 py-2.5 text-xs text-content-subtle">
+            None yet. A repeater with no fields has nothing to repeat, and the editor says so
+            rather than offering rows with nowhere to type.
+          </p>
+        ) : (
+          <ol className="mt-2 space-y-3">
+            {subFields.map((sub, index) => {
+              const subType = (typeof sub.type === 'string' ? sub.type : 'text') as FieldType;
+              const rowId = `${id}-${index}`;
+
+              return (
+                <li key={index} className="rounded-lg border border-border bg-surface p-3">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="min-w-36 flex-1">
+                      <label htmlFor={`${rowId}-label`} className="block text-xs font-medium">
+                        Label
+                      </label>
+                      <input
+                        id={`${rowId}-label`}
+                        value={typeof sub.label === 'string' ? sub.label : ''}
+                        onChange={(event) => {
+                          /**
+                           * The api_id follows the label until it is edited by hand, exactly as the
+                           * top-level builder does — but only while it still matches, so renaming a
+                           * label later cannot silently change a key that stored values are under.
+                           */
+                          const label = event.target.value;
+                          const derived = slugifyApiId(label);
+                          const following =
+                            !sub.api_id || sub.api_id === slugifyApiId(String(sub.label ?? ''));
+                          patch(index, following ? { label, api_id: derived } : { label });
+                        }}
+                        className="mt-1 w-full rounded-md border border-border-strong bg-surface-raised px-3 py-1.5 text-sm"
+                      />
+                    </div>
+
+                    <div className="min-w-32 flex-1">
+                      <label htmlFor={`${rowId}-api`} className="block text-xs font-medium">
+                        API id
+                      </label>
+                      <input
+                        id={`${rowId}-api`}
+                        value={typeof sub.api_id === 'string' ? sub.api_id : ''}
+                        onChange={(event) => patch(index, { api_id: slugifyApiId(event.target.value) })}
+                        className="mt-1 w-full rounded-md border border-border-strong bg-surface-raised px-3 py-1.5 font-mono text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor={`${rowId}-type`} className="block text-xs font-medium">
+                        Type
+                      </label>
+                      <select
+                        id={`${rowId}-type`}
+                        value={subType}
+                        onChange={(event) =>
+                          // The config goes with the type: options belong to a select and mean
+                          // nothing to a date, and carrying them over would fail validation.
+                          patch(index, { type: event.target.value, config: {} })
+                        }
+                        className="mt-1 rounded-md border border-border-strong bg-surface-raised px-3 py-1.5 text-sm"
+                      >
+                        {REPEATER_SUB_FIELD_TYPES.map((option) => (
+                          <option key={option} value={option}>
+                            {FIELD_TYPE_META[option].label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-1 pb-1">
+                      <label className="flex items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={sub.required === true}
+                          onChange={(event) => patch(index, { required: event.target.checked })}
+                        />
+                        Required
+                      </label>
+                    </div>
+
+                    <div className="flex gap-1 pb-1">
+                      <SubFieldButton
+                        label={`Move ${String(sub.label ?? 'field')} up`}
+                        disabled={index === 0}
+                        onClick={() => move(index, index - 1)}
+                      >
+                        ↑
+                      </SubFieldButton>
+                      <SubFieldButton
+                        label={`Move ${String(sub.label ?? 'field')} down`}
+                        disabled={index === subFields.length - 1}
+                        onClick={() => move(index, index + 1)}
+                      >
+                        ↓
+                      </SubFieldButton>
+                      <SubFieldButton
+                        label={`Remove ${String(sub.label ?? 'field')}`}
+                        onClick={() =>
+                          update(subFields.filter((_, position) => position !== index))
+                        }
+                      >
+                        ×
+                      </SubFieldButton>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 border-t border-border pt-3">
+                    <FieldConfigForm
+                      type={subType}
+                      config={(sub.config as Record<string, unknown>) ?? {}}
+                      onChange={(subConfig) => patch(index, { config: subConfig })}
+                      {...rest}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        <button
+          type="button"
+          onClick={() =>
+            update([...subFields, { api_id: '', label: '', type: 'text', required: false, config: {} }])
+          }
+          className="mt-3 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+        >
+          + Add field
+        </button>
+      </fieldset>
+    </div>
+  );
+};
+
+function SubFieldButton({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className="rounded-md border border-border px-2 py-1 text-xs text-content-muted transition-colors hover:bg-surface-sunken hover:text-content disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+/** The same shape core's `api_id` validation accepts: lowercase, digits, underscores. */
+function slugifyApiId(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 64);
+}
 
 /**
  * The registry. Keys must cover every member of `FIELD_TYPES` from core — there is a test for it.

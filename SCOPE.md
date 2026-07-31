@@ -43,7 +43,7 @@ This is a standing requirement across every phase, not a one-time setup task —
 ## Data model sketch
 
 **Field types (v1 set):**
-text, richtext, number, boolean, date, select, media, taxonomy reference, **relation** (single or multi-reference to other content items, with reverse lookup), block, repeater/array.
+text, richtext, number, boolean, date, select, media, taxonomy reference, **relation** (single or multi-reference to other content items, with reverse lookup), block, repeater/array. *All eleven are built, with editing controls.* A repeater's sub-fields are limited to the value-shaped types — no blocks, no nested repeaters — because a table of tables is a data model rather than a field.
 
 The relation field is a named gap in Wolly — make it a first-class field type from day one, not an afterthought.
 

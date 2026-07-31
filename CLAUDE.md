@@ -27,7 +27,7 @@ of SCOPE.md before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 785 tests |
+| `npm test` | Vitest, 817 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -492,8 +492,17 @@ many), *Block*, *Reusable Block*, *Content Type*.
   The list is a **fact about what exists**, not a plan: it replaced an `availableIn` phase number
   that the builder rendered as a "Phase N" badge on rich text, media, taxonomy, and blocks long
   after all four shipped. Plan vocabulary does not belong in a CMS a campus editor uses.
-- `repeater` is the one field type still with only columns and a validation seam — no config form,
-  no editing UI.
+- **A repeater's sub-fields live in its own config, not in the `fields` table.** They have no
+  independent existence — nothing refers to them, and giving them rows would mean every query that
+  loads a content type's fields learning to exclude the ones that are really part of another field.
+  `repeaterRowFields` synthesises `FieldRow`s on demand, which is what gets a repeater the same
+  controls, the same validation, and the same richtext sanitising as a top-level field without
+  anything knowing repeaters exist. `REPEATER_SUB_FIELD_TYPES` excludes `block` and `repeater` — a
+  table of tables is a data model rather than a field, and that exclusion in *core* is also what
+  makes the config form's one-level recursion terminate.
+- **`DEFERRED_FIELD_TYPES` is empty**: every field type the builder offers can be authored. The
+  mechanism stays because a type added later without a control has to be able to say so, and
+  `fieldControls.test.tsx` fails until it either has one or is listed.
 
 ## Definition of done for a phase
 
