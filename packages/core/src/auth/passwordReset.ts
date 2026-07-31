@@ -3,7 +3,7 @@ import type { Kysely } from 'kysely';
 import type { Database, User } from '../db/schema.js';
 import { now } from '../db/values.js';
 import { hashSessionToken } from './session.js';
-import { setPassword } from './users.js';
+import { findUserByEmail, setPassword } from './users.js';
 import { invalidateUserSessions } from './session.js';
 
 /**
@@ -163,6 +163,32 @@ export async function consumePasswordResetToken(
   await invalidateUserSessions(db, user.id);
 
   return user;
+}
+
+/**
+ * Mint a reset token for whoever holds this address, if anyone does.
+ *
+ * Returns `undefined` for an unknown or deactivated account, and the **caller must respond
+ * identically either way**. That is the whole discipline of a forgot-password form: a page that
+ * says "no account with that address" is a free membership check, and on a CMS the membership list
+ * is the list of people worth phishing. It is returned rather than hidden so the caller can still
+ * choose to send mail only when there is somewhere to send it.
+ *
+ * `created_by` is null, which is the difference from an admin-generated link and the reason the
+ * column was made nullable before there was anything to put in it: nobody authorised this, someone
+ * merely asked.
+ */
+export async function requestPasswordReset(
+  db: Kysely<Database>,
+  email: string,
+): Promise<{ user: User; token: string; expiresAt: Date } | undefined> {
+  const user = await findUserByEmail(db, email);
+
+  // A deactivated account gets no link, for the same reason its outstanding ones stop working.
+  if (!user || !user.is_active) return undefined;
+
+  const { token, expiresAt } = await createPasswordResetToken(db, user.id, { createdBy: null });
+  return { user, token, expiresAt };
 }
 
 /** Drop tokens that have expired or been used. Safe to call on a schedule. */

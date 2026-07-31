@@ -2,9 +2,11 @@ import {
   createDb,
   dbConfigFromEnv,
   resolveAuthConfig,
+  resolveMailer,
   storageFromEnv,
   type AuthConfig,
   type D1DatabaseLike,
+  type Mailer,
   type R2BucketLike,
   type StorageAdapter,
   type TaprootDb,
@@ -21,6 +23,8 @@ export interface TaprootContext {
   db: TaprootDb;
   storage: StorageAdapter;
   auth: AuthConfig;
+  /** How mail leaves, or that it does not. See `resolveMailer`. */
+  mail: Mailer;
   /** The signed-in user, if any. Populated by the middleware. */
   user?: User;
   /** Raw session token, needed to invalidate on sign-out. */
@@ -71,6 +75,7 @@ export async function createContext(
     db: await resolveDb(env, bindings),
     storage: storageFromEnv(env, bindings),
     auth: resolveAuthConfig(env),
+    mail: resolveMailer(env),
   };
 }
 

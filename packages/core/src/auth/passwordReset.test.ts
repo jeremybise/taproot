@@ -9,6 +9,7 @@ import {
   RESET_TOKEN_TTL_MS,
   consumePasswordResetToken,
   createPasswordResetToken,
+  requestPasswordReset,
   purgeStaleResetTokens,
   resolvePasswordResetToken,
 } from './passwordReset.js';
@@ -205,5 +206,69 @@ describe('purging', () => {
 
     expect(await purgeStaleResetTokens(handle.db)).toBe(1);
     expect(await resolvePasswordResetToken(handle.db, live.token)).toBeDefined();
+  });
+});
+
+describe('requesting one for yourself', () => {
+  it('mints a working token for a known address', async () => {
+    const result = await requestPasswordReset(handle.db, 'staff@campus.edu');
+
+    expect(result).toBeDefined();
+    expect((await resolvePasswordResetToken(handle.db, result!.token))?.id).toBe(userId);
+  });
+
+  it('records nobody as the author, which is what makes it self-service', async () => {
+    // An admin-generated link names the admin. This one was authorised by no one — somebody merely
+    // asked — and the nullable column existed for this before there was anything to put in it.
+    await requestPasswordReset(handle.db, 'staff@campus.edu');
+
+    const row = await handle.db
+      .selectFrom('password_reset_tokens')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .executeTakeFirstOrThrow();
+    expect(row.created_by).toBeNull();
+  });
+
+  it('matches an address regardless of case', async () => {
+    // People type their own address the way they feel like typing it, and a reset that silently
+    // does nothing for `Staff@Campus.edu` is indistinguishable from a broken mailer.
+    expect(await requestPasswordReset(handle.db, 'STAFF@campus.edu')).toBeDefined();
+  });
+
+  it('returns nothing for an address nobody holds', async () => {
+    // The caller responds identically either way — this is what lets it, rather than the caller
+    // having to know whether an error means "no account" or "something broke".
+    expect(await requestPasswordReset(handle.db, 'nobody@campus.edu')).toBeUndefined();
+  });
+
+  it('returns nothing for a deactivated account', async () => {
+    /**
+     * The same rule `resolvePasswordResetToken` already applies to an outstanding link. Minting one
+     * here would let a removed account be recovered by whoever still reads that mailbox — which is
+     * precisely the person deactivation was aimed at.
+     */
+    await handle.db.updateTable('users').set({ is_active: 0 }).where('id', '=', userId).execute();
+
+    expect(await requestPasswordReset(handle.db, 'staff@campus.edu')).toBeUndefined();
+  });
+
+  it('replaces an outstanding link rather than adding a second', async () => {
+    // Asking twice has to kill the first link, or "I think that one went to the wrong place" has
+    // no remedy.
+    const first = await requestPasswordReset(handle.db, 'staff@campus.edu');
+    const second = await requestPasswordReset(handle.db, 'staff@campus.edu');
+
+    expect(await resolvePasswordResetToken(handle.db, first!.token)).toBeUndefined();
+    expect(await resolvePasswordResetToken(handle.db, second!.token)).toBeDefined();
+  });
+
+  it('supersedes an admin-generated link too', async () => {
+    // Both write the same row, so the newest wins whichever way it was created. Worth pinning:
+    // two paths to one table is exactly where a second row would quietly appear.
+    const byAdmin = await createPasswordResetToken(handle.db, userId, { createdBy: adminId });
+    await requestPasswordReset(handle.db, 'staff@campus.edu');
+
+    expect(await resolvePasswordResetToken(handle.db, byAdmin.token)).toBeUndefined();
   });
 });

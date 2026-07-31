@@ -30,15 +30,21 @@ const base = process.argv[2] ?? 'http://localhost:4321';
  * token that only exists for one use, and the invalid branch is the one an audit can reach
  * repeatably. The form itself reuses the same markup as `/admin/setup`, which is audited in full.
  *
- * Two routes are *not* here and cannot be, both because they close behind themselves:
+ * Three routes are *not* here and cannot be, each because it is unreachable in the environment the
+ * audit runs against:
  *
  *  - `/admin/setup` redirects the moment any user exists, and the audit runs seeded.
  *  - `/admin/verify` needs a live sign-in challenge, which needs an account with two-factor
  *    enrolled, which the seed deliberately does not create — a demo that demands an authenticator
  *    app to sign in is a demo nobody can open.
+ *  - `/admin/forgot-password` renders only where a mailer can deliver, and `npm run dev` has none
+ *    on purpose. The gate is read by the dev server's own environment, so this script cannot open
+ *    it. **To audit it: put any `TAPROOT_MAIL_WEBHOOK_URL` in `apps/web/.env`, restart the dev
+ *    server, and add `/admin/forgot-password` and `/admin/forgot-password?sent=1` below.** Both
+ *    were checked that way when the page was written and passed; they are not checked on every run.
  *
- * Both render the same shapes this file does cover: labelled inputs, a described field, one
- * submit. That is not the same as covering them. Genuinely unaudited, and worth knowing.
+ * All three render the same shapes this file does cover: labelled inputs, a described field, one
+ * submit. That is not the same as covering them on every run, which is worth knowing.
  */
 const ANONYMOUS_ROUTES = ['/admin/login', '/admin/set-password?token=not-a-real-token'];
 

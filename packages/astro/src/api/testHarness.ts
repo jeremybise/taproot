@@ -4,6 +4,9 @@ import {
   createUser,
   migrateToLatest,
   resolveAuthConfig,
+  type AuthConfig,
+  type MailMessage,
+  type Mailer,
   type PutOptions,
   type StoredObject,
   type StorageAdapter,
@@ -35,6 +38,16 @@ export interface Harness {
   user(role: User['role'], email?: string): Promise<User>;
   /** Storage writes land here rather than on disk, so a test can assert on them. */
   storage: FakeStorage;
+  /** Mail lands here rather than anywhere, so a test can assert on what was sent — and on what was not. */
+  mail: FakeMailer;
+  /**
+   * The resolved auth config, shared by every context this harness builds.
+   *
+   * Exposed because several routes branch on it — password sign-in being off is a real deployment
+   * and a real code path. Mutating it is the point; reaching through a throwaway `context()` to do
+   * the same thing works only by accident of the object being shared.
+   */
+  auth: AuthConfig;
   destroy(): Promise<void>;
   /** Build an `APIContext` for a handler. */
   context(init?: ContextInit): APIContext;
@@ -60,6 +73,7 @@ export async function createHarness(): Promise<Harness> {
   if (result.error) throw result.error;
 
   const storage = new FakeStorage();
+  const mail = new FakeMailer();
   const auth = resolveAuthConfig({ NODE_ENV: 'development' });
 
   let current: User | undefined;
@@ -67,6 +81,8 @@ export async function createHarness(): Promise<Harness> {
   return {
     db,
     storage,
+    mail,
+    auth,
     as(user) {
       current = user;
     },
@@ -93,7 +109,7 @@ export async function createHarness(): Promise<Harness> {
       const method = init.method ?? (body ? 'POST' : 'GET');
       const request = new Request(url, { method, headers, body });
 
-      const taproot: TaprootContext = { db, storage, auth, user: current };
+      const taproot: TaprootContext = { db, storage, auth, mail, user: current };
 
       return {
         request,
@@ -171,5 +187,29 @@ export class FakeStorage implements StorageAdapter {
 
   publicUrl(key: string): string {
     return `/uploads/${key}`;
+  }
+}
+
+/**
+ * A `Mailer` that keeps what it was given.
+ *
+ * `delivers` is settable because it is a branch the routes take, not a detail: the forgot-password
+ * endpoint refuses outright when nothing can be delivered, and that refusal is the behaviour that
+ * keeps a deployment from promising a message it will never send.
+ */
+export class FakeMailer implements Mailer {
+  readonly name = 'fake';
+  delivers = true;
+  readonly sent: MailMessage[] = [];
+  /** Set to make the next send throw, standing in for a webhook that is down. */
+  failure: Error | undefined;
+
+  async send(message: MailMessage): Promise<void> {
+    if (this.failure) throw this.failure;
+    this.sent.push(message);
+  }
+
+  get last(): MailMessage | undefined {
+    return this.sent.at(-1);
   }
 }

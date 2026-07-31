@@ -11,6 +11,7 @@
     "./db": "./dist/db/index.js",
     "./auth": "./dist/auth/index.js",
     "./content": "./dist/content/index.js",
+    "./mail": "./dist/mail/index.js",
     "./storage": "./dist/storage/index.js",
     "./validation": "./dist/validation/index.js",
     "./package.json": "./package.json"

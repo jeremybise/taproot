@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createDb, type TaprootDb } from '../db/client.js';
 import { migrateToLatest } from '../db/migrations/index.js';
+import { createUser } from '../auth/users.js';
 import { createContentType, createField } from './types.js';
 import { createItem, getItemByPath, restoreRevision, updateItem } from './items.js';
-import { dueForPublishing, publishDueItems } from './scheduler.js';
-import { listAuditEntries } from './auditLog.js';
+import { dueForPublishing, publishDueItems, schedulerStatus } from './scheduler.js';
+import { listAuditEntries, recordAuditEntry } from './auditLog.js';
 import type { ContentTypeRow, FieldRow } from '../db/schema.js';
 
 /**
@@ -257,5 +258,81 @@ describe('publish_at’s lifetime', () => {
 
     const after = await getItemByPath(handle.db, item.path, { publishedOnly: false });
     expect(after?.publish_at).toBe(at);
+  });
+});
+
+describe('what the admin reports about the sweep', () => {
+  it('counts what is waiting and what is overdue separately', async () => {
+    await scheduled('Overdue', iso(-60_000));
+    await scheduled('Also overdue', iso(-30_000));
+    await scheduled('Later', iso(60_000));
+
+    const status = await schedulerStatus(handle.db);
+
+    expect(status.waiting).toBe(3);
+    expect(status.due).toBe(2);
+  });
+
+  it('does not count a scheduled item with no date as overdue', async () => {
+    // It is waiting forever, not late. Counting it would make the admin's "nothing is running the
+    // sweep" warning permanent on a deployment whose sweep is perfectly healthy.
+    await createItem(handle, type, fields, {
+      contentTypeId: type.id,
+      title: 'No date',
+      status: 'scheduled',
+    });
+
+    const status = await schedulerStatus(handle.db);
+    expect(status.waiting).toBe(1);
+    expect(status.due).toBe(0);
+  });
+
+  it('reports never swept before anything has run', async () => {
+    await scheduled('Later', iso(60_000));
+    expect((await schedulerStatus(handle.db)).lastSweptAt).toBeNull();
+  });
+
+  it('reads the last sweep from the audit entry the sweep itself wrote', async () => {
+    await scheduled('Due', iso(-60_000));
+    await publishDueItems(handle.db);
+
+    const status = await schedulerStatus(handle.db);
+
+    expect(status.lastSweptAt).not.toBeNull();
+    // And the queue is empty afterwards, which is the pair of numbers the screen shows together.
+    expect(status.waiting).toBe(0);
+    expect(status.due).toBe(0);
+  });
+
+  it('ignores a publish somebody did by hand', async () => {
+    /**
+     * The distinguishing mark is an absent actor. `PATCH /items/[id]` writes `item.published` too,
+     * always with the signed-in user attached, so counting every entry with that action would
+     * report a healthy scheduler on a deployment that has none.
+     *
+     * Written through `recordAuditEntry` rather than by publishing an item, because `updateItem`
+     * logs nothing — the audit entry for a hand publish belongs to the route, which knows who is
+     * asking. That makes this a direct test of the discriminator, which is the part that matters.
+     */
+    // A real row, because `actor_id` is a foreign key and `recordAuditEntry` swallows its own
+    // failures — a made-up id would leave the log empty and the assertion passing for the wrong
+    // reason.
+    const editor = await createUser(handle.db, {
+      email: 'editor@campus.edu',
+      name: 'Editor',
+      role: 'editor',
+    });
+
+    await recordAuditEntry(handle.db, {
+      action: 'item.published',
+      subjectType: 'item',
+      subjectId: 'item-1',
+      subjectLabel: 'By hand',
+      actor: editor,
+      detail: { from: 'draft', to: 'published' },
+    });
+
+    expect((await listAuditEntries(handle.db, { action: 'item.published' })).total).toBe(1);
+    expect((await schedulerStatus(handle.db)).lastSweptAt).toBeNull();
   });
 });

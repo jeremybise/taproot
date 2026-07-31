@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { getConfiguredProviders } from '@taproot/core';
+import Timestamp from '../../components/Timestamp.astro';
+import { getConfiguredProviders, schedulerStatus, twoFactorStatus } from '@taproot/core';
 import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -8,6 +9,23 @@ if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
 const user = taproot.user;
 
 const providers = getConfiguredProviders(taproot.auth);
+const scheduler = await schedulerStatus(taproot.db.db);
+const twoFactor = await twoFactorStatus(taproot.db.db, user.id);
+
+/**
+ * Whether the scheduler secret is set — never its value, and never a prefix of it.
+ *
+ * The only thing worth reporting is that the endpoint has a second way in, because an operator who
+ * set it in one environment and not another has no other way to tell them apart.
+ */
+const cronSecretSet = Boolean(process.env.TAPROOT_CRON_SECRET);
+
+/**
+ * D1 means Workers, which is the deployment where the cron trigger in `wrangler.jsonc` applies.
+ * Anywhere else the HTTP endpoint is the only wiring, so the two get different copy rather than one
+ * paragraph hedging about both.
+ */
+const onWorkers = taproot.db.driver === 'd1';
 
 const environment = [
   { label: 'Database driver', value: taproot.db.driver },
@@ -17,6 +35,17 @@ const environment = [
     label: 'Email and password sign-in',
     value: taproot.auth.passwordAuthEnabled ? 'enabled' : 'disabled',
   },
+  {
+    /*
+      Two facts in one line, because either alone misleads: `log` is a working mailer that delivers
+      nothing, so "mailer: log" reads as configured when it is the opposite. Self-service password
+      reset is offered only when this says it delivers.
+    */
+    label: 'Outgoing email',
+    value: taproot.mail.delivers
+      ? `${taproot.mail.name} (delivering)`
+      : `${taproot.mail.name} (nothing is sent — set TAPROOT_MAIL_WEBHOOK_URL)`,
+  },
   { label: 'Secure cookies', value: taproot.auth.secureCookies ? 'yes' : 'no (local http)' },
 ];
 
@@ -25,11 +54,18 @@ const account = [
   { label: 'Email', value: user.email },
   { label: 'Role', value: user.role },
   /*
-    Honest about the state rather than about a plan: the TOTP implementation exists in core and is
-    tested against the RFC 6238 vectors, but nothing enrols anyone and sign-in never challenges,
-    so from this screen's point of view the feature is simply not available.
+    Read from the database rather than described. This line said "Not available yet" for a phase
+    after enrolment shipped, because it stated a plan instead of a fact — the same failure as the
+    field-type phase badges, and the reason nothing here is allowed to be a hardcoded claim.
   */
-  { label: 'Two-factor authentication', value: 'Not available yet' },
+  {
+    label: 'Two-factor authentication',
+    value: twoFactor.enabled
+      ? `on, ${twoFactor.recoveryCodesRemaining} recovery codes left`
+      : twoFactor.pending
+        ? 'started, not confirmed'
+        : 'off',
+  },
 ];
 ---
 
@@ -57,6 +93,82 @@ const account = [
         ))
       }
     </dl>
+  </section>
+
+  <section aria-labelledby="scheduler-heading" class="mb-10">
+    <h2 id="scheduler-heading" class="mb-3 text-base font-semibold">Scheduled publishing</h2>
+
+    <p class="mb-3 max-w-prose text-sm text-content-muted">
+      A page goes live at its scheduled moment whether or not anything is running — visitors see it
+      either way, because visibility is worked out as the page is read. What the sweep below does is
+      make the status here agree with that, and tidy up expired sessions and password-reset links
+      while it is at it.
+    </p>
+
+    <dl class="divide-y divide-border overflow-hidden rounded-lg border border-border">
+      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+        <dt class="text-content-muted">Waiting to publish</dt>
+        <dd class="font-mono text-xs">{scheduler.waiting}</dd>
+      </div>
+      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+        <dt class="text-content-muted">Past their time, status not caught up</dt>
+        <dd class="font-mono text-xs">{scheduler.due}</dd>
+      </div>
+      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+        <dt class="text-content-muted">Sweep last published something</dt>
+        <dd class="text-xs">
+          {
+            scheduler.lastSweptAt ? (
+              <Timestamp value={scheduler.lastSweptAt} />
+            ) : (
+              <span class="font-mono">never</span>
+            )
+          }
+        </dd>
+      </div>
+      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+        <dt class="text-content-muted">
+          <code class="font-mono text-xs">TAPROOT_CRON_SECRET</code>
+        </dt>
+        <dd class="font-mono text-xs">{cronSecretSet ? 'set' : 'not set'}</dd>
+      </div>
+    </dl>
+
+    {
+      /*
+        Only a lingering `due` count is evidence. "Last published" goes quiet on a healthy site that
+        simply has nothing scheduled, so treating its age as a health check would cry wolf at every
+        deployment that publishes by hand — which is most of them.
+      */
+      scheduler.due > 0 && (
+        <p class="mt-3 max-w-prose rounded-md border border-status-scheduled bg-status-scheduled-subtle px-4 py-3 text-sm">
+          {scheduler.due} {scheduler.due === 1 ? 'item is' : 'items are'} past their time. If that
+          number does not fall within a few minutes, nothing is running the sweep. Publish them by
+          hand from <a href="/admin/content" class="underline underline-offset-2">Content</a>.
+        </p>
+      )
+    }
+
+    <h3 class="mt-6 mb-2 text-sm font-semibold">How it runs here</h3>
+    {
+      onWorkers ? (
+        <p class="max-w-prose text-sm text-content-muted">
+          On Workers the sweep is a cron trigger on this same Worker — the <code class="font-mono text-xs">triggers.crons</code>{' '}
+          entry in <code class="font-mono text-xs">wrangler.jsonc</code>, handled by the{' '}
+          <code class="font-mono text-xs">scheduled</code> export in{' '}
+          <code class="font-mono text-xs">src/worker.ts</code>. It needs no secret and no second
+          service, because nothing crosses the network to reach it.
+        </p>
+      ) : (
+        <p class="max-w-prose text-sm text-content-muted">
+          This deployment is not on Workers, so there is no cron trigger. Point any scheduler at{' '}
+          <code class="font-mono text-xs">POST /api/taproot/scheduler/run</code> and give it{' '}
+          <code class="font-mono text-xs">TAPROOT_CRON_SECRET</code> in an{' '}
+          <code class="font-mono text-xs">authorization: Bearer</code> header. In development you
+          can skip both — an admin session gets in on its own.
+        </p>
+      )
+    }
   </section>
 
   <section aria-labelledby="account-heading">

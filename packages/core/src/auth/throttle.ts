@@ -46,6 +46,25 @@ export function ipKey(ip: string): string {
   return `ip:${ip.trim()}`;
 }
 
+/** Failed reset requests allowed per identifier. Lower than sign-in: nobody mistypes this form. */
+export const MAX_RESET_REQUESTS = 5;
+
+/**
+ * Password-reset requests count in their own keyspace, not against sign-in.
+ *
+ * Sharing the `email:` key would hand anyone a denial of service: fire ten reset requests at an
+ * address and its owner can no longer sign in for fifteen minutes, having done nothing and
+ * received nothing but junk mail. The counters have to be separate for the limit on one to not be
+ * a weapon against the other.
+ */
+export function resetEmailKey(email: string): string {
+  return `reset-email:${email.trim().toLowerCase()}`;
+}
+
+export function resetIpKey(ip: string): string {
+  return `reset-ip:${ip.trim()}`;
+}
+
 /**
  * Whether any of these identifiers is currently over the limit.
  *
@@ -56,6 +75,7 @@ export function ipKey(ip: string): string {
 export async function checkThrottle(
   db: Kysely<Database>,
   identifiers: string[],
+  limit: number = MAX_ATTEMPTS,
 ): Promise<ThrottleStatus> {
   if (identifiers.length === 0) {
     return { blocked: false, attempts: 0, retryAfterSeconds: 0 };
@@ -83,7 +103,7 @@ export async function checkThrottle(
     );
   }
 
-  if (worst < MAX_ATTEMPTS) {
+  if (worst < limit) {
     return { blocked: false, attempts: worst, retryAfterSeconds: 0 };
   }
 

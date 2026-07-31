@@ -13,12 +13,12 @@ had been declared complete without — the relation field's editing control and 
 delete for content items and media, manual redirects, the admin's term filter, and rendering the
 focal point the hotspot editor had always stored and nothing read.
 
-Phase 3 is next and is **smaller than SCOPE.md used to describe**: departments are classification,
-which the Phase 1 taxonomy already provides, so there is no departments entity and no
-department-scoped role. Roles are flat and site-wide. User management shipped ahead of the phase,
-pulled forward by making email/password the primary sign-in method — so what remains is workflow
-transitions with role gates, a scheduler, and the audit log. Read the Roles & permissions section
-of SCOPE.md before starting.
+**Phase 3 is complete** and was **smaller than SCOPE.md used to describe**: departments are
+classification, which the Phase 1 taxonomy already provides, so there is no departments entity and
+no department-scoped role. Roles are flat and site-wide. User management, workflow transitions with
+role gates, the scheduler, and the audit log all shipped, along with self-service password reset and
+a Cloudflare cron trigger for the publishing sweep. Phase 3.5 — Content Releases — is next; read the
+Roles & permissions section of SCOPE.md before starting.
 
 ## Commands
 
@@ -27,7 +27,7 @@ of SCOPE.md before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 819 tests |
+| `npm test` | Vitest, 859 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -103,8 +103,10 @@ something. Things that follow, none of them optional now that this is the front 
 - **Nobody sets somebody else's password.** An admin mints a single-use, hashed-at-rest,
   48-hour link and hands it over. The raw token exists only in that link and is returned through a
   short-lived cookie rather than a query string, because a URL lands in history, `Referer`, and
-  access logs. `password_reset_tokens.created_by` is nullable so email-delivered self-service reset
-  is a sender away, not a reshaping.
+  access logs. Self-service reset now uses the same table and semantics with a null `created_by` —
+  as predicted, it needed a sender and not a reshaping. Its emailed link *does* carry the token in
+  the URL, which is not a contradiction: the cookie protects the **admin's** browser from holding a
+  colleague's credential, and there is no way to put a link in an inbox other than as a link.
 - **The first-run setup screen is the only unauthenticated write in the admin.** `createFirstAdmin`
   does its check and its insert in **one statement** (`INSERT ... SELECT ... WHERE NOT EXISTS`); a
   `count()` then `insert()` is a race, and the losing request must be told it lost rather than
@@ -198,6 +200,28 @@ workerd has no `node:sqlite`, which would make `npm run db:seed` impossible with
 server. `node:sqlite` is reached through a variable specifier and marked SSR-external so bundlers
 can't resolve it statically. Use `npm run preview` to exercise the real Workers runtime.
 
+**The Worker entry is `apps/web/src/worker.ts`, not the adapter's.** `@astrojs/cloudflare` fills in
+`main` only when the wrangler config does not (`main: config.main ?? '@astrojs/cloudflare/entrypoints/server'`),
+and the entry it would supply is exactly `{ fetch: handle }`. Naming our own therefore costs the
+adapter's behaviour nothing and buys a `scheduled` export, which is the only way a Cloudflare cron
+trigger can reach the publishing sweep — the alternative was a second Worker existing solely to make
+one authenticated HTTP request into the first. `main` must point at **source**, never at anything
+under `dist/`: that file does not exist until after a build, and naming it makes `astro dev` fail
+before it starts. `POST /api/taproot/scheduler/run` and `TAPROOT_CRON_SECRET` remain for platforms
+with no cron of their own; nothing on Cloudflare needs either.
+
+**Taproot sends one email, and works with none.** The standing constraint used to read "nothing
+sends any email" — right in instinct, one step too far in statement. What has to hold is that
+`npm run dev` needs no external service, and self-service password reset has no non-email form, so
+the constraint moved rather than blocking the feature. With nothing configured `resolveMailer`
+returns the log mailer, whose `delivers` is **false**, and that flag is load-bearing: the login
+page's "Forgot your password?" link, the forgot-password screen, and the API route all gate on it,
+because a form whose success message is a lie is worse than no form. Delivery is a webhook taking
+flat JSON — **do not add a vendor SDK or a per-provider adapter**; four payload shapes and four
+error semantics is exactly the maintenance a CMS that ships no block templates should not take on.
+Reset requests throttle in their own keyspace (`resetEmailKey`, not `emailKey`), or asking to reset
+someone's password would be a way to lock them out of signing in.
+
 **The admin is server-rendered Astro, not a SPA.** Every screen is an Astro page whose permission
 check runs before any HTML is sent. React appears only where interaction genuinely demands it
 (field builder, item editor). This is primarily an accessibility decision — client-side routing
@@ -214,7 +238,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-25 routes, 0 violations, all 36 token pairs passing in both themes.
+28 routes, 0 violations, all 36 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive

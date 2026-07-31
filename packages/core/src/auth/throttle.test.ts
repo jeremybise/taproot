@@ -4,12 +4,15 @@ import { createDb, type TaprootDb } from '../db/client.js';
 import { migrateToLatest } from '../db/migrations/index.js';
 import {
   MAX_ATTEMPTS,
+  MAX_RESET_REQUESTS,
   WINDOW_MS,
   checkThrottle,
   clearAttempts,
   emailKey,
   ipKey,
   purgeExpiredAttempts,
+  resetEmailKey,
+  resetIpKey,
   recordFailedAttempt,
 } from './throttle.js';
 import { newId } from '../ids.js';
@@ -180,5 +183,55 @@ describe('clearing', () => {
 
     expect(await purgeExpiredAttempts(handle.db)).toBe(1);
     expect((await checkThrottle(handle.db, [email])).attempts).toBe(1);
+  });
+});
+
+describe('password-reset requests', () => {
+  it('do not count against signing in', async () => {
+    /**
+     * The reason the keyspace is separate at all. Sharing `email:` would hand anyone a denial of
+     * service: fire a handful of reset requests at a colleague's address and they can no longer
+     * sign in for fifteen minutes, having done nothing and received nothing but junk mail.
+     */
+    const email = 'staff@campus.edu';
+    const resetIds = [resetEmailKey(email), resetIpKey('203.0.113.9')];
+
+    for (let i = 0; i < MAX_RESET_REQUESTS * 3; i += 1) {
+      await recordFailedAttempt(handle.db, resetIds);
+    }
+
+    expect((await checkThrottle(handle.db, resetIds, MAX_RESET_REQUESTS)).blocked).toBe(true);
+    // And the sign-in counters for the very same person and address are untouched.
+    expect(
+      (await checkThrottle(handle.db, [emailKey(email), ipKey('203.0.113.9')])).blocked,
+    ).toBe(false);
+  });
+
+  it('block at their own lower limit', async () => {
+    // Nobody mistypes a form with one field on it, so the allowance is smaller than sign-in's.
+    const ids = [resetEmailKey('staff@campus.edu')];
+
+    for (let i = 0; i < MAX_RESET_REQUESTS; i += 1) {
+      await recordFailedAttempt(handle.db, ids);
+    }
+
+    expect((await checkThrottle(handle.db, ids, MAX_RESET_REQUESTS)).blocked).toBe(true);
+    // The same rows are well short of the sign-in limit, which is the point of passing one.
+    expect((await checkThrottle(handle.db, ids)).blocked).toBe(false);
+  });
+
+  it('separate one address from another', async () => {
+    for (let i = 0; i < MAX_RESET_REQUESTS; i += 1) {
+      await recordFailedAttempt(handle.db, [resetEmailKey('staff@campus.edu')]);
+    }
+
+    expect(
+      (await checkThrottle(handle.db, [resetEmailKey('other@campus.edu')], MAX_RESET_REQUESTS))
+        .blocked,
+    ).toBe(false);
+  });
+
+  it('normalise case the way the sign-in key does', async () => {
+    expect(resetEmailKey('  Staff@Campus.edu ')).toBe(resetEmailKey('staff@campus.edu'));
   });
 });

@@ -2,10 +2,27 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "taproot-web",
 
-  // No `main` or `assets` here on purpose. @astrojs/cloudflare v14 builds the Worker through
-  // @cloudflare/vite-plugin, which supplies its own entry (`virtual:cloudflare/worker-entry`) and
-  // wires up the asset directory. Pointing `main` at ./dist by hand makes `astro dev` fail before
-  // it starts, because that file does not exist until after a build.
+  // `main` is a source file, never a path under ./dist — that file does not exist until after a
+  // build, and naming it makes `astro dev` fail before it starts. @astrojs/cloudflare fills this in
+  // only when it is absent (`main: config.main ?? '@astrojs/cloudflare/entrypoints/server'`), and
+  // that default is nothing but `{ fetch: handle }`. src/worker.ts re-exports the same `handle` and
+  // adds `scheduled`, which is the only way the cron trigger below can reach the publishing sweep.
+  //
+  // `assets` stays absent on purpose: @cloudflare/vite-plugin wires up the asset directory itself.
+  "main": "./src/worker.ts",
+
+  // --- Scheduled publishing --------------------------------------------------
+  // Every five minutes, which is the resolution scheduled publishing actually has. Finer buys
+  // nothing — an editor picks a time, not a second — and each run is a single indexed query that
+  // usually matches no rows.
+  //
+  // Nothing breaks if this is removed: visibility is computed on read, so a page still goes live
+  // at its scheduled moment. What stops is the admin's status catching up, and the session and
+  // reset-token housekeeping that rides along with it.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
   "compatibility_date": "2026-07-01",
 
   // Gives the Worker the Node built-ins Astro's server runtime expects.

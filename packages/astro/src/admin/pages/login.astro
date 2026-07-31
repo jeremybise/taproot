@@ -24,6 +24,7 @@ const error = Astro.url.searchParams.get('error');
 const next = Astro.url.searchParams.get('next') ?? '/admin';
 const providers = getConfiguredProviders(taproot.auth);
 const passwordAuth = taproot.auth.passwordAuthEnabled;
+const canEmailReset = passwordAuth && taproot.mail.delivers;
 const isDevelopment = import.meta.env.DEV;
 
 const providerLabels: Record<string, string> = {
@@ -92,9 +93,26 @@ const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
                 </div>
 
                 <div>
-                  <label for="password" class="block text-sm font-medium">
-                    Password
-                  </label>
+                  <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <label for="password" class="block text-sm font-medium">
+                      Password
+                    </label>
+                    {/*
+                      Offered only when the site can actually send the link. A "forgot password"
+                      link on a deployment with no mailer leads to a form whose success message is
+                      a lie — the link would go to a server log nobody reading it can see. Where it
+                      is absent, an administrator generating one is still the route, and that is
+                      what the flow was before this existed.
+                    */}
+                    {canEmailReset && (
+                      <a
+                        href="/admin/forgot-password"
+                        class="text-xs text-content-muted underline-offset-2 hover:underline"
+                      >
+                        Forgot your password?
+                      </a>
+                    )}
+                  </div>
                   <input
                     id="password"
                     name="password"

@@ -159,10 +159,37 @@ What a scheduler adds is the *record* catching up — the status turning from Sc
 and `published_at` being stamped. Without one, the admin keeps saying "scheduled" about a page the
 public can already see, and offers a button to reconcile it by hand.
 
-Set a secret and point any scheduler at the endpoint:
+**On Cloudflare this is already wired and needs no configuration.** `wrangler.jsonc` carries a cron
+trigger, and `apps/web/src/worker.ts` is the Worker entry that handles it:
+
+```jsonc
+"main": "./src/worker.ts",
+"triggers": { "crons": ["*/5 * * * *"] }
+```
+
+```ts
+import { handle } from '@astrojs/cloudflare/handler';
+import { scheduled } from '@taproot/astro/runtime/worker';
+
+export default { fetch: handle, scheduled };
+```
+
+That works because `@astrojs/cloudflare` only fills in `main` when the wrangler config does not, and
+the entry it would have supplied is exactly `{ fetch: handle }`. Naming your own costs nothing and
+adds the `scheduled` export a cron trigger needs. This used to say the adapter made that impossible;
+it does not.
+
+The sweep also clears expired sessions, spent reset links, and aged-out sign-in attempts, so those
+tables stop growing on their own.
+
+### Anywhere else
+
+Without Cloudflare's cron there is no in-process timer, so point an external scheduler at the
+endpoint and give it a secret — the endpoint is public, and publishing content is not something a
+public URL should do unauthenticated:
 
 ```bash
-npx wrangler secret put TAPROOT_CRON_SECRET
+npx wrangler secret put TAPROOT_CRON_SECRET   # or set it however your host takes secrets
 ```
 
 ```
@@ -172,11 +199,9 @@ Authorization: Bearer <TAPROOT_CRON_SECRET>
 
 It is idempotent — running it twice publishes nothing the second time — so a scheduler that retries
 on timeout cannot double-publish. Every fifteen minutes is plenty; the endpoint is cheap when there
-is nothing due.
-
-> Cloudflare Cron Triggers need a `scheduled()` export from the Worker, which the Astro adapter does
-> not currently expose. Until it does, use a separate small Worker with a cron trigger that makes
-> this request, or any external scheduler. An admin can also run it from the content list.
+is nothing due. An admin can also run it by hand from the content list, and **Settings → System**
+reports how many items are waiting, how many are overdue, and when the sweep last published
+anything.
 
 ---
 
@@ -218,6 +243,10 @@ create the account and get a one-time link to send them, and they set their own.
 once, expires after 48 hours, and is shown only on the page that generated it — mint a new one if
 it goes astray.
 
+If you have configured outgoing email (below), people can also request their own link from the
+**Forgot your password?** link on the sign-in form, and no administrator is involved. Without a
+mailer that link is not shown at all, and the admin-generated one is the only route.
+
 Passwords must be at least 12 characters. There is no composition rule, on purpose: length is what
 costs an attacker something, and demanding a digit and a symbol reliably produces `Password1!`.
 
@@ -229,15 +258,52 @@ Anyone can turn on **two-factor authentication** from *Your account*. Sign-in th
 after the password, and ten single-use recovery codes are shown once at enrolment — the server keeps
 only their hashes, so that screen is the only chance to save them.
 
-> **Recovering a locked-out administrator.** If the only admin loses their password, generate a
-> link for them from another admin account. If there is no other admin, the fallback is a direct
-> database write — delete the row from `users` for a fresh start, or insert a
-> `password_reset_tokens` row by hand. Taproot refuses to demote or deactivate the last active
-> administrator precisely so that this stays a rare situation.
+> **Recovering a locked-out administrator.** If the only admin loses their password, they can use
+> **Forgot your password?** where email is configured, or another admin can generate a link. If
+> there is no other admin *and* no mailer, the fallback is a direct database write — delete the row
+> from `users` for a fresh start, or insert a `password_reset_tokens` row by hand. Taproot refuses
+> to demote or deactivate the last active administrator precisely so that this stays rare.
 >
-> The same applies to a lost authenticator: another admin cannot currently clear someone else's
-> second factor from the UI, so it is `DELETE FROM totp_secrets WHERE user_id = ...` until that
-> screen exists. Recovery codes are the intended answer, which is why they are worth saving.
+> A lost authenticator is easier: any admin can **Clear two-factor** for someone else from
+> Settings → Users & access, which is logged. Recovery codes remain the first answer, which is why
+> they are worth saving.
+
+---
+
+## 6b. Outgoing email
+
+Taproot sends exactly one message — the self-service password reset link — and **needs no mail
+service to run**. With nothing configured it writes that message to the server log, which is what
+keeps `npm run dev` working from a fresh clone, and the *Forgot your password?* link is hidden so
+nobody is promised a message that will not arrive.
+
+**No provider is built in**, deliberately: Resend, Postmark, SES and SendGrid each have their own
+payload shape and error semantics, and a CMS that ships no block templates should not be
+maintaining four mail adapters. Instead, point Taproot at an endpoint of yours:
+
+```bash
+npx wrangler secret put TAPROOT_MAIL_WEBHOOK_URL
+npx wrangler secret put TAPROOT_MAIL_WEBHOOK_TOKEN   # optional
+npx wrangler secret put TAPROOT_MAIL_FROM            # optional, passed through
+```
+
+It POSTs flat JSON and expects any 2xx:
+
+```json
+{ "from": "cms@example.edu", "to": "someone@example.edu",
+  "subject": "Reset your password on cms.example.edu",
+  "text": "…", "html": "…" }
+```
+
+Forwarding that to your sender is a few lines in a Worker, a Lambda, or an automation tool. A
+non-2xx is treated as a failure and logged; the person at the form is still told to check their
+inbox, because saying otherwise would reveal that their address has an account here.
+
+**Settings → System** reports which mailer is live and whether it delivers.
+
+Requests are rate-limited to 5 per address and per IP per 15 minutes, counted separately from
+sign-in attempts — otherwise anyone could lock a colleague out of signing in by repeatedly asking
+to reset their password.
 
 ## Verifying against real Workers locally
 

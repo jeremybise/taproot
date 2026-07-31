@@ -123,7 +123,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (817 covering dialects, auth, sign-in throttling, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
+| `npm test` | Unit tests (859 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -339,8 +339,12 @@ every one of them — `fields` was already a real table, `content_items` already
 `parent_id`/`path`/`depth`, the empty `seo` column is now the SEO sidebar, and the hotspot and crop
 columns are now the focal point editor.
 
-Known gaps: there is no self-service password reset — an admin generates a link — and no email is
-sent anywhere, which is why Taproot still needs no external service to run.
+Self-service password reset shipped with it. Taproot sends exactly one message — the reset link —
+and **still needs no external service to run**: with nothing configured the mailer writes to the
+server log and the "Forgot your password?" link is hidden, so `npm run dev` works from a fresh
+clone. Real delivery is a webhook taking flat JSON, deliberately vendor-neutral. Scheduled
+publishing runs as a Cloudflare cron trigger on the site's own Worker, so it needs no second
+service and no shared secret; the HTTP endpoint remains for platforms with no cron of their own.
 
 The richtext editor needs JavaScript, unlike the rest of the admin. That is unavoidable for a
 document editor, and the item editor around it is already an island; the trade is noted rather than

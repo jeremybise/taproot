@@ -45,6 +45,64 @@ export async function dueForPublishing(
   return rows.map(hydrateItem);
 }
 
+export interface SchedulerStatus {
+  /** Items waiting for their moment, whether or not it has arrived. */
+  waiting: number;
+  /** Of those, the ones whose moment has passed and whose status has not caught up. */
+  due: number;
+  /**
+   * When the sweep last published something, or `null` if it never has.
+   *
+   * Read from the audit log rather than a stored heartbeat: `item.published` with no actor can only
+   * have come from `publishDueItems`, because every other path to that action has a person on it.
+   */
+  lastSweptAt: string | null;
+}
+
+/**
+ * What an operator needs to answer "is scheduled publishing actually running here".
+ *
+ * `due` is the load-bearing number and the only reliable one. A sweep that finds nothing writes
+ * nothing, so on a site that schedules content rarely `lastSweptAt` can be months old with a
+ * perfectly healthy cron — it says when the sweep last *did* something, never when it last ran.
+ * A non-zero `due` that persists is the signal that nothing is sweeping, which is why the admin
+ * leads with it.
+ */
+export async function schedulerStatus(db: Kysely<Database>): Promise<SchedulerStatus> {
+  const counts = await db
+    .selectFrom('content_items')
+    .select((eb) => [
+      eb.fn.countAll<number>().as('waiting'),
+      eb.fn
+        .sum<number>(
+          eb
+            .case()
+            .when(eb.and([eb('publish_at', 'is not', null), eb('publish_at', '<=', now())]))
+            .then(1)
+            .else(0)
+            .end(),
+        )
+        .as('due'),
+    ])
+    .where('status', '=', 'scheduled')
+    .executeTakeFirst();
+
+  const swept = await db
+    .selectFrom('audit_log')
+    .select('created_at')
+    .where('action', '=', 'item.published')
+    .where('actor_id', 'is', null)
+    .orderBy('created_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+
+  return {
+    waiting: Number(counts?.waiting ?? 0),
+    due: Number(counts?.due ?? 0),
+    lastSweptAt: swept?.created_at ?? null,
+  };
+}
+
 export interface SweepResult {
   published: { id: string; title: string; path: string }[];
 }
