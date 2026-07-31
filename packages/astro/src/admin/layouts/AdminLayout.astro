@@ -210,12 +210,23 @@ const navLinkClass = (current: boolean) =>
           </nav>
 
           <div class="border-t border-border px-3 py-3">
-            <div class="px-2 py-1.5">
-              <p class="truncate text-sm font-medium">{user.name}</p>
-              <p class="truncate text-xs text-content-subtle">
+            {/*
+              A link rather than a static block now that there is somewhere to go: changing your
+              own password is available to every role, so it cannot live under Settings, which is
+              admin-only.
+            */}
+            <a
+              href="/admin/account"
+              aria-current={path === '/admin/account' ? 'page' : undefined}
+              class={`block rounded-md px-2 py-1.5 transition-colors hover:bg-surface-raised ${
+                path === '/admin/account' ? 'bg-accent-subtle' : ''
+              }`}
+            >
+              <span class="block truncate text-sm font-medium">{user.name}</span>
+              <span class="block truncate text-xs text-content-subtle">
                 {user.email} · <span class="capitalize">{user.role}</span>
-              </p>
-            </div>
+              </span>
+            </a>
             <form method="post" action="/api/taproot/auth/logout">
               <button
                 type="submit"

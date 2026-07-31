@@ -2,8 +2,8 @@
 
 Target: **Cloudflare Workers + D1 + R2**.
 
-Written alongside the code rather than reconstructed afterwards, so it should be accurate as of
-Phase 0. If a step here is wrong, that is a bug — fix the doc in the same change as the code.
+Written alongside the code rather than reconstructed afterwards. If a step here is wrong, that is a
+bug — fix the doc in the same change as the code.
 
 ---
 
@@ -55,10 +55,15 @@ npx wrangler r2 bucket create taproot-media
 The bucket name is already in `wrangler.jsonc` as `taproot-media`. As with D1, the **binding** name
 `MEDIA` is what `storageFromEnv()` looks for — change the bucket name freely, but leave the binding.
 
-Uploaded media needs a public URL. Either attach a custom domain to the bucket in the Cloudflare
-dashboard (R2 → your bucket → Settings → Public access), or serve it through a Worker route. Then
-set `TAPROOT_MEDIA_URL` (step 4) to that origin. Without it, media rows exist but their URLs will
-not resolve.
+**Uploaded media needs a public URL, and this is required rather than recommended.** Nothing in
+Taproot serves bytes back out of R2 — there is no `/media/*` route — so an R2 deployment resolves
+image URLs only through a bucket you have exposed yourself. Attach a custom domain to the bucket in
+the Cloudflare dashboard (R2 → your bucket → Settings → Public access), then set
+`TAPROOT_MEDIA_URL` (step 4) to that origin.
+
+Skip this and uploads still succeed: rows are written, the admin lists them, and every `<img>`
+points at a path nothing answers. The failure is silent and looks like a broken image rather than a
+missing setting.
 
 ---
 
@@ -95,8 +100,12 @@ skipped.
 
 ### Secrets (never in `wrangler.jsonc`)
 
-At least one OAuth provider is required. **The app refuses to boot in production with no sign-in
-method configured** — that is deliberate, so a deployment cannot silently end up unreachable.
+Nothing here is required: email and password sign-in works with no secrets at all. Configure a
+provider only if you want OAuth *as well*.
+
+**The app refuses to boot with no sign-in method configured at all** — which now means only the
+deliberate combination of `TAPROOT_PASSWORD_AUTH=0` and no provider. That is a locked building, and
+it is cheaper to say so at startup than at a login page with no buttons on it.
 
 ```bash
 npx wrangler secret put GITHUB_CLIENT_ID
@@ -130,9 +139,13 @@ Add to the `vars` block in `apps/web/wrangler.jsonc`:
 `TAPROOT_ORIGIN` must match the domain the site is actually served from — it is what OAuth redirect
 URIs are built from, so a mismatch breaks sign-in.
 
-**Never set `TAPROOT_DEV_AUTH` in production.** It enables password sign-in, and the app will
-refuse to start rather than run with it enabled outside development. That failure is the intended
-behaviour, not something to work around.
+`TAPROOT_PASSWORD_AUTH=0` turns email and password sign-in off, for a deployment that wants OAuth
+exclusively. Leave it unset otherwise.
+
+**`TAPROOT_DEV_AUTH` is retired and Taproot refuses to start while it is set.** It used to enable
+password sign-in in development only. Ignoring it silently would leave anyone still setting it
+believing they had scoped something they had not — and for `TAPROOT_DEV_AUTH=0`, believing they had
+turned off something that is now on by default. Remove it.
 
 ---
 
@@ -155,15 +168,37 @@ fail at runtime, not at deploy — check the dry-run output before shipping.
 
 ---
 
-## 6. First sign-in
+## 6. First sign-in, and adding people
 
-The **first person to sign in via OAuth on an empty database becomes an admin.** After that,
-everyone starts as a `viewer` and is promoted by an existing admin.
+**Email and password is the primary way in.** OAuth is optional — configure a provider in step 4
+and its buttons appear alongside the form; configure none and it is password-only.
 
-So: deploy, then sign in immediately. If someone else signs in first, they get the admin account.
-On a public domain, deploy and claim the first account before announcing the URL.
+A fresh deployment has no accounts, so **`/admin` sends you to a one-time setup screen** that
+creates the first administrator and signs you in. It disables itself the moment any account exists,
+and the check is inside the same SQL statement that does the insert, so two people hitting it
+together cannot both become admin.
 
----
+That does mean the window between deploying and completing setup is a window in which whoever
+reaches the URL first becomes the administrator. **Deploy and complete setup before announcing the
+URL**, exactly as with the OAuth land-grab it replaces.
+
+After that, add people from **Settings → Users & access**. You never choose anyone's password: you
+create the account and get a one-time link to send them, and they set their own. The link works
+once, expires after 48 hours, and is shown only on the page that generated it — mint a new one if
+it goes astray.
+
+Passwords must be at least 12 characters. There is no composition rule, on purpose: length is what
+costs an attacker something, and demanding a digit and a symbol reliably produces `Password1!`.
+
+Sign-in is throttled — 10 failures in 15 minutes, counted per email address *and* per client IP,
+so neither grinding one account nor spraying one password across many is unlimited. The lock lifts
+on its own as the failures age out; there is nothing for an administrator to clear.
+
+> **Recovering a locked-out administrator.** If the only admin loses their password, generate a
+> link for them from another admin account. If there is no other admin, the fallback is a direct
+> database write — delete the row from `users` for a fresh start, or insert a
+> `password_reset_tokens` row by hand. Taproot refuses to demote or deactivate the last active
+> administrator precisely so that this stays a rare situation.
 
 ## Verifying against real Workers locally
 
@@ -180,14 +215,21 @@ That builds with the Cloudflare adapter and serves it through `wrangler dev`. Wo
 release, and whenever you touch anything that behaves differently on workerd — crypto, streams,
 or anything reaching for a Node built-in.
 
-The local D1 database is separate from the dev SQLite file and starts empty. Seed it with:
+**The local D1 database is separate from the dev SQLite file, starts empty, and there is no
+supported way to migrate or seed it.** `npm run db:migrate` targets the local SQLite file, and
+`db:migrate:remote` goes over the D1 REST API to a deployed database; neither can reach Miniflare's
+emulated D1, whose file lives at an internal path the scripts cannot reliably write to. That is the
+same constraint recorded in `apps/web/astro.config.mjs` — it is why dev runs on Node in the first
+place.
 
-```bash
-cd apps/web && npx wrangler d1 execute taproot --local --command "SELECT 1"
-```
-
-…to create it, then apply migrations through the preview server. Local D1 state lives in
+So `npm run preview` is for exercising the **runtime** — crypto, streams, anything reaching for a
+Node built-in — not for clicking around a populated admin. Point it at a real remote D1 for that,
+or apply migrations by hand with `wrangler d1 execute --local --file`. Local D1 state lives in
 `apps/web/.wrangler/state/` and can be deleted to start over.
+
+There is likewise **no production seeding path**: `npm run db:seed` writes to the local SQLite file
+and the local upload directory. A fresh deployment therefore has no content types at all, and the
+first admin builds them through the admin UI.
 
 ---
 
@@ -205,9 +247,16 @@ Never edit a migration that has already been applied anywhere. Add a new one.
 
 ## Troubleshooting
 
-**"No authentication method is configured"** — production with no OAuth secrets set. See step 4.
+**"No authentication method is configured"** — `TAPROOT_PASSWORD_AUTH=0` with no OAuth provider
+set. See step 4.
 
-**"TAPROOT_DEV_AUTH=1 is set but NODE_ENV is not development"** — working as intended. Unset it.
+**"TAPROOT_DEV_AUTH is no longer used"** — remove that variable. See step 4.
+
+**`/admin` keeps redirecting to `/admin/setup`** — the `users` table is empty. Either complete
+setup, or check you are pointing at the database you think you are.
+
+**"Too many sign-in attempts"** — the throttle. It clears itself within 15 minutes; there is no
+administrative unlock, by design.
 
 **Media uploads succeed but images 404** — the R2 bucket has no public URL, or `TAPROOT_MEDIA_URL`
 does not point at it. See step 2.

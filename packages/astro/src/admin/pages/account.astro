@@ -1,0 +1,123 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import { MIN_PASSWORD_LENGTH } from '@taproot/core';
+import { getTaproot, loginRedirect } from '../../runtime/guards.js';
+
+/**
+ * Your own account.
+ *
+ * Separate from Settings → System, which is about the deployment. Changing your own password is
+ * something every role can do, and System is behind the admin role.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const changed = Astro.url.searchParams.get('changed') === '1';
+const error = Astro.url.searchParams.get('error');
+
+const passwordAuth = taproot.auth.passwordAuthEnabled;
+---
+
+<AdminLayout
+  title="Your account"
+  user={user}
+  breadcrumbs={[{ label: 'Your account' }]}
+  flash={error ?? (changed ? 'Password changed. Other sessions have been signed out.' : null)}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Your account</h1>
+  </header>
+
+  <dl class="mb-10 grid max-w-md grid-cols-[9rem_1fr] gap-y-2 text-sm">
+    <dt class="text-content-muted">Name</dt>
+    <dd>{user.name}</dd>
+    <dt class="text-content-muted">Email</dt>
+    <dd>{user.email}</dd>
+    <dt class="text-content-muted">Role</dt>
+    <dd class="capitalize">{user.role}</dd>
+  </dl>
+
+  {
+    passwordAuth ? (
+      <section aria-labelledby="password-heading" class="max-w-md">
+        <h2 id="password-heading" class="text-base font-semibold">
+          Change your password
+        </h2>
+        <p class="mt-1 text-sm text-content-muted">
+          Every other signed-in browser is signed out. This one stays signed in.
+        </p>
+
+        <form method="post" action="/api/taproot/auth/change-password" class="mt-4 space-y-4">
+          {/* Named for password managers, which otherwise save the new entry without an account. */}
+          <input type="hidden" name="email" value={user.email} autocomplete="username" />
+
+          <div>
+            <label for="currentPassword" class="block text-sm font-medium">
+              Current password
+            </label>
+            <input
+              id="currentPassword"
+              name="currentPassword"
+              type="password"
+              required
+              autocomplete="current-password"
+              aria-describedby="current-hint"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            />
+            <p id="current-hint" class="mt-1.5 text-xs text-content-subtle">
+              Asked for even though you are signed in, so an unattended browser cannot be turned
+              into a permanent takeover.
+            </p>
+          </div>
+
+          <div>
+            <label for="newPassword" class="block text-sm font-medium">
+              New password
+            </label>
+            <input
+              id="newPassword"
+              name="newPassword"
+              type="password"
+              required
+              minlength={MIN_PASSWORD_LENGTH}
+              autocomplete="new-password"
+              aria-describedby="new-hint"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            />
+            <p id="new-hint" class="mt-1.5 text-xs text-content-subtle">
+              At least {MIN_PASSWORD_LENGTH} characters.
+            </p>
+          </div>
+
+          <div>
+            <label for="confirmPassword" class="block text-sm font-medium">
+              Confirm new password
+            </label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              required
+              minlength={MIN_PASSWORD_LENGTH}
+              autocomplete="new-password"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+
+          <button
+            type="submit"
+            class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+          >
+            Change password
+          </button>
+        </form>
+      </section>
+    ) : (
+      <p class="max-w-prose text-sm text-content-muted">
+        This deployment signs in through an identity provider, so there is no password to change
+        here. Manage it wherever that account lives.
+      </p>
+    )
+  }
+</AdminLayout>

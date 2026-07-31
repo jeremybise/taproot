@@ -28,7 +28,12 @@ export interface UsersTable {
   email: string;
   name: string;
   avatar_url: string | null;
-  /** Global fallback role. Phase 3 adds scoped assignments in a separate table. */
+  /**
+   * The user's role, site-wide.
+   *
+   * Flat on purpose. An earlier plan scoped role assignments to departments that owned content;
+   * departments turned out to be classification, which taxonomies already do. See `guards.ts`.
+   */
   role: 'admin' | 'editor' | 'contributor' | 'viewer';
   is_active: SqlBool;
   created_at: Timestamp;
@@ -56,6 +61,36 @@ export interface TotpSecretsTable {
   secret: string;
   /** Null until the user completes enrolment by confirming a code. */
   verified_at: string | null;
+  created_at: Timestamp;
+}
+
+/**
+ * One failed sign-in attempt.
+ *
+ * Rows rather than a counter: a counter needs a window start and a reset rule, and two concurrent
+ * requests reading-modifying-writing it lose attempts — on exactly the workload where concurrency
+ * *is* the attack.
+ */
+export interface LoginAttemptsTable {
+  id: string;
+  /** Kind-scoped, e.g. `email:someone@example.edu` or `ip:203.0.113.4`. */
+  identifier: string;
+  created_at: Timestamp;
+}
+
+/**
+ * A single-use token for setting a password.
+ *
+ * `id` is the SHA-256 of the token, as with `sessions` — the raw value only ever exists in the
+ * link. `created_by` is null for a token nobody but the account holder asked for, which is the
+ * shape an email-delivered reset will take.
+ */
+export interface PasswordResetTokensTable {
+  id: string;
+  user_id: string;
+  expires_at: Timestamp;
+  created_by: string | null;
+  used_at: Timestamp | null;
   created_at: Timestamp;
 }
 
@@ -122,9 +157,9 @@ export interface ContentTypesTable {
 }
 
 /**
- * The v1 field set from the scope doc. `relation` is first-class from day one rather than an
- * afterthought; `block` and `repeater` have their columns and validation seams here but their
- * editing UI arrives in Phase 2.
+ * The v1 field set from the scope doc. Every one of these has an editing control except
+ * `repeater`, which has its column and validation seam and nothing to author with — see
+ * `DEFERRED_FIELD_TYPES`, which is the single place that fact is recorded.
  */
 export type FieldType =
   | 'text'
@@ -181,7 +216,7 @@ export interface ContentItemsTable {
   title: string;
   /** Field values keyed by field `api_id`. Shape is validated against the content type. */
   data: JsonText;
-  /** SEO overrides: meta title/description, OG image. Sidebar UI lands in Phase 1. */
+  /** SEO overrides: meta title/description, OG image. Authored through the editor's SEO panel. */
   seo: JsonText;
   published_at: string | null;
   created_by: string | null;
@@ -225,7 +260,7 @@ export interface MediaTable {
   /**
    * Normalised (0-1) focal point and crop offsets, stored independently of pixels so one asset
    * drives a hero crop, a square thumb, and a portrait card without pre-generating any of them.
-   * The editor UI for these lands as a Phase 1 fast-follow.
+   * Authored in the hotspot editor and resolved for rendering by `TaprootImage`.
    */
   hotspot_x: number | null;
   hotspot_y: number | null;
@@ -379,10 +414,14 @@ export interface MenuItemsTable {
 /**
  * The full Kysely database interface.
  *
- * Phase 3 adds `departments`, `role_assignments`, and `audit_log`. Phase 3.5 adds `releases`.
+ * Phase 3 adds `audit_log`. Phase 3.5 adds `releases`. There is deliberately no `departments`
+ * or `role_assignments` table — roles are flat and site-wide, and departments are classification,
+ * which `taxonomies` already covers. See SCOPE.md.
  */
 export interface Database {
   users: UsersTable;
+  login_attempts: LoginAttemptsTable;
+  password_reset_tokens: PasswordResetTokensTable;
   user_credentials: UserCredentialsTable;
   oauth_accounts: OauthAccountsTable;
   totp_secrets: TotpSecretsTable;
@@ -402,6 +441,7 @@ export interface Database {
 }
 
 export type User = Selectable<UsersTable>;
+export type PasswordResetTokenRow = Selectable<PasswordResetTokensTable>;
 export type NewUser = Insertable<UsersTable>;
 export type UserUpdate = Updateable<UsersTable>;
 

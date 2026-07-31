@@ -1,9 +1,15 @@
 /**
  * TOTP (RFC 6238) on Web Crypto, so it runs unchanged in Node and on Workers.
  *
- * The core is implemented and tested here in Phase 0 because it is small and self-contained; the
- * enrolment UI (QR code, confirm-a-code step) lands in Phase 1 alongside the rest of the account
- * settings screens. The `totp_secrets` table already exists.
+ * Implemented and tested here because it is small and self-contained — and then never wired up.
+ * There is no enrolment (QR code, confirm-a-code step) and sign-in never challenges for a second
+ * factor, so **everything in this file is currently unreachable**: a grep for `totp` across
+ * `packages/astro` returns nothing. The `totp_secrets` table exists and is empty.
+ *
+ * Kept rather than deleted because it is verified against the RFC 6238 test vectors, which is the
+ * expensive part; what remains is an enrolment screen and a step in the login flow. Recorded here
+ * plainly so nobody reads "TOTP is implemented" off the export list and assumes the account is
+ * protected by it.
  */
 
 const DIGITS = 6;

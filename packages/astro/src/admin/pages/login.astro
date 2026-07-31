@@ -1,6 +1,6 @@
 ---
 import '../admin.css';
-import { getConfiguredProviders } from '@taproot/core';
+import { countUsers, getConfiguredProviders } from '@taproot/core';
 import { getTaproot } from '../../runtime/guards.js';
 import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
 
@@ -9,10 +9,22 @@ const taproot = getTaproot(Astro.locals);
 // Already signed in — no reason to show the form again.
 if (taproot.user) return Astro.redirect('/admin');
 
+/**
+ * A brand new install has nobody to sign in as, so the login form is a dead end.
+ *
+ * Checked here rather than only on `/setup` because this is where an operator arrives — the
+ * deployment docs, the dev server banner, and every stale bookmark point at `/admin`, which
+ * bounces here when signed out.
+ */
+if (taproot.auth.passwordAuthEnabled && (await countUsers(taproot.db.db)) === 0) {
+  return Astro.redirect('/admin/setup');
+}
+
 const error = Astro.url.searchParams.get('error');
 const next = Astro.url.searchParams.get('next') ?? '/admin';
 const providers = getConfiguredProviders(taproot.auth);
-const devAuth = taproot.auth.devCredentialsEnabled;
+const passwordAuth = taproot.auth.passwordAuthEnabled;
+const isDevelopment = import.meta.env.DEV;
 
 const providerLabels: Record<string, string> = {
   google: 'Google',
@@ -54,34 +66,12 @@ const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
         </div>
 
         {
-          providers.length > 0 && (
-            <ul class="mt-6 space-y-2">
-              {providers.map((provider) => (
-                <li>
-                  <a
-                    href={`/api/taproot/auth/${provider}`}
-                    class="block w-full rounded-md border border-border-strong px-4 py-2.5 text-center text-sm font-medium transition-colors hover:bg-surface-sunken"
-                  >
-                    Continue with {providerLabels[provider] ?? provider}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )
-        }
-
-        {
-          devAuth && providers.length > 0 && (
-            <div class="my-6 flex items-center gap-3" aria-hidden="true">
-              <span class="h-px flex-1 bg-border" />
-              <span class="text-xs uppercase tracking-wide text-content-subtle">or</span>
-              <span class="h-px flex-1 bg-border" />
-            </div>
-          )
-        }
-
-        {
-          devAuth && (
+          /*
+            The password form comes first, and OAuth below it. That ordering is the whole change:
+            password sign-in used to be the fallback shown only in development, and is now the
+            method a campus deployment is expected to use.
+          */
+          passwordAuth && (
             <>
               <form method="post" action="/api/taproot/auth/login" class="mt-6 space-y-4">
                 <input type="hidden" name="redirectTo" value={safeNext} />
@@ -123,22 +113,54 @@ const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
                 </button>
               </form>
 
-              <p class="mt-5 rounded-md border border-warning bg-warning-subtle px-3 py-2.5 text-xs">
-                <strong class="font-semibold">Development sign-in is enabled.</strong> Password
-                authentication is local-only — the app refuses to start with it enabled outside
-                development. Seeded account:
-                <code class="font-mono">admin@example.com</code> /
-                <code class="font-mono">taproot</code>
-              </p>
+              {isDevelopment && (
+                /*
+                  Development only, and gated on the build rather than on a config flag, so the
+                  seeded credentials cannot be printed by a deployed instance that happens to share
+                  a setting with a laptop.
+                */
+                <p class="mt-5 rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-xs text-content-muted">
+                  Seeded development account: <code class="font-mono">admin@example.com</code> /
+                  <code class="font-mono">taproot</code>
+                </p>
+              )}
             </>
           )
         }
 
         {
-          providers.length === 0 && !devAuth && (
+          passwordAuth && providers.length > 0 && (
+            <div class="my-6 flex items-center gap-3" aria-hidden="true">
+              <span class="h-px flex-1 bg-border" />
+              <span class="text-xs uppercase tracking-wide text-content-subtle">or</span>
+              <span class="h-px flex-1 bg-border" />
+            </div>
+          )
+        }
+
+        {
+          providers.length > 0 && (
+            <ul class="mt-6 space-y-2">
+              {providers.map((provider) => (
+                <li>
+                  <a
+                    href={`/api/taproot/auth/${provider}`}
+                    class="block w-full rounded-md border border-border-strong px-4 py-2.5 text-center text-sm font-medium transition-colors hover:bg-surface-sunken"
+                  >
+                    Continue with {providerLabels[provider] ?? provider}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+
+        {
+          providers.length === 0 && !passwordAuth && (
             <p class="mt-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
-              No sign-in method is configured. Set <code class="font-mono">TAPROOT_DEV_AUTH=1</code> in
-              development, or configure an OAuth provider — see <code class="font-mono">DEPLOYMENT.md</code>.
+              No sign-in method is configured. Unset
+              <code class="font-mono">TAPROOT_PASSWORD_AUTH</code> to allow email and password, or
+              configure an OAuth provider — see <code class="font-mono">DEPLOYMENT.md</code>.
             </p>
           )
         }

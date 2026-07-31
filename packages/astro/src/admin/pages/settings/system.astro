@@ -14,8 +14,8 @@ const environment = [
   { label: 'Media storage', value: taproot.storage.name },
   { label: 'OAuth providers', value: providers.length > 0 ? providers.join(', ') : 'none' },
   {
-    label: 'Development sign-in',
-    value: taproot.auth.devCredentialsEnabled ? 'enabled (local only)' : 'disabled',
+    label: 'Email and password sign-in',
+    value: taproot.auth.passwordAuthEnabled ? 'enabled' : 'disabled',
   },
   { label: 'Secure cookies', value: taproot.auth.secureCookies ? 'yes' : 'no (local http)' },
 ];
@@ -24,7 +24,12 @@ const account = [
   { label: 'Name', value: user.name },
   { label: 'Email', value: user.email },
   { label: 'Role', value: user.role },
-  { label: 'Two-factor authentication', value: 'Enrolment UI arrives in Phase 1' },
+  /*
+    Honest about the state rather than about a plan: the TOTP implementation exists in core and is
+    tested against the RFC 6238 vectors, but nothing enrols anyone and sign-in never challenges,
+    so from this screen's point of view the feature is simply not available.
+  */
+  { label: 'Two-factor authentication', value: 'Not available yet' },
 ];
 ---
 

@@ -4,9 +4,10 @@ A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with 
 departmental contributors.
 
 **Status: Phases 0, 1, and 2 complete.** Sign in, define a content type and its fields visually, write
-content with a real rich text editor, pick images from a real media browser, classify it, put it in a
-menu, set its focal point, and see it render at a real nested URL. See [SCOPE.md](SCOPE.md) for the
-full plan and [what's next](#whats-next).
+content with a real rich text editor, pick images from a real media browser, classify it, relate it
+to other content, put it in a menu, set its focal point, and see it render — cropped to that focal
+point — at a real nested URL. See [SCOPE.md](SCOPE.md) for the full plan and
+[what's next](#whats-next).
 
 ---
 
@@ -22,6 +23,9 @@ npm run dev
 Then open <http://localhost:4321> — or <http://localhost:4321/admin> and sign in with
 **admin@example.com** / **taproot**.
 
+On a database with no accounts — a fresh deployment rather than a seeded clone — `/admin` sends you
+to a setup screen that creates the first administrator instead.
+
 There is no other setup step. No database to provision, no OAuth app to register, no build
 toolchain — Taproot has zero native dependencies.
 
@@ -32,7 +36,9 @@ toolchain — Taproot has zero native dependencies.
 - **Portable data layer.** One codebase on SQLite (dev), Cloudflare D1 (production), or Postgres.
 - **A visual content-type builder.** Add a field, pick its type, configure it in a form — with a
   live preview rendered through the same control the real editor uses, so it cannot drift. Text,
-  richtext, number, boolean, date, select, media, taxonomy, relation, block, repeater.
+  richtext, number, boolean, date, select, media, taxonomy, relation, and block all have real
+  editing controls; `repeater` is the one that does not, and the builder says so rather than
+  offering it as if it worked.
 - **Hierarchical URLs that actually nest.** `/admissions/apply` and `/financial-aid/apply` coexist,
   because slugs are unique among siblings rather than site-wide.
 - **Cascading moves.** Renaming or re-parenting a page rewrites every descendant's path and writes
@@ -42,7 +48,16 @@ toolchain — Taproot has zero native dependencies.
   redirects rather than stranding the children.
 - **Taxonomies.** Term trees any content type can use, attached by giving the type a taxonomy
   field. "Every item anywhere under this branch" is one indexed query rather than a scan over
-  parsed JSON. Classification only — a term never decides who may edit content.
+  parsed JSON — and it is what the content list's term filter runs, so filtering by "Academics"
+  finds a page filed under "Sciences". Classification only: a term never decides who may edit
+  content.
+- **Relations, in both directions.** Point a field at another content type and pick items by title
+  from a searchable list. The item being pointed *at* shows what depends on it, grouped under
+  whatever the field calls that side — so you find out before deleting, not after.
+- **Redirects you can write yourself.** Every path change still writes one automatically; the ones
+  you add by hand are for URLs that were never Taproot pages, which is most of what a migration
+  needs. Both take part in the same chain collapse, so `/old → /b → /c` becomes `/old → /c` rather
+  than a hop the browser has to walk.
 - **An admin shaped by your content model.** Every content type is its own sidebar entry in an
   order you set, singletons open straight into their editor, and Settings is a hub rather than one
   long scrolling page.
@@ -67,7 +82,9 @@ toolchain — Taproot has zero native dependencies.
 - **Focal point and crop, stored as data rather than baked in.** Set one focal point and watch it
   play out in a wide banner, a social card, a square thumbnail, and a portrait card at once —
   because that is the decision being made, and it cannot be judged from a single frame. Drag it, or
-  focus the image and use the arrow keys.
+  focus the image and use the arrow keys. The site renders through it too: `TaprootImage` resolves
+  the stored rectangle into a real `<img>`, so the crop the editor chose is the crop a visitor
+  sees, with no derivative files and nothing to regenerate when a template changes shape.
 - **A rich text editor that cannot be used as an attack.** TipTap with an ARIA-pattern toolbar —
   one tab stop, arrow keys between buttons, `aria-pressed` state. Values are sanitised **on the
   server, on write**, through an allowlist serialiser, because the REST API accepts richtext from
@@ -80,8 +97,15 @@ toolchain — Taproot has zero native dependencies.
   updates the navigation and unpublishing it removes the entry — without anyone editing the menu.
   Menu items can also point at taxonomy terms, though whether a term has a public page at all is
   the site's decision, not Taproot's.
-- **Auth.** OAuth (Google/GitHub/Microsoft) plus a dev-only password provider that cannot be
-  enabled in production.
+- **Auth built around email and password.** Sessions are opaque tokens hashed at rest, passwords
+  are PBKDF2-SHA256 through `crypto.subtle` — no native module, so the same code runs in Node and
+  on Workers. Sign-in is throttled per address *and* per client IP, because limiting only the
+  account leaves password-spraying untouched. OAuth (Google/GitHub/Microsoft) is optional and sits
+  alongside it.
+- **People, added without knowing their passwords.** An admin creates an account and gets a
+  one-time link to hand over; the person sets their own. Nothing temporary is stored, and no
+  administrator ever knows a colleague's password. A fresh install bootstraps through a setup
+  screen that disables itself atomically the moment an account exists.
 - **REST API** with a typed client.
 - **An accessible admin.** WCAG 2.1 AA, verified by `npm run a11y`.
 
@@ -96,7 +120,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (245 covering dialects, auth, paths, validation, revisions, taxonomies, menus, SEO, the field builder) |
+| `npm test` | Unit tests (694 covering dialects, auth, sign-in throttling, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -170,6 +194,21 @@ available identically in Node and on Workers, so there is one implementation for
 The iteration count travels with each hash, so it can be raised later without invalidating
 existing passwords.
 
+### Email and password is the front door, not a back one
+
+It began as a development-only provider that the app refused to boot with outside development, on
+the reasoning that a password backdoor which is meant to be off and quietly is not is exactly the
+bug that survives to production.
+
+That was right about a *backdoor* and wrong about a *front door*. What made it dangerous was being
+a hidden second way in, not the passwords — so it became the visible first way in, with the things
+a front door owes: a throttle, a length minimum, single-use set-password links, and a first-run
+screen that closes behind itself. OAuth stays wired and optional, because registering a provider
+app is real setup a fresh clone cannot do, and that is the same reason this is the default.
+
+The guard that survived is the one that still means something: a deployment with no way in at all
+refuses to start.
+
 ---
 
 ## Accessibility
@@ -212,7 +251,7 @@ degradation is asserted; the measured behaviour needs eyes.
 npm test
 ```
 
-467 tests. The ones worth knowing about:
+694 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -259,24 +298,57 @@ npm test
   a real bug: the footer still counted the image, so the only evidence was the page afterwards.
 - That `listMedia` with an empty id list returns nothing rather than the whole library. `in ()` is
   a syntax error, so the tempting fallthrough is the dangerous one.
+- That two concurrent first-run setups produce one administrator, not two. The check and the insert
+  are one statement for exactly this reason — it is the only unauthenticated write in the admin.
+- That the sign-in throttle refuses *before* verifying the password, so a correct password does not
+  slip through a lockout and a locked-out attacker cannot spend the server's CPU on 210,000 PBKDF2
+  iterations per request.
+- That a set-password link cannot be used twice, and that two concurrent uses leave exactly one
+  winner rather than one password silently overwriting another.
+- That the last active administrator cannot be demoted or deactivated, including the case where the
+  only other admin is already deactivated.
+- That the storage adapters refuse a key escaping the upload directory — on reads and existence
+  checks as well as writes, which is where they used to disagree with each other.
+- The API routes themselves: the 401-versus-403 distinction, that a refused delete is a 409 rather
+  than a 500, and that an unexpected error never returns its own message to the client.
 
 ---
 
 ## What's next
 
-**Phase 3**, per [SCOPE.md](SCOPE.md): departments as a first-class entity with membership and
-ownership, a scoped role model, the draft/review/schedule/publish workflow with role gates, and an
-audit log. Departments are built there rather than earlier because nothing before it consumes them
-— Phase 1's taxonomies classify content, they do not own it.
+**Phase 3**, per [SCOPE.md](SCOPE.md): user management, the draft/review/schedule/publish workflow
+with role gates, a scheduler, and an audit log.
 
-`repeater` is the one field type still with only its columns and a validation seam.
+It is smaller than it used to be. The plan called for departments as a first-class entity — with
+membership, ownership of content items, and role assignments scoped to them — and that turned out
+to be the wrong reading of what a department is here. A department is *what a page is about*, which
+is what a taxonomy does, and the Phase 1 `department` taxonomy already does it. With no ownership
+dimension, there is nothing for a scoped role to scope, so roles are flat and site-wide: Admin,
+Editor, Contributor, Viewer.
+
+That model is already built and enforced on every screen and every route, and **user management
+shipped early** — it had to, because email and password became the primary sign-in method and a CMS
+you cannot add a second person to is not much of a CMS. So what Phase 3 actually still owes is the
+workflow: role-gated transitions between draft, review, scheduled, and published; something that
+flips a scheduled item live; and an audit log.
+
+The honest cost of flat roles is that a contributor who can edit one page can edit them all. The
+answer if that starts to bite is a role × content-type matrix, which is a small retrofit precisely
+because there is no ownership to model.
+
+`repeater` is the one field type still with only its columns and a validation seam — the builder
+labels it "No editor yet" rather than offering it as though it worked.
 
 Phase 0 deliberately left seams rather than stubs that would need unpicking, and Phase 1 filled
 every one of them — `fields` was already a real table, `content_items` already carried
 `parent_id`/`path`/`depth`, the empty `seo` column is now the SEO sidebar, and the hotspot and crop
 columns are now the focal point editor.
 
-Known gaps: the TOTP enrolment UI is not built, though the core is implemented and tested.
+Known gaps: two-factor authentication is not available. The TOTP implementation in core is complete
+and verified against the RFC 6238 test vectors, but nothing enrols anyone and sign-in never
+challenges for a second factor, so the module is currently unreachable. There is also no
+self-service password reset — an admin generates a link — and no email is sent anywhere, which is
+why Taproot still needs no external service to run.
 
 The richtext editor needs JavaScript, unlike the rest of the admin. That is unavoidable for a
 document editor, and the item editor around it is already an island; the trade is noted rather than

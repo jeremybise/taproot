@@ -8,9 +8,17 @@ A DB-backed, Astro-native CMS for a campus website with many non-technical depar
 contributors. [SCOPE.md](SCOPE.md) is the authoritative plan — read the relevant phase section
 before starting work on it. Decisions recorded there are settled; don't relitigate them.
 
-**Status:** Phases 1 and 2 are complete — block types, page composition, `BlockRenderer`, and
-Reusable Blocks. Phase 3 (roles, departments, and workflow) is next; read its SCOPE.md section
-before starting.
+**Status:** Phases 0–2 are complete, including a gap-closing pass that finished the pieces they
+had been declared complete without — the relation field's editing control and reverse lookup,
+delete for content items and media, manual redirects, the admin's term filter, and rendering the
+focal point the hotspot editor had always stored and nothing read.
+
+Phase 3 is next and is **smaller than SCOPE.md used to describe**: departments are classification,
+which the Phase 1 taxonomy already provides, so there is no departments entity and no
+department-scoped role. Roles are flat and site-wide. User management shipped ahead of the phase,
+pulled forward by making email/password the primary sign-in method — so what remains is workflow
+transitions with role gates, a scheduler, and the audit log. Read the Roles & permissions section
+of SCOPE.md before starting.
 
 ## Commands
 
@@ -19,7 +27,7 @@ before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 467 tests |
+| `npm test` | Vitest, 694 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -79,6 +87,53 @@ file.
 
 These are load-bearing decisions, not preferences. Each one has a reason worth knowing before
 working around it.
+
+**Email and password is the primary sign-in method; OAuth is optional.** It used to be a dev-only
+provider that `resolveAuthConfig` refused to boot with outside development. That guard was right
+about a *backdoor* and wrong about a *front door* — what made it dangerous was being a hidden
+second way in. The guard that survives refuses to start when there is no way in *at all*
+(`TAPROOT_PASSWORD_AUTH=0` and no provider), and `TAPROOT_DEV_AUTH` now throws on sight rather than
+being ignored, because silently dropping it would leave an operator believing they had scoped
+something. Things that follow, none of them optional now that this is the front door:
+- **Sign-in is throttled per email *and* per client IP** (`auth/throttle.ts`). Per-account alone
+  misses password spraying entirely. The check runs **before** `verifyCredentials`, or a
+  locked-out attacker still costs 210,000 PBKDF2 iterations per request. The IP comes from
+  `CF-Connecting-IP` only — `X-Forwarded-For` is client-settable, so trusting it would let an
+  attacker reset their own counter and lock out an address they do not own.
+- **Nobody sets somebody else's password.** An admin mints a single-use, hashed-at-rest,
+  48-hour link and hands it over. The raw token exists only in that link and is returned through a
+  short-lived cookie rather than a query string, because a URL lands in history, `Referer`, and
+  access logs. `password_reset_tokens.created_by` is nullable so email-delivered self-service reset
+  is a sender away, not a reshaping.
+- **The first-run setup screen is the only unauthenticated write in the admin.** `createFirstAdmin`
+  does its check and its insert in **one statement** (`INSERT ... SELECT ... WHERE NOT EXISTS`); a
+  `count()` then `insert()` is a race, and the losing request must be told it lost rather than
+  retried.
+- **The last active administrator cannot be demoted or deactivated.** A CMS with no admin cannot be
+  administered back into having one — every screen that could fix it is behind the role that just
+  went away, and the setup screen refuses because users exist.
+- **Changing your own password asks for the current one**, which is what stops an unattended
+  browser becoming a permanent takeover, and drops every *other* session while reissuing this one.
+
+**Publish permission is one rule, in `guards.ts`.** `canChangeStatus(user, from, to)` answers every
+"may this person do that" about a status, and both the API routes and the item editor's select read
+it — the editor through `statusChangeNeedsPublish`, which is the same predicate with the user taken
+out, so a dropdown can never offer a status the boundary then refuses. It was implemented three
+separate times before, each hardcoding `status === 'published'`, so `scheduled` and `archived` were
+gated in the dropdown and open at the API, and **un-publishing was free**: a contributor could take
+a live page to draft and it vanished from the site. Restoring an old revision is a status change
+too, and goes through the same function. `status.ts` is presentation only — it once carried a
+`needsPublish` flag that read correctly, was tested, and was enforced by nothing.
+
+**A delete guard lives in core and the screen reads it, never the other way round.**
+`contentTypeDeleteBlockers`, `itemDeleteImpact`, and `mediaDeleteImpact` each return the reasons a
+delete would fail, and `DangerZone.astro` renders them. A screen that works out for itself whether
+a delete would succeed drifts the moment a blocker is added, and the failure mode is a button that
+is offered and then refused. `deleteItem` enforces its own blockers, so the REST API cannot do what
+the admin declines. Blockers stop the delete; **warnings** describe consequences and do not — an
+item with children blocks (`parent_id` is `ON DELETE SET NULL`, so the delete would strand them at
+paths that no longer describe where they sit), while a menu entry or an incoming relation warns,
+because both already degrade visibly by design.
 
 **Zero native dependencies.** Both SQL drivers are written in-tree because Kysely ships no D1
 dialect and `kysely-d1` is unmaintained. `npm install` must never need a C++ toolchain, and no
@@ -197,7 +252,12 @@ many), *Block*, *Reusable Block*, *Content Type*.
   NULL never equals NULL, so two root pages would slip through. There are tests for both cases.
 - **`path` is a denormalised materialised path**, indexed and unique; the public catch-all resolves
   it in one lookup. `depth` is redundant with it but makes tree ordering an indexed sort.
-- **Every path change writes a redirect automatically.** Never make this opt-in.
+- **Every path change writes a redirect automatically.** Never make this opt-in. Authors can also
+  write redirects by hand, for URLs that were never Taproot pages — `source: 'manual'`. Manual rows
+  take part in the same chain collapse automatic ones do (reuse `buildRedirectStatements`, never
+  reimplement it), and are **exempt from the sweep** that deletes redirects leaving a path a live
+  item has just filled: the table has always documented them as "never GC'd", and keeping them is
+  safe because the catch-all resolves an item before it consults the redirect table.
 - **Content type `kind`** is `page` (nests under a parent), `collection` (flat, `url_prefix`-based),
   or `singleton` (exactly one item, no create/delete).
 - **Richtext is sanitised on write, inside `validateItemData`.** It is stored as HTML and rendered
@@ -224,16 +284,24 @@ many), *Block*, *Reusable Block*, *Content Type*.
   that has not set its own — copying onto items at creation would silently freeze the old value.
 - **Field values live in `content_items.data`** keyed by field `api_id`, validated against the type.
 - **Taxonomies carry no authority.** A term classifies content — what it is about — and never
-  determines who may edit it. Departments-as-permissions are a separate Phase 3 model, on purpose:
-  classification is editable by contributors and ownership must not be, so tying them would let
-  someone tag a page for discoverability and silently hand another department edit rights. Do not
-  reintroduce permission checks that read taxonomy terms.
+  determines who may edit it. Classification is editable by any contributor, so deriving a
+  permission from it would let someone tag a page for discoverability and silently hand another
+  group edit rights — and let any contributor change who else can edit. Roles are flat and
+  site-wide, which makes this rule simpler rather than harder to keep: nothing anywhere derives a
+  permission from a term, and there is no ownership model that might tempt you to. Do not
+  reintroduce permission checks that read taxonomy terms. The `department` taxonomy is a
+  *classification* of what a page is about; it is not a permission scope and never was.
 - **`taxonomy_assignments` is a derived index, not the source of truth.** Tags are authored into
   `data` like every other field and the table is rebuilt from them inside the same atomic batch as
   the item write. This looks like redundancy worth removing — it isn't. Storing tags only in the
   join table would make a restored revision silently lose them, because revisions snapshot `data`.
   What the index buys is filtering a content list by term without scanning every row and parsing
-  its `data` blob.
+  its `data` blob — `ItemFilters.termIds` is that read, a correlated `EXISTS` shared by the list
+  and its status facets. It is `EXISTS` rather than a join so an item carrying three terms in the
+  branch still counts once, and a **term filter always means the whole branch**: `termIdsForBranch`
+  expands it, because filing something under "Sciences" has to find it when someone filters by
+  "Academics". An *empty* `termIds` array matches nothing rather than everything, following
+  `listMedia` — `in ()` is a syntax error, so the tempting fallthrough is the dangerous one.
 - **Taproot has no opinion about term URLs.** Whether a taxonomy's terms get public pages is the
   host site's decision, passed to `resolveMenu` as a `termHref` callback — most taxonomies (review
   status, internal owner, audience segment) classify content without deserving a page each, so the
@@ -253,6 +321,14 @@ many), *Block*, *Reusable Block*, *Content Type*.
   first, then fits the target ratio inside it and slides that frame to centre the hotspot, clamped.
   Baking a crop per use would mean re-cropping every image whenever a template changes, and an
   image reused in an unanticipated shape would simply be wrong.
+  - **Rendering goes through `TaprootImage`, not `object-fit: cover`.** For two phases the editor
+    stored a focal point that nothing read, because the demo templates centre-cropped — an editor
+    could place a face carefully and watch the site cut it out. The component scales a real `<img>`
+    by the inverse of the resolved rectangle inside an `aspect-ratio` box (`cropFrame`), which
+    keeps alt text, `srcset`, and crawler visibility that a background image loses. It **owns its
+    wrapper on purpose**: the maths only avoids distorting the image if the box carries the same
+    ratio the rectangle was resolved for, so a caller setting its own `aspect-ratio` would
+    letterboxed the image inside a frame it was not cropped for.
 - **Image dimensions are read from header bytes on upload**, not decoded — the crop maths needs the
   source's real proportions, and every library that could decode is a native dependency. An
   unrecognised format returns null and the editor degrades rather than the upload failing.
@@ -297,6 +373,18 @@ many), *Block*, *Reusable Block*, *Content Type*.
   block type, which is refused while any item still places it.
 - **Two blocks of the same type share one `FieldRow`.** `FieldControl` therefore takes an
   `idPrefix`; without it both render inputs with the same DOM id and a label focuses the wrong one.
+- **A block type may hold a `block` field, and the editor has to pass its context down.**
+  `BlockListEditor` forwards `blockTypes`, `reusableBlocks`, and `ancestorTypes` into each nested
+  `FieldControl`; it originally forwarded none of them, so a nested block field reported "No block
+  types are available for this field. Create some under Settings → Block types" — advice that could
+  not help, because the list was empty for a reason unrelated to how many block types existed.
+  - The nested picker gets the **unfiltered catalogue** (`allBlockTypes`), because the outer
+    field's `allowedBlocks` has nothing to do with the inner field's.
+  - **Ancestors are excluded rather than depth being counted**: it forbids exactly the cycles
+    (A in A, A in B in A) and leaves genuine nesting like Section → Card alone.
+  - `MAX_BLOCK_DEPTH` backstops it in `validateItemData`, because the boundary has to refuse a
+    request the editor never made. The old comment claimed depth was "bounded in practice by the
+    editor", which was never true — the field builder renders every field type for a block type.
 - **Taproot ships no block templates.** `BlockRenderer` takes a map from block `api_id` to an Astro
   component, supplied by the host site — a CMS that shipped a hero component would be shipping a
   design. `apps/web/src/blocks/index.ts` is the worked example.
@@ -330,7 +418,30 @@ many), *Block*, *Reusable Block*, *Content Type*.
   - The delete is confirmed by typing the `api_id`, **checked on the server**: a disabled submit
     button is bypassed by turning JavaScript off, and this admin is server-rendered precisely so it
     does not depend on that.
-- `repeater` has columns and a validation seam but no editing UI.
+- **`relation` is a first-class field type, both directions.** `RelationField` is inline rather
+  than a modal, which is where it deliberately differs from the media picker: a media library is
+  browsed by eye and rewards a grid, while a list of content items is read by title, so a dialog
+  would add a focus trap and a portal for nothing. Candidates arrive as a server-resolved first
+  page (`relationTargetsForFields`) and the control searches past it through the items API — and
+  that resolver is handed the item's stored data so an id outside the first page still renders a
+  title rather than a raw uuid. Stored shape follows the config, matching `media`: a bare id when
+  single, an ordered array when multiple.
+  - **`itemsReferencing` is the reverse side**, rendered by `ReferencedBy.astro` and grouped by the
+    field's `reverseLabel` — a config value the builder had collected since the field type was
+    designed and nothing had ever read. It is two queries on purpose: the relation *fields* that
+    could point here come from the `fields` table first, and only then is `data` searched. A bare
+    `LIKE` for the id across every item would also match it sitting in a body or a media
+    reference, and report a relationship that does not exist.
+- **Every field type has an editing control or is listed in `DEFERRED_FIELD_TYPES`**, and
+  `fieldControls.test.tsx` asserts the list matches what `FieldControl` actually renders.
+  `fieldConfigForms.test.ts` had always checked that every type has a *config* form; the absence of
+  its counterpart is why `relation` went two phases with a config form, server-side validation, and
+  a placeholder promising an editor "in Phase 1" — a phase that had already been declared complete.
+  The list is a **fact about what exists**, not a plan: it replaced an `availableIn` phase number
+  that the builder rendered as a "Phase N" badge on rich text, media, taxonomy, and blocks long
+  after all four shipped. Plan vocabulary does not belong in a CMS a campus editor uses.
+- `repeater` is the one field type still with only columns and a validation seam — no config form,
+  no editing UI.
 
 ## Definition of done for a phase
 

@@ -1,0 +1,108 @@
+---
+import '../admin.css';
+import { MIN_PASSWORD_LENGTH, countUsers } from '@taproot/core';
+import { getTaproot } from '../../runtime/guards.js';
+import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
+
+/**
+ * First run: create the administrator.
+ *
+ * The only unauthenticated screen in the admin that writes anything, and it exists because
+ * email/password sign-in has no equivalent of the OAuth land-grab that used to bootstrap a
+ * deployment — a fresh database has no account and no way to make one.
+ *
+ * It disables itself the moment any user exists, checked here on every request and again inside
+ * the single statement that does the insert. This check is the courtesy; that one is the guarantee.
+ */
+const taproot = getTaproot(Astro.locals);
+
+if ((await countUsers(taproot.db.db)) > 0) return Astro.redirect('/admin/login');
+if (!taproot.auth.passwordAuthEnabled) return Astro.redirect('/admin/login');
+
+const error = Astro.url.searchParams.get('error');
+const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
+---
+
+<html lang="en" data-theme={themeAttribute(theme)}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Set up Taproot</title>
+  </head>
+  <body class="min-h-screen bg-surface-sunken text-content">
+    <main class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+      <div class="rounded-xl border border-border bg-surface-raised p-8 shadow-sm">
+        <h1 class="flex items-center gap-2 text-xl font-semibold tracking-tight">
+          <span aria-hidden="true" class="text-accent">◆</span>
+          Set up Taproot
+        </h1>
+        <p class="mt-2 text-sm text-content-muted">
+          There are no accounts yet. Create the first administrator — you will be signed in
+          straight away, and this page stops working once an account exists.
+        </p>
+
+        <div role="alert" aria-live="assertive">
+          {
+            error && (
+              <p class="mt-5 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+                {error}
+              </p>
+            )
+          }
+        </div>
+
+        <form method="post" action="/api/taproot/auth/setup" class="mt-6 space-y-4">
+          <div>
+            <label for="name" class="block text-sm font-medium">Your name</label>
+            <input
+              id="name"
+              name="name"
+              required
+              autocomplete="name"
+              autofocus
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label for="email" class="block text-sm font-medium">Email</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              required
+              autocomplete="username"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label for="password" class="block text-sm font-medium">Password</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              minlength={MIN_PASSWORD_LENGTH}
+              autocomplete="new-password"
+              aria-describedby="password-hint"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            />
+            <p id="password-hint" class="mt-1.5 text-xs text-content-subtle">
+              At least {MIN_PASSWORD_LENGTH} characters. A few unrelated words are easier to
+              remember and harder to guess than one short complicated one.
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            class="w-full rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+          >
+            Create administrator
+          </button>
+        </form>
+      </div>
+    </main>
+  </body>
+</html>

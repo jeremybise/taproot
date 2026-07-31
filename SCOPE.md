@@ -4,9 +4,9 @@
 
 ## What this is
 
-A DB-backed, Astro-native CMS. WollyCMS's block/region page-building and content-modeling breadth, EmDash's portable-database philosophy, Directus's visual schema authoring, plus real role-scoped permissions and a built-in accessibility checker — aimed at a real-world use case (a campus website with many non-technical departmental contributors), not just a personal blog.
+A DB-backed, Astro-native CMS. WollyCMS's block page-building and content-modeling breadth, EmDash's portable-database philosophy, Directus's visual schema authoring, plus a built-in accessibility checker — aimed at a real-world use case (a campus website with many non-technical departmental contributors), not just a personal blog.
 
-Git-based storage (Markdoc/MDX-in-repo) is explicitly ruled out for this use case: campus staff won't use GitHub, and per-department permissions need an app-level data layer, not repo ACLs.
+Git-based storage (Markdoc/MDX-in-repo) is explicitly ruled out for this use case: campus staff won't use GitHub, and an editing UI with real accounts, revisions, and a visual schema builder needs an app-level data layer rather than repo ACLs. (An earlier draft leaned on per-department permissions as the decisive argument. Departments turned out to be classification rather than authority — see Roles & permissions — so that particular reason no longer carries weight, and the rest of the case is what stands.)
 
 ## Developer experience: local dev, seeding, deployment
 
@@ -26,7 +26,7 @@ This is a standing requirement across every phase, not a one-time setup task —
 ## Terminology decisions (locked)
 
 - **Content Item**, not "Page" — a page is just one content type among many (post, event, staff profile, department, etc.)
-- **Block** — the general composition primitive placed into a page's regions (hero, CTA, gallery, rich text, etc.)
+- **Block** — the general composition primitive placed into a page's block fields (hero, CTA, gallery, rich text, etc.)
 - **Reusable Block** — a Block instance promoted to a shared library, referenced by ID from multiple content items, usage-tracked so it warns/blocks on deletion while still referenced
 - **Content Type** — user-defined schema (fields, not raw JSON) that content items conform to
 
@@ -35,10 +35,10 @@ This is a standing requirement across every phase, not a one-time setup task —
 - **Data layer**: portable SQL adapter (Kysely-style) so the same codebase runs on SQLite (dev), Postgres, or Cloudflare D1 — matches your comfort with either Node or Cloudflare, don't lock to one.
 - **Media storage**: S3-compatible interface (local disk/S3 in Node, R2 on Cloudflare).
 - **Framework integration — a standalone server plus a thin Astro client, not one package.** Taproot ships a CMS server that owns the database, the admin UI, and the API as its own deployment; a site installs a separate Astro package and reads content from it over HTTP. This bullet originally read _"Astro integration package exposing admin panel, REST API, typed client, and a `BlockRenderer` component — same shape as Wolly's `@wollycms/astro`"_, which misread Wolly: `@wollycms/astro` is only the consumer half, and the server is scaffolded and deployed separately (`npm create wolly`). Phases 0–2 were built to that misreading, which is why the admin and API are currently injected into the host site's own Astro project. Correcting it is Phase 3.75 below. The misreading is recorded here rather than quietly overwritten so that nobody "simplifies" the two packages back into one.
-- **Auth**: OAuth (Google/GitHub/Microsoft) + TOTP, same as Wolly — no reason to change this part.
+- **Auth**: **email and password is the primary method**, with OAuth (Google/GitHub/Microsoft) optional alongside it. This reverses an earlier decision that had OAuth as the only production method and passwords as a dev-only convenience the app refused to boot with elsewhere. That reasoning was right about a *backdoor* and wrong about a *front door*: what made it dangerous was being a hidden second way in, not the passwords. As the visible first way in it carries what a front door owes — a per-email and per-IP throttle, a length minimum, single-use set-password links, and a first-run setup screen that closes behind itself atomically. Registering an OAuth app is also real setup a fresh clone cannot do, which is the other half of why this is the default. TOTP is still wanted and still unbuilt: the core is implemented and verified against the RFC 6238 vectors, and nothing enrols anyone or challenges at sign-in.
 - **Hosting target for v1**: Cloudflare Workers + D1, decided. Keep the data adapter portable regardless, but build and test against this first.
-- **Single site, no multi-tenancy**: departments are a permission scope within one site, not separate site instances. Simplifies the roles model and removes a whole class of routing/deployment complexity.
-- **Permissions are their own model, not a taxonomy**: an earlier draft of this doc scoped role assignments to taxonomy branches. That conflated two different questions — _what is this content about_ (classification, editable by contributors) and _who is responsible for it_ (authority, not theirs to change). Tying them means adding a tag for discoverability silently grants another department edit rights, and any contributor who can edit an item can change who else can. The department/permission model gets its own entities in Phase 3; taxonomies stay purely about classification. See the Roles & permissions section.
+- **Single site, no multi-tenancy**: one site per deployment, not separate site instances per department. Removes a whole class of routing and deployment complexity.
+- **Permissions never read taxonomy terms**: an earlier draft scoped role assignments to taxonomy branches. That conflates two different questions — _what is this content about_ (classification, editable by contributors) and _who may change it_ (authority, not theirs to grant). Tying them means adding a tag for discoverability silently hands another group edit rights, and any contributor who can edit an item can change who else can. Roles ended up flat and site-wide instead, which makes the rule simpler rather than harder: nothing anywhere derives a permission from a term. Taxonomies stay purely about classification.
 
 ## Data model sketch
 
@@ -49,10 +49,11 @@ The relation field is a named gap in Wolly — make it a first-class field type 
 
 **Other entities**, matching what you said you want to keep:
 
-- Taxonomies — content-type-agnostic trees, attachable to any content type. Classification only: they describe what content is about and never determine who may edit it (see Roles & permissions)
+- Taxonomies — content-type-agnostic trees, attachable to any content type. Classification only: they describe what content is about and never determine who may edit it (see Roles & permissions). This is where *departments* live — "this page is about Admissions" — and the demo seeds exactly that tree
 - Menus — items point to content items, taxonomy terms, or external URLs
-- Media library — assets with alt text, focal point, variants (alt text feeds the accessibility checker)
+- Media library — assets with alt text and a focal point (alt text feeds the accessibility checker). **No stored variants**: the focal point and crop are data, resolved to a rectangle on demand, so one asset drives every shape without a derivative per use — see the media section below
 - Webhooks, API keys, tracking script manager, audit log — standard admin-config entities, low complexity, defer to later phase
+- **Email**: nothing sends any, and that is a standing constraint rather than an oversight. It is what keeps `npm run dev` free of an external service, so password reset is an admin-generated link rather than a "forgot password" mail. The `password_reset_tokens` table already has the nullable `created_by` that self-service delivery needs, so adding it later means adding a sender, not reshaping a table
 - Accessibility checker — starts with alt-text presence, heading-order validation in richtext/blocks, and link-text quality; contrast checking against your defined theme tokens is a good v2 add
 - **Revisions** — every save on a content item creates an append-only revision (author, timestamp, diff-able snapshot), with restore-to-previous. Cheap to build in from the start, painful to retrofit onto existing content later, so it belongs in Phase 1 rather than deferred.
 - **SEO sidebar** — per-content-item panel: meta title/description, OG image (falls back to a default per content type if unset), and live search-result / social-card previews. This is really just a structured field group plus a preview renderer, so it can ride along with Phase 1's content editing work rather than needing its own phase.
@@ -63,20 +64,20 @@ Directus-style: add a field, pick its type from a list, configure options (label
 
 ## Roles & permissions model
 
-This is the reason the git-based approach didn't work, so it's worth designing deliberately rather than bolting on later.
-
-- **Base roles**: Admin, Editor, Contributor, Viewer.
-- **Scoping**: a role assignment can be scoped to a content type, a **department**, or specific content items — this is what lets each department manage only its own content.
-- **Departments are their own entity**, not taxonomy terms. They are an organisational fact about who is responsible for content, and they need properties a taxonomy has no business carrying: membership, and rules about who may reassign ownership. A department tree and a Department _taxonomy_ may well both exist — one for authority, one for "this page is about Admissions" — and they should not be the same rows. An earlier draft of this doc made them the same thing; see the note under Core architecture decisions for why that was wrong.
-- **Ownership is assigned, not tagged**: changing which department owns a content item must require a higher role than editing that item, or a contributor can hand their own work to someone else — or take someone else's.
-- **Unowned content fails closed**: an item with no department is editable by admins only, and the admin surfaces the list so it does not accumulate invisibly.
+- **Base roles**: Admin, Editor, Contributor, Viewer. **Flat and site-wide** — a role is not scoped to anything, and that is the settled answer rather than a first step.
+- **Departments are classification, not authority.** An earlier draft of this section built departments as their own entity, with membership, ownership of content items, and role assignments scoped to them. That was a misreading of what "departments" meant here: they describe *what a page is about*, which is exactly what a taxonomy does — and the `department` taxonomy shipped in Phase 1 already does it, with a term tree, an admin UI, and public archives. There is no ownership dimension to narrow a role against, so there is nothing for a scoped model to scope.
+- **What this costs, stated honestly**: a contributor who can edit one page can edit every page. For a campus with many departmental contributors that is a real limitation, and the answer if it starts to bite is a **per-content-type permission matrix** — Directus's model, a role × content type table read inside the existing guard helpers. That is a genuine retrofit but a small one: no ownership, no membership, and no rules about who may reassign what.
 - **Workflow states** per content item: Draft → In Review → Scheduled → Published → Archived, with role gates on transitions (Contributor can create/edit Draft and submit to Review; Editor approves and publishes; Admin bypasses).
 - **Field-level permissions**: explicitly a stretch goal, not MVP. Wolly doesn't do this either, and it's a meaningfully bigger lift (per-field write checks at the API layer) — don't let it block v1.
 
-**Phase 3 must not assume the CMS and the site share a process.** Phase 3.75 splits them apart, and these three are close to free while the role model is being designed and expensive once it already exists:
+Note that the flat role model is **already built**: `packages/astro/src/runtime/guards.ts` ranks the four roles behind named capability helpers used by every admin screen and every API route. The screens to administer it are built too — creating users, changing roles, deactivating, and set-password links — pulled forward out of Phase 3 by the switch to email/password sign-in, which left a deployment with no way to add a second person. What Phase 3 still owes is workflow transitions, a scheduler, and the audit log.
 
-- **Permission checks take a principal, not a user row.** An API key is a non-human principal holding scopes, and it arrives in Phase 3.75. Guards written against `User` — the current `canEditContent(taproot.user)` shape — would then have to be rewritten wholesale or handed a forged user, so give the scoped role model a principal from the start. The MCP note under the phase plan wants exactly the same thing.
-- **"What may this requester see" is one function in core, called by every reader.** Today it is a single `publishedOnly` boolean. Draft/review/scheduled crossed with department scope makes it a real question, and the delivery API will have to answer it identically — a permission rule implemented twice is a security bug with a long fuse. Same argument as SEO fallbacks resolving in core so that a preview and the published page cannot disagree.
+One rule worth keeping when the workflow arrives: **the last active administrator cannot be demoted or deactivated**. A CMS with no admin cannot be administered back into having one, and the first-run setup screen refuses to help because users exist.
+
+**Phase 3 must not assume the CMS and the site share a process.** Phase 3.75 splits them apart, and these are close to free while the role model is being worked on and expensive once it already exists:
+
+- **Permission checks take a principal, not a user row.** An API key is a non-human principal holding scopes, and it arrives in Phase 3.75. Guards written against `User` — the current `canEditContent(taproot.user)` shape — would then have to be rewritten wholesale or handed a forged user, so give them a principal from the start. The MCP note under the phase plan wants exactly the same thing.
+- **"What may this requester see" is one function in core, called by every reader.** Today it is a single `publishedOnly` boolean. Draft, review, and scheduled make it a real question, and the delivery API will have to answer it identically — a permission rule implemented twice is a security bug with a long fuse. Same argument as SEO fallbacks resolving in core so that a preview and the published page cannot disagree. This has already bitten once inside the admin: publish permission was implemented three separate times, and each copy checked `status === 'published'` and therefore missed both `scheduled` and un-publishing.
 - **Scheduled publishing needs to be readable by a future scheduler.** A scheduled item currently just becomes visible when its timestamp passes, evaluated per request against the database, with nothing anywhere to invalidate. Once the site is a separate deployment reading cached HTTP, "goes live at 9am" needs a purge or a short TTL. Phase 3 doesn't have to fire the webhook, but it should store publish-at somewhere one can later find it.
 
 ## Content Releases (batched, coordinated publishing)
@@ -101,7 +102,9 @@ Explicitly solving what Wolly (and most flat-page CMSes) don't: content should b
 - **Cascading renames/moves**: renaming or re-parenting a node has to update every descendant's path. A recursive CTE (`WITH RECURSIVE`, works in SQLite/D1 and Postgres) can pull the whole subtree and bulk-update it in one query. This is the part that makes people avoid building this feature — it needs to actually be implemented, not special-cased away.
 - **Auto-redirects on path change**: every path change should write a redirect record (old path → new path) automatically, not rely on someone remembering to add one manually. This is where the Redirects feature (liked from Wolly) earns its keep — move it out of the later integrations bucket and build it alongside hierarchy in Phase 1, since it's the same underlying mechanism.
 
-**Delivering this to Astro**: since content is DB-backed and hosted on Workers, there's no need for a full static rebuild per publish (a real advantage over the git-based approach ruled out earlier). One catch-all Astro route (`[...path].astro`) resolves the request path via a single indexed lookup against the `path` column at request time (SSR), then renders through the matched content type's template + `BlockRenderer`. Front it with Cloudflare's Cache API/KV, invalidated on publish, for static-like speed with on-publish freshness.
+**Delivering this to Astro**: since content is DB-backed and hosted on Workers, there's no need for a full static rebuild per publish (a real advantage over the git-based approach ruled out earlier). One catch-all Astro route (`[...path].astro`) resolves the request path via a single indexed lookup against the `path` column at request time (SSR), then renders through the matched content type's template + `BlockRenderer`.
+
+**Caching is currently a blind 60-second edge TTL** (`cache-control: s-maxage=60`), not the Cache API or KV invalidated on publish that this section originally described. That is a deliberate interim rather than an oversight: an invalidation scheme needs something to invalidate *against*, and the cache boundary genuinely moves in Phase 3.75 when the site becomes a separate deployment reading the delivery API over HTTP. Building it twice would mean plumbing visibility rules twice. Drafts are `no-store` regardless.
 
 Phase 3.75 moves that lookup behind the delivery API. The catch-all still resolves a path in one round trip, but the round trip is HTTP to the Taproot server and the indexed lookup happens there — which is what turns the cache in front of it from an optimisation into the thing keeping every page render off the network.
 
@@ -122,7 +125,7 @@ Sanity's hotspot/crop tool is worth replicating: store the focal point and crop 
 - **Crop**: normalized top/bottom/left/right offsets from the original image bounds.
 - Both live on the media asset itself, independent of any specific rendering size — so the same stored data drives a hero-banner crop, a square thumbnail, and a portrait card, each computed on demand rather than pre-generated and stored per shape.
 - **Editor UI**: show the source image with several aspect-ratio preview frames around the same hotspot, updating live as the editor drags the focal point — the point is seeing all the shapes this image will actually be used in at once, not just one crop.
-- **Delivery**: Cloudflare's Image Resizing supports gravity/focal-point-based cropping as a request-time transform parameter, so hotspot+crop data can be passed straight through at render time rather than needing to pre-generate every possible crop — fits the Workers+R2 stack already decided on.
+- **Delivery**: `TaprootImage` resolves the stored hotspot and crop into a rectangle and renders a real `<img>` scaled and offset inside an aspect-ratio box — no derivative files, no transform service, and it works identically under `npm run dev`. Cloudflare's Image Resizing supports gravity/focal-point cropping as a request-time transform, so the same rectangle can be handed to a CDN later; that is a change of `src` rather than of shape, and it belongs with the image-transform endpoint in Phase 3.75 because it cannot be exercised on Node.
 - Scope as a fast-follow within Phase 1's media library (basic upload/library first, hotspot editor as the next increment) rather than its own phase — the data model addition is small even though the UI deserves real attention.
 
 ## Phased build plan
@@ -134,10 +137,16 @@ Data adapter (Kysely + SQLite for dev), Astro integration skeleton, OAuth login,
 Visual content-type builder (v1 field set above, including relation), content item CRUD, media library, taxonomies, menus, revisions, SEO sidebar, hierarchical paths + redirect-on-move, path resolution + Astro catch-all route, singletons.
 
 **Phase 2 — Blocks & page composition**
-Block field type, region-based page composition, Reusable Block promotion + usage tracking, a starter set of common block presets (hero, CTA, gallery, rich text, staff card), `BlockRenderer` for Astro.
+Block field type, page composition, Reusable Block promotion + usage tracking, a starter set of common block presets, `BlockRenderer` for Astro.
 
-**Phase 3 — Roles & workflow**
-Departments as a first-class entity (membership, ownership of content items), scoped role model, draft/review/schedule/publish workflow, audit log. Departments are built here rather than in Phase 1 because nothing before this phase consumes them — Phase 1's taxonomies classify content, they do not own it. Read the three constraints at the end of the Roles & permissions section before starting; they are what keep Phase 3.75 from turning into a rewrite of this one.
+**No regions.** This phase originally said "region-based page composition", copying WollyCMS. It was built without regions and should stay that way: a `block` field is already an ordered list with its own `allowedBlocks` and `maxBlocks`, and a content type may declare as many as it likes — so a site wanting a header slot and a sidebar slot declares two block fields and names them. A separate region entity would duplicate both constraints and add a second place for a block's position to live. The bet is that a rich enough data model lets a site simulate whatever region structure it wants. "Region" survives in the admin's own copy as a description of one block field, not as an entity.
+
+The presets are the *demo site's*, not Taproot's: `apps/web` seeds hero, call to action, prose, quote, and gallery block types and supplies an Astro component for each. Taproot ships no block templates, because a CMS that shipped a hero component would be shipping a design.
+
+**Phase 3 — Workflow**
+The draft/review/schedule/publish workflow with role gates, a scheduler that actually flips a scheduled item live, and an audit log.
+
+**User management already shipped**, ahead of this phase and out of order: making email/password the primary sign-in method meant a deployment had no way to add a second person, which is not a state to leave a CMS in. Creating users, assigning roles, deactivating, and set-password links are all built. Materially smaller than this phase used to be: it was scoped around departments as an ownership entity and a role model narrowed to them, and both were dropped once departments turned out to be classification — which Phase 1's taxonomies already deliver. The flat role model is already built and enforced; what is missing is the screen to administer it. Read the constraints at the end of the Roles & permissions section before starting; they are what keep Phase 3.75 from turning into a rewrite of this one.
 
 **Phase 3.5 — Content Releases**
 Batched staging and coordinated publish (manual or scheduled) across multiple content items. Build only once Phase 3's revisions and workflow states are stable — see the Content Releases section above for why.
@@ -171,8 +180,9 @@ Just capturing it so it's not forgotten: a form builder (fields, validation, con
 
 ## Decisions already made (no longer open)
 
-- Departments are a permission scope within a single site — no multi-site/multi-tenancy.
-- Departments are their own entity, designed in Phase 3. They are **not** taxonomy terms, and taxonomies carry no authority — reversed from an earlier draft of this doc, see Core architecture decisions.
+- One site per deployment — no multi-site/multi-tenancy.
+- Departments are **classification**, and the `department` taxonomy shipped in Phase 1 is the whole of them. There is no departments entity, no per-item ownership, and no role scoped to a department. Reversed from an earlier draft of this doc, which had it the other way round; see Roles & permissions.
+- Roles are flat and site-wide: Admin, Editor, Contributor, Viewer. A per-content-type permission matrix is the extension to reach for if that stops being enough.
 - Hosting target for v1 is Cloudflare Workers + D1.
 - Admin UI library is shadcn/ui, with the accessibility caveats noted above.
 - Taproot is a standalone CMS server plus a separate thin Astro client talking to it over HTTP — **not** one package that injects an admin panel into the host site. Phases 0–2 shipped the latter because this doc originally misdescribed Wolly's architecture; Phase 3.75 corrects it, and the original wording is preserved under Core architecture decisions so the mistake isn't made twice.

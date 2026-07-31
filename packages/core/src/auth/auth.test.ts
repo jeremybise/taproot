@@ -249,35 +249,64 @@ describe('oauth account linking', () => {
 });
 
 describe('auth config guard', () => {
-  it('enables dev credentials only in development with the explicit flag', () => {
-    const config = resolveAuthConfig({ NODE_ENV: 'development', TAPROOT_DEV_AUTH: '1' });
-    expect(config.devCredentialsEnabled).toBe(true);
-    expect(config.secureCookies).toBe(false);
+  it('enables password sign-in by default, in production as well as development', () => {
+    // The reversal. This used to be a development-only provider that made the app refuse to boot
+    // if requested anywhere else; it is now the primary way in, and OAuth is the addition.
+    expect(resolveAuthConfig({ NODE_ENV: 'production' }).passwordAuthEnabled).toBe(true);
+    expect(resolveAuthConfig({ NODE_ENV: 'development' }).passwordAuthEnabled).toBe(true);
   });
 
-  it('leaves dev credentials off without the flag', () => {
-    expect(resolveAuthConfig({ NODE_ENV: 'development' }).devCredentialsEnabled).toBe(false);
+  it('lets a deployment turn it off for OAuth only', () => {
+    const config = resolveAuthConfig({
+      NODE_ENV: 'production',
+      TAPROOT_PASSWORD_AUTH: '0',
+      GITHUB_CLIENT_ID: 'id',
+      GITHUB_CLIENT_SECRET: 'secret',
+    });
+
+    expect(config.passwordAuthEnabled).toBe(false);
+    expect(config.providers.github).toBeDefined();
   });
 
-  it('refuses to boot if dev credentials are requested outside development', () => {
-    // The guard that actually matters: a password backdoor must not survive into production.
-    expect(() => resolveAuthConfig({ NODE_ENV: 'production', TAPROOT_DEV_AUTH: '1' })).toThrow(
-      AuthConfigError,
-    );
+  it('refuses to boot with no way in at all', () => {
+    // Password sign-in off and no provider configured is a locked building. Cheaper to say so at
+    // startup than to discover it at a login page with no buttons on it.
+    expect(() =>
+      resolveAuthConfig({ NODE_ENV: 'production', TAPROOT_PASSWORD_AUTH: '0' }),
+    ).toThrow(AuthConfigError);
+    expect(() =>
+      resolveAuthConfig({ NODE_ENV: 'development', TAPROOT_PASSWORD_AUTH: '0' }),
+    ).toThrow(AuthConfigError);
   });
 
-  it('refuses to boot in production with no auth method configured', () => {
-    expect(() => resolveAuthConfig({ NODE_ENV: 'production' })).toThrow(AuthConfigError);
+  it('refuses to boot on the retired flag rather than ignoring it', () => {
+    /**
+     * `TAPROOT_DEV_AUTH` used to mean "switch the password provider on, local only". Silently
+     * ignoring it now would leave an operator believing they had scoped something — and for the
+     * `=0` case, believing they had turned something off that is in fact on.
+     */
+    expect(() =>
+      resolveAuthConfig({ NODE_ENV: 'development', TAPROOT_DEV_AUTH: '1' }),
+    ).toThrow(/no longer used/);
+    expect(() =>
+      resolveAuthConfig({ NODE_ENV: 'development', TAPROOT_DEV_AUTH: '0' }),
+    ).toThrow(/no longer used/);
   });
 
-  it('accepts production with an OAuth provider configured', () => {
+  it('still sets secure cookies outside development', () => {
+    expect(resolveAuthConfig({ NODE_ENV: 'production' }).secureCookies).toBe(true);
+    expect(resolveAuthConfig({ NODE_ENV: 'development' }).secureCookies).toBe(false);
+  });
+
+  it('accepts an OAuth provider alongside passwords', () => {
     const config = resolveAuthConfig({
       NODE_ENV: 'production',
       GITHUB_CLIENT_ID: 'id',
       GITHUB_CLIENT_SECRET: 'secret',
     });
+
     expect(config.providers.github).toBeDefined();
-    expect(config.secureCookies).toBe(true);
+    expect(config.passwordAuthEnabled).toBe(true);
   });
 });
 

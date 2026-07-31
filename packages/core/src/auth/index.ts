@@ -4,3 +4,5 @@ export * from './session.js';
 export * from './users.js';
 export * from './oauth.js';
 export * from './totp.js';
+export * from './throttle.js';
+export * from './passwordReset.js';

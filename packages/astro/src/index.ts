@@ -83,6 +83,9 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
         const adminRoutes: [string, string][] = [
           ['', 'index'],
           ['/login', 'login'],
+          ['/setup', 'setup'],
+          ['/set-password', 'set-password'],
+          ['/account', 'account'],
           ['/content', 'content/index'],
           ['/content/new', 'content/new'],
           ['/content/type/[apiId]', 'content/type/[apiId]'],
@@ -119,6 +122,9 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
         // --- REST API ------------------------------------------------------
         const apiRoutes: [string, string][] = [
           ['/auth/login', 'auth/login'],
+          ['/auth/setup', 'auth/setup'],
+          ['/auth/set-password', 'auth/set-password'],
+          ['/auth/change-password', 'auth/change-password'],
           ['/auth/logout', 'auth/logout'],
           ['/auth/[provider]', 'auth/[provider]'],
           ['/auth/callback/[provider]', 'auth/callback/[provider]'],
@@ -131,6 +137,10 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/items/[id]', 'items/[id]'],
           ['/items/[id]/revisions', 'items/[id]/revisions'],
           ['/items/[id]/revisions/[revisionId]/restore', 'items/[id]/revisions/[revisionId]/restore'],
+          ['/users', 'users/index'],
+          ['/users/[id]', 'users/[id]'],
+          ['/redirects', 'redirects/index'],
+          ['/redirects/[id]', 'redirects/[id]'],
           ['/reusable-blocks', 'reusable-blocks/index'],
           ['/reusable-blocks/[id]', 'reusable-blocks/[id]'],
           ['/reusable-blocks/[id]/delete', 'reusable-blocks/[id]/delete'],
@@ -169,10 +179,18 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
       },
 
       'astro:config:done': ({ logger }) => {
-        if (process.env.NODE_ENV !== 'production' && process.env.TAPROOT_DEV_AUTH === '1') {
+        /**
+         * The old warning here announced that development sign-in was enabled. It no longer says
+         * anything useful — password sign-in is the normal state — so what is worth surfacing is
+         * the opposite: a build that still carries the retired variable, which `resolveAuthConfig`
+         * will refuse to start on. Caught at config time so it is a legible message rather than a
+         * boot failure on the first request.
+         */
+        if (process.env.TAPROOT_DEV_AUTH !== undefined) {
           logger.warn(
-            'Development credential sign-in is ENABLED (TAPROOT_DEV_AUTH=1). This is local-only; ' +
-              'the app refuses to boot with it set outside development.',
+            'TAPROOT_DEV_AUTH is set but no longer used. Email and password sign-in is on by ' +
+              'default; use TAPROOT_PASSWORD_AUTH=0 to turn it off. Remove TAPROOT_DEV_AUTH — ' +
+              'Taproot refuses to start while it is present.',
           );
         }
       },

@@ -23,7 +23,19 @@ import axe from 'axe-core';
 const base = process.argv[2] ?? 'http://localhost:4321';
 
 /** Routes audited signed out. The login page redirects to the dashboard if a session exists. */
-const ANONYMOUS_ROUTES = ['/admin/login'];
+/**
+ * Routes audited without a session.
+ *
+ * `/admin/set-password` is here with a deliberately invalid token: the valid-token branch needs a
+ * token that only exists for one use, and the invalid branch is the one an audit can reach
+ * repeatably. The form itself reuses the same markup as `/admin/setup`, which is audited in full.
+ *
+ * `/admin/setup` is *not* here and cannot be: it redirects the moment any user exists, and the
+ * audit runs against a seeded database. Its form is the same shape as the one on
+ * `/admin/set-password` — labelled inputs, a described password field, one submit — so this covers
+ * the markup without covering that route. Genuinely unaudited, and worth knowing.
+ */
+const ANONYMOUS_ROUTES = ['/admin/login', '/admin/set-password?token=not-a-real-token'];
 
 const ROUTES = [
   '/admin',
@@ -34,6 +46,7 @@ const ROUTES = [
   '/admin/settings/blocks',
   '/admin/settings/blocks/new',
   '/admin/settings/users',
+  '/admin/account',
   '/admin/settings/system',
   '/admin/media',
   '/admin/blocks',

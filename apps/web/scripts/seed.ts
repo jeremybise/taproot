@@ -44,6 +44,19 @@ import { placeholderPng, socialCardPng } from './_png.ts';
  */
 
 const DEV_EMAIL = 'admin@example.com';
+
+/**
+ * Shorter than `MIN_PASSWORD_LENGTH`, deliberately.
+ *
+ * That minimum governs a password somebody *chooses* — through the setup screen, a set-password
+ * link, or the account screen — and all three enforce it. This is a fixture written straight
+ * through `setPassword`, and it stays short because it is typed dozens of times a day during
+ * development and appears in the README, the login page hint, and the deployment docs.
+ *
+ * Safe because the seed only ever runs against the local SQLite file: `openDb()` has no path to a
+ * deployed database, and a production instance is bootstrapped through the first-run setup screen,
+ * which does enforce the minimum.
+ */
 const DEV_PASSWORD = 'taproot';
 
 const { handle, target } = await openDb();
@@ -455,6 +468,38 @@ const event = await ensureType(
       help_text: null,
       config: { multiline: true },
     },
+    {
+      api_id: 'capacity',
+      label: 'Capacity',
+      type: 'number',
+      required: false,
+      localized: false,
+      help_text: 'Maximum attendees. Leave blank for unlimited.',
+      config: { min: 0, integer: true },
+    },
+    {
+      /**
+       * The relation field, seeded so the demo exercises it.
+       *
+       * It points from Event to Page rather than the other way round because Page is defined
+       * first and a relation needs its target's id — and because "which page is this event part
+       * of" is the direction a campus actually asks in.
+       *
+       * Nothing seeded a relation for two phases, which is why nobody noticed the field type had
+       * a config form, server-side validation, and no editing control at all.
+       */
+      api_id: 'host_page',
+      label: 'Part of',
+      type: 'relation',
+      required: false,
+      localized: false,
+      help_text: 'The department or programme page this event belongs to.',
+      config: {
+        targetContentTypeId: page.type.id,
+        multiple: false,
+        reverseLabel: 'Events',
+      },
+    },
   ],
 );
 
@@ -521,6 +566,15 @@ async function ensureAsset(
   dimensions: { width: number; height: number },
   altText: string,
   title: string,
+  /**
+   * An off-centre focal point, for the assets where it should visibly do something.
+   *
+   * Left null for most, which is the honest default for a freshly uploaded file. But every seeded
+   * asset used to be null, so the focal point editor always opened dead centre and the public page
+   * rendered the same crop it would have rendered without the feature — the one arrangement in
+   * which "the hotspot is honoured" and "the hotspot is ignored" look identical.
+   */
+  hotspot?: { x: number; y: number },
 ): Promise<string> {
   const existing = await handle.db
     .selectFrom('media')
@@ -550,8 +604,8 @@ async function ensureAsset(
       // the warning too, on every screen that shows them.
       alt_text: altText,
       title,
-      hotspot_x: null,
-      hotspot_y: null,
+      hotspot_x: hotspot?.x ?? null,
+      hotspot_y: hotspot?.y ?? null,
       crop_top: null,
       crop_right: null,
       crop_bottom: null,
@@ -590,6 +644,9 @@ const galleryImages = [
     { width: 1600, height: 900 },
     'Students crossing the main quad between lectures.',
     'The quad',
+    // Well off-centre and high, so a 16:5 hero and a 4:3 gallery tile visibly disagree about what
+    // they keep — which is the whole argument for storing the point rather than baking a crop.
+    { x: 0.24, y: 0.32 },
   ),
   await ensureAsset(
     'library-reading-room.png',
@@ -604,6 +661,7 @@ const galleryImages = [
     { width: 1200, height: 1200 },
     'The Fenwick science building seen from the south lawn.',
     'Fenwick building',
+    { x: 0.78, y: 0.3 },
   ),
 ];
 
@@ -928,6 +986,10 @@ await ensureItem(
       location: 'Riverbend Quad',
       audience: 'prospective',
       body: 'Tour campus, meet faculty, and sit in on a class.',
+      capacity: 300,
+      // The relation, pointing at a page that exists — so the editor opens on a resolved title
+      // rather than on an empty control that looks the same whether or not the feature works.
+      host_page: admissionsId,
     },
   },
   '/events/spring-open-house',
@@ -947,6 +1009,8 @@ await ensureItem(
       location: 'Halloway Hall',
       audience: 'prospective',
       body: 'A walk-through of the aid application, with counsellors on hand.',
+      capacity: 80,
+      host_page: aidId,
     },
   },
   '/events/financial-aid-night',
