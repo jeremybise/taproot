@@ -1,4 +1,10 @@
-import { buildTermTree, listTerms, type FieldRow, type TermNode } from '@taproot/core';
+import {
+  buildTermTree,
+  listTaxonomies,
+  listTerms,
+  type FieldRow,
+  type TermNode,
+} from '@taproot/core';
 import type { Kysely } from 'kysely';
 
 import type { TermOption } from './islands/fields/FieldControl.js';
@@ -38,6 +44,32 @@ export async function termOptionsForFields(
   );
 
   return Object.fromEntries(entries);
+}
+
+/**
+ * Every taxonomy with its terms, for the content list's term filter.
+ *
+ * Grouped by taxonomy so the select can use `<optgroup>` — a site with a Departments tree and an
+ * Audience tree would otherwise present one flat list where "Admissions" and "Prospective students"
+ * sit at the same level with nothing to say they answer different questions.
+ *
+ * Returns an empty list when a site has no taxonomies, which the screens use to omit the control
+ * entirely rather than render a select with one option in it.
+ */
+export async function taxonomyFilterOptions(
+  db: Kysely<any>,
+): Promise<{ id: string; name: string; terms: TermOption[] }[]> {
+  const taxonomies = await listTaxonomies(db);
+
+  const groups = await Promise.all(
+    taxonomies.map(async (taxonomy) => ({
+      id: taxonomy.id,
+      name: taxonomy.name,
+      terms: flatten(buildTermTree(await listTerms(db, taxonomy.id))),
+    })),
+  );
+
+  return groups.filter((group) => group.terms.length > 0);
 }
 
 function flatten(nodes: TermNode[], depth = 0): TermOption[] {

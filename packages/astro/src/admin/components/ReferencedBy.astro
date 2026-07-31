@@ -1,0 +1,82 @@
+---
+import { itemsReferencing, type IncomingReference } from '@taproot/core';
+import type { Kysely } from 'kysely';
+import StatusBadge from './StatusBadge.astro';
+
+interface Props {
+  db: Kysely<any>;
+  itemId: string;
+}
+
+const { db, itemId } = Astro.props;
+
+const references = await itemsReferencing(db, itemId);
+
+/**
+ * The reverse side of a `relation`, which nothing rendered until now.
+ *
+ * A relation field has always stored a `reverseLabel` — "Events", "Related pages" — and the config
+ * form has always told the author it would be "shown on the target type's editor for the other
+ * side of this relationship". Nothing read it, so a relation was one-directional in practice: an
+ * editor looking at a page had no way to see what depended on it, and found out by deleting it.
+ *
+ * Grouped by that label so the heading reads as the relationship rather than as a database fact.
+ * Falls back to the field's own label, which is at least the words the author chose.
+ */
+const groups = new Map<string, IncomingReference[]>();
+for (const reference of references) {
+  const key = reference.reverseLabel?.trim() || reference.fieldLabel;
+  groups.set(key, [...(groups.get(key) ?? []), reference]);
+}
+
+const grouped = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+---
+
+{
+  /*
+    Rendered only when something points here. An empty panel on every page would be a permanent
+    reminder of a feature most items never use.
+  */
+  grouped.length > 0 && (
+    <section aria-labelledby="referenced-by-heading" class="mt-10">
+      <header class="mb-3">
+        <h2 id="referenced-by-heading" class="text-lg font-semibold tracking-tight">
+          Referenced by
+        </h2>
+        <p class="mt-1 max-w-prose text-sm text-content-muted">
+          Other content points at this item through a relation field. Moving it keeps these working
+          — they reference it rather than its URL — but deleting it would leave them pointing at
+          nothing.
+        </p>
+      </header>
+
+      <div class="space-y-4">
+        {grouped.map(([label, entries]) => (
+          <div class="rounded-lg border border-border">
+            <h3 class="border-b border-border bg-surface-sunken px-4 py-2 text-xs font-medium uppercase tracking-wide text-content-subtle">
+              {label}
+            </h3>
+            <ul>
+              {entries.map((entry) => (
+                <li class="flex items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0">
+                  <div class="min-w-0 flex-1">
+                    <a
+                      href={`/admin/content/${entry.id}`}
+                      class="text-sm font-medium underline-offset-2 hover:underline"
+                    >
+                      {entry.title}
+                    </a>
+                    <p class="truncate text-xs text-content-subtle">
+                      {entry.contentTypeName} · {entry.path}
+                    </p>
+                  </div>
+                  <StatusBadge status={entry.status} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}

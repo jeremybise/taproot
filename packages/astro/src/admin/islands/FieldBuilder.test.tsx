@@ -89,8 +89,23 @@ describe('field type picker', () => {
 
   it('marks types whose editor is not built yet', () => {
     renderBuilder();
-    const blocks = screen.getByRole('radio', { name: /Blocks/ });
-    expect(blocks.closest('div')?.textContent).toMatch(/Phase 2/);
+    const repeater = screen.getByRole('radio', { name: /Repeater/ });
+    expect(repeater.closest('div')?.textContent).toMatch(/No editor yet/);
+  });
+
+  it('does not mark types whose editor exists', () => {
+    /**
+     * This assertion used to read the other way round, expecting "Phase 2" on Blocks — which was
+     * true when written and stayed in the test long after the block editor shipped, because the
+     * badge came from a planned phase number rather than from whether a control existed. Every
+     * type with `availableIn > 0` was badged, so rich text, media, and taxonomy advertised
+     * themselves as forthcoming to campus editors for two phases.
+     */
+    renderBuilder();
+    for (const name of [/Blocks/, /Rich text/, /Media/, /Taxonomy/, /Relation/]) {
+      const radio = screen.getByRole('radio', { name });
+      expect(radio.closest('div')?.textContent).not.toMatch(/No editor yet|Phase \d/);
+    }
   });
 });
 

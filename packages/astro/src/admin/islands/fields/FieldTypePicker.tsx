@@ -1,5 +1,10 @@
 import { useId } from 'react';
-import { FIELD_TYPES, FIELD_TYPE_META, type FieldType } from '@taproot/core';
+import {
+  FIELD_TYPES,
+  FIELD_TYPE_META,
+  fieldTypeIsDeferred,
+  type FieldType,
+} from '@taproot/core';
 
 /**
  * Choose a field type.
@@ -55,9 +60,14 @@ export function FieldTypePicker({
               <div className="min-w-0">
                 <label htmlFor={id} className="block text-sm font-medium">
                   {meta.label}
-                  {meta.availableIn > 0 && (
+                  {fieldTypeIsDeferred(type) && (
+                    /*
+                      Badged by what is actually true, not by which phase a plan assigned it to.
+                      Every type used to carry a "Phase N" chip, so an editor was told that rich
+                      text, media, taxonomy, and blocks were still coming long after they shipped.
+                    */
                     <span className="ml-1.5 rounded-full border border-border px-1.5 py-0.5 text-[0.6875rem] font-normal text-content-muted">
-                      Phase {meta.availableIn}
+                      No editor yet
                     </span>
                   )}
                 </label>

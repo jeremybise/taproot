@@ -1,7 +1,7 @@
 import { getContentType, getItem, getRevision, restoreRevision } from '@taproot/core';
 
 import { apiError, handle, json } from '../../../../_shared.js';
-import { canPublishContent } from '../../../../../runtime/guards.js';
+import { canChangeStatus } from '../../../../../runtime/guards.js';
 
 /**
  * Restore a content item to an earlier revision.
@@ -21,17 +21,21 @@ export const POST = handle(
     if (!contentType) return apiError(404, 'Content type not found.');
 
     /**
-     * A revision carries the status it was saved with, so restoring one is a publish when that
-     * status was `published`. Without this check, restore would be a way for a contributor to
-     * publish content that the PATCH route would have refused them.
+     * A revision carries the status it was saved with, so a restore is a status change and has to
+     * clear the same bar the PATCH route does — otherwise restore is a second door to the thing
+     * that route refuses.
+     *
+     * Both directions matter here, and only the first was checked. Restoring a *published*
+     * revision publishes; restoring a *draft* revision onto a live item unpublishes it, which is
+     * how a contributor could take a page off the site without ever touching a status control.
      */
     const revision = await getRevision(taproot.db.db, revisionId);
     if (!revision) return apiError(404, 'Revision not found.');
-    if (revision.status === 'published' && !canPublishContent(user)) {
+    if (!canChangeStatus(user, item.status, revision.status)) {
       return apiError(
         403,
-        'That revision was published, and restoring it would publish this item. ' +
-          'Publishing requires the editor role or higher.',
+        `Restoring this revision would change the item to "${revision.status}", which requires ` +
+          'the editor role or higher.',
       );
     }
 

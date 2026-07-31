@@ -8,10 +8,10 @@ import { sql, type Kysely } from 'kysely';
  * per-type configuration (required, single vs multiple) without a parallel mechanism for it.
  *
  * Taxonomies classify content. They deliberately carry **no authority**: a term never determines
- * who may edit an item. Departments-as-permissions are a separate model in Phase 3, because "what
- * is this about" is editable by contributors and "who is responsible for it" must not be. Tying
- * them would mean tagging a page for discoverability silently granted another department edit
- * rights. See the Roles & permissions section of SCOPE.md.
+ * who may edit an item, because "what is this about" is editable by any contributor and "who may
+ * change it" must not be — tying them would mean tagging a page for discoverability silently
+ * granted someone else edit rights. Roles ended up flat and site-wide, which makes that rule
+ * easier to keep rather than harder. See the Roles & permissions section of SCOPE.md.
  *
  * `taxonomy_assignments` is a **derived index**, not the source of truth. The authored value lives
  * in `content_items.data` under the field's `api_id`, like every other field, so that revisions

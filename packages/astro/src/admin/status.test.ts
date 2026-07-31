@@ -38,10 +38,9 @@ describe('status metadata', () => {
 
     expect(meta.label).toBe('pending legal review');
     expect(meta.badgeClass).toBe('border-border bg-surface-sunken');
-    // Unknown means untrusted: it must not be offered in the editor, and must not be treated as
-    // something a contributor may move an item into.
+    // Unknown means untrusted: it must not be offered in the editor. Whether a contributor may
+    // move an item into it is `statusRequiresPublish`'s question, tested in guards.test.ts.
     expect(meta.settable).toBe(false);
-    expect(meta.needsPublish).toBe(true);
   });
 });
 

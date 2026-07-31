@@ -2,8 +2,9 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import HotspotEditor from '../../islands/HotspotEditor.tsx';
 import Timestamp from '../../components/Timestamp.astro';
-import { cropOf, hotspotOf } from '@taproot/core';
-import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
+import DangerZone from '../../components/DangerZone.astro';
+import { cropOf, hotspotOf, mediaDeleteImpact } from '@taproot/core';
+import { getTaproot, loginRedirect, canUploadMedia, hasRole } from '../../../runtime/guards.js';
 
 /**
  * One media asset: its metadata, and the focal point and crop editor.
@@ -28,14 +29,21 @@ const url = taproot.storage.publicUrl(asset.storage_key);
 const isImage = asset.mime_type.startsWith('image/');
 const canEdit = canUploadMedia(user);
 
+// Deleting removes the stored object too, so it sits a role above editing alt text.
+const canDelete = hasRole(user, 'editor');
+const deleteImpact = canDelete
+  ? await mediaDeleteImpact(taproot.db.db, asset.id)
+  : { blockers: [], warnings: [] };
+
 const saved = Astro.url.searchParams.get('saved') === '1';
+const error = Astro.url.searchParams.get('error');
 ---
 
 <AdminLayout
   title={asset.filename}
   user={user}
   breadcrumbs={[{ label: 'Media', href: '/admin/media' }, { label: asset.filename }]}
-  flash={saved ? 'Saved.' : null}
+  flash={error ?? (saved ? 'Saved.' : null)}
 >
   <header class="mb-6">
     <h1 class="text-2xl font-semibold tracking-tight break-all">{asset.filename}</h1>
@@ -128,4 +136,17 @@ const saved = Astro.url.searchParams.get('saved') === '1';
       }
     </form>
   </section>
+
+  {
+    canDelete && (
+      <DangerZone
+        noun="media asset"
+        confirmToken={asset.filename}
+        action={`/api/taproot/media/${asset.id}`}
+        blockers={deleteImpact.blockers}
+        warnings={deleteImpact.warnings}
+        allowedIntro="Deleting removes the stored file as well as this record. This cannot be undone."
+      />
+    )
+  }
 </AdminLayout>

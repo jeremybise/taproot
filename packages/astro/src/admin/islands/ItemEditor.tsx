@@ -5,14 +5,15 @@ import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
 import SeoPanel from './SeoPanel.js';
 import type { MediaOption } from '../mediaOptions.js';
+import type { RelationTarget } from '../relationOptions.js';
 import { STATUS_META, STATUS_ORDER } from '../status.js';
+import { statusChangeNeedsPublish } from '../../runtime/guards.js';
 
 /**
  * The content item editor.
  *
- * Renders one input per field from the content type's schema. Phase 1 replaces the richtext,
- * media, relation, and taxonomy placeholders with real editors; the save contract does not change
- * when it does.
+ * Renders one input per field from the content type's schema, through `FieldControl` — the same
+ * component the content-type builder previews with, so the two cannot drift.
  *
  * Server-side validation errors come back keyed by field `api_id`, which is what lets each message
  * be rendered next to its own input and wired up with `aria-describedby` rather than dumped in a
@@ -36,6 +37,7 @@ interface Props {
   parents: { id: string; title: string; path: string }[];
   /** Selectable terms for any taxonomy fields, keyed by taxonomy id. Resolved server-side. */
   termsByTaxonomy?: Record<string, TermOption[]>;
+  relationTargets?: Record<string, RelationTarget>;
   /** Block types with their fields, for any block fields on this type. */
   blockTypes?: BlockTypeOption[];
   /** Library entries placeable into a block field. */
@@ -78,6 +80,7 @@ export default function ItemEditor({
   initial,
   parents,
   termsByTaxonomy,
+  relationTargets,
   blockTypes,
   reusableBlocks,
   canPublish,
@@ -240,6 +243,7 @@ export default function ItemEditor({
               errors={errors[field.api_id]}
               onChange={(value) => setValue(field.api_id, value)}
               termsByTaxonomy={termsByTaxonomy}
+              relationTargets={relationTargets}
               blockTypes={blockTypes}
               reusableBlocks={reusableBlocks}
               // Promoting shares content across pages, so it sits behind the same bar as
@@ -278,20 +282,28 @@ export default function ItemEditor({
               onChange={(e) => setStatus(e.target.value as ContentStatus)}
               className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
             >
-              {statusOptions(status).map((option) => (
-                <option
-                  key={option}
-                  value={option}
-                  disabled={STATUS_META[option].needsPublish && !canPublish}
-                >
-                  {STATUS_META[option].label}
-                  {STATUS_META[option].needsPublish && !canPublish ? ' (needs editor role)' : ''}
-                </option>
-              ))}
+              {statusOptions(status).map((option) => {
+                /**
+                 * Measured from the *saved* status, not the one currently selected.
+                 *
+                 * The API compares against the row in the database, so anything else here would
+                 * disable a different set of options than the server refuses — and moving off
+                 * `published` is restricted whatever it moves to.
+                 */
+                const blocked = statusChangeNeedsPublish(initial.status, option) && !canPublish;
+                return (
+                  <option key={option} value={option} disabled={blocked}>
+                    {STATUS_META[option].label}
+                    {blocked ? ' (needs editor role)' : ''}
+                  </option>
+                );
+              })}
             </select>
             {!canPublish && (
               <p className="mt-1.5 text-xs text-content-subtle">
-                Your role can save drafts and submit for review. An editor publishes.
+                {initial.status === 'published'
+                  ? 'This item is live. Taking it down is an editor’s decision, so its status is fixed for your role — you can still edit the content.'
+                  : 'Your role can save drafts and submit for review. An editor publishes.'}
               </p>
             )}
           </div>

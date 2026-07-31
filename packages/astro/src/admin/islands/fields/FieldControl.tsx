@@ -6,8 +6,10 @@ import {
   type ReusableBlockOption,
 } from './BlockListEditor.js';
 import { RichTextEditor } from './RichTextEditor.js';
+import { RelationField } from './RelationField.js';
 import { MediaField } from '../media/MediaField.js';
 import type { MediaOption } from '../../mediaOptions.js';
+import type { RelationTarget } from '../../relationOptions.js';
 
 /**
  * Renders a single field's input from its definition.
@@ -16,9 +18,10 @@ import type { MediaOption } from '../../mediaOptions.js';
  * preview. A builder whose preview does not match the real editor is worse than no preview at
  * all, so there is one implementation and the two cannot drift.
  *
- * Phase 1 tranche B replaces the richtext placeholder with TipTap and the media placeholder with
- * a library picker; tranche C does relation. Until then those types render an honest notice rather
- * than a control that pretends to work.
+ * A field type with no control renders an honest notice rather than something that pretends to
+ * work. That list is `DEFERRED_FIELD_TYPES` and it is down to `repeater`; `fieldControls.test.tsx`
+ * asserts this switch and that list agree, which is what this comment used to do and did badly —
+ * it named a tranche that would add the relation control, and the tranche never came.
  */
 
 /** One selectable term, flattened out of its tree with the depth it sat at. */
@@ -50,10 +53,25 @@ export interface FieldControlProps {
   blockTypes?: BlockTypeOption[];
   /** The library's first page, resolved server-side with public URLs. The picker searches past it. */
   media?: MediaOption[];
+  /**
+   * Candidate items for `relation` fields, keyed by the content type they point at.
+   *
+   * Resolved on the server for the same reason terms and block schemas are — see
+   * `relationOptions.ts`. The content-type builder's preview passes nothing, and the control
+   * degrades to an explanatory note rather than breaking.
+   */
+  relationTargets?: Record<string, RelationTarget>;
   /** Library entries placeable into a `block` field. */
   reusableBlocks?: ReusableBlockOption[];
   /** Whether this user may promote a block into the shared library. */
   canPromote?: boolean;
+  /**
+   * Block types already open above this control, when it renders inside a block.
+   *
+   * Only `block` fields care; it is threaded through so a block type cannot be placed inside
+   * itself. See `BlockListEditor`.
+   */
+  ancestorTypes?: string[];
   /**
    * Preview mode: inputs are inert and ids are namespaced so a preview rendered next to the real
    * editor cannot collide with it or steal its label associations.
@@ -77,8 +95,10 @@ export function FieldControl({
   termsByTaxonomy,
   blockTypes,
   media,
+  relationTargets,
   reusableBlocks,
   canPromote = false,
+  ancestorTypes,
   preview = false,
   idPrefix,
 }: FieldControlProps) {
@@ -437,6 +457,36 @@ export function FieldControl({
         );
       }
 
+      case 'relation': {
+        /**
+         * Same stored-shape rule as `media`: an array when the field allows several, a bare id
+         * when it does not. `RelationField` works in ordered arrays either way.
+         */
+        const multiple = config.multiple === true;
+        const selected = Array.isArray(value)
+          ? (value as string[])
+          : typeof value === 'string' && value
+            ? [value]
+            : [];
+
+        const targetId = stringOr(config.targetContentTypeId, undefined);
+
+        return (
+          <RelationField
+            id={id}
+            labelledBy={labelId}
+            describedBy={describedBy || undefined}
+            value={multiple ? selected : selected.slice(0, 1)}
+            onChange={(ids) => onChange(multiple ? ids : (ids[0] ?? null))}
+            target={targetId ? (relationTargets?.[targetId] ?? null) : null}
+            hasTarget={Boolean(targetId)}
+            multiple={multiple}
+            invalid={Boolean(errors?.length)}
+            disabled={preview}
+          />
+        );
+      }
+
       case 'block': {
         const allowed = stringArrayOr(config.allowedBlocks, []) ?? [];
         const available = (blockTypes ?? []).filter(
@@ -450,9 +500,16 @@ export function FieldControl({
             value={Array.isArray(value) ? (value as BlockInstance[]) : []}
             onChange={(blocks) => onChange(blocks)}
             blockTypes={available}
+            /*
+              The unfiltered catalogue, so a block field nested inside one of these blocks applies
+              its own `allowedBlocks` rather than inheriting this field's.
+            */
+            allBlockTypes={blockTypes ?? []}
+            ancestorTypes={ancestorTypes}
             maxBlocks={numberOr(config.maxBlocks, undefined)}
             termsByTaxonomy={termsByTaxonomy}
             media={media}
+            relationTargets={relationTargets}
             reusableBlocks={(reusableBlocks ?? []).filter(
               (entry) =>
                 available.some((blockType) => blockType.api_id === entry.block_type),
@@ -474,8 +531,9 @@ function PendingControl({ type }: { type: FieldRow['type'] }) {
   const meta = FIELD_TYPE_META[type];
   return (
     <p className="mt-1.5 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-content-subtle">
-      The {meta.label.toLowerCase()} editor arrives in Phase {meta.availableIn}. Values already
-      stored for this field are kept and are not modified by saving.
+      The {meta.label.toLowerCase()} editor is not built yet, so this field cannot be edited here.
+      Values already stored for it are kept and are not changed by saving, and the REST API still
+      accepts them.
     </p>
   );
 }

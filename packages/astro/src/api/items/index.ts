@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { apiError, handle, json, readJson } from '../_shared.js';
 import { seoSchema } from '../seoSchema.js';
-import { canPublishContent } from '../../runtime/guards.js';
+import { canChangeStatus } from '../../runtime/guards.js';
 
 export const GET = handle(async ({ context, taproot }) => {
   const params = new URL(context.request.url).searchParams;
@@ -37,8 +37,9 @@ export const POST = handle(
     if (!contentType) return apiError(404, 'Content type not found.');
 
     // Publishing is a higher bar than creating: a contributor can draft, an editor publishes.
-    if (input.status === 'published' && !canPublishContent(user)) {
-      return apiError(403, 'Publishing requires the editor role or higher. Save as a draft instead.');
+    // `scheduled` counts too — see `canChangeStatus`. A new item has no previous status.
+    if (!canChangeStatus(user, undefined, input.status)) {
+      return apiError(403, 'That status requires the editor role or higher. Save as a draft instead.');
     }
 
     const item = await createItem(taproot.db, contentType, contentType.fields, {

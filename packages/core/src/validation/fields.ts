@@ -80,14 +80,14 @@ export const fieldConfigSchemas = {
     reverseLabel: z.string().optional(),
   }),
   block: z.object({
-    /** Block presets allowed in this region. Empty means all. Phase 2. */
+    /** Block types allowed in this field. Empty means all. */
     allowedBlocks: z.array(z.string()).default([]),
     maxBlocks: z.number().int().positive().optional(),
   }),
   repeater: z.object({
     minItems: z.number().int().nonnegative().default(0),
     maxItems: z.number().int().positive().optional(),
-    /** Sub-field definitions. Phase 2. */
+    /** Sub-field definitions. The repeater editor is not built yet. */
     fields: z.array(z.unknown()).default([]),
   }),
 } as const satisfies Record<FieldType, z.ZodType>;
@@ -96,29 +96,42 @@ export type FieldConfig<T extends FieldType> = z.infer<(typeof fieldConfigSchema
 
 export const FIELD_TYPES = Object.keys(fieldConfigSchemas) as FieldType[];
 
-/** Field types whose editing UI is not implemented yet, surfaced so the builder can label them. */
-export const DEFERRED_FIELD_TYPES: FieldType[] = ['block', 'repeater'];
+/**
+ * Field types with no editing control yet.
+ *
+ * This is the one fact the builder needs, and it has to be a fact rather than a plan. It used to
+ * be a `availableIn` phase number on every type, which the picker rendered as a "Phase 1" / "Phase
+ * 2" badge — so rich text, media, taxonomy, and blocks all announced themselves as forthcoming to
+ * a campus editor long after they shipped, and `relation` claimed to be arriving in a phase that
+ * had already been declared complete without it.
+ *
+ * `fieldControls.test.tsx` asserts this list matches what `FieldControl` actually renders, which
+ * is what keeps it from drifting again.
+ */
+export const DEFERRED_FIELD_TYPES: FieldType[] = ['repeater'];
+
+export function fieldTypeIsDeferred(type: FieldType): boolean {
+  return DEFERRED_FIELD_TYPES.includes(type);
+}
 
 export interface FieldTypeMeta {
   type: FieldType;
   label: string;
   description: string;
-  /** Phase in which the editing UI becomes available. */
-  availableIn: 0 | 1 | 2;
 }
 
 export const FIELD_TYPE_META: Record<FieldType, FieldTypeMeta> = {
-  text: { type: 'text', label: 'Text', description: 'A single line or paragraph of plain text.', availableIn: 0 },
-  richtext: { type: 'richtext', label: 'Rich text', description: 'Formatted text with headings and links.', availableIn: 1 },
-  number: { type: 'number', label: 'Number', description: 'A numeric value.', availableIn: 0 },
-  boolean: { type: 'boolean', label: 'Toggle', description: 'A true/false switch.', availableIn: 0 },
-  date: { type: 'date', label: 'Date', description: 'A date, optionally with a time.', availableIn: 0 },
-  select: { type: 'select', label: 'Select', description: 'One or more choices from a fixed list.', availableIn: 0 },
-  media: { type: 'media', label: 'Media', description: 'An image or file from the media library.', availableIn: 1 },
-  taxonomy: { type: 'taxonomy', label: 'Taxonomy', description: 'Terms from a taxonomy tree.', availableIn: 1 },
-  relation: { type: 'relation', label: 'Relation', description: 'A reference to other content items.', availableIn: 1 },
-  block: { type: 'block', label: 'Blocks', description: 'Composable blocks placed into a region.', availableIn: 2 },
-  repeater: { type: 'repeater', label: 'Repeater', description: 'A repeating group of sub-fields.', availableIn: 2 },
+  text: { type: 'text', label: 'Text', description: 'A single line or paragraph of plain text.' },
+  richtext: { type: 'richtext', label: 'Rich text', description: 'Formatted text with headings and links.' },
+  number: { type: 'number', label: 'Number', description: 'A numeric value.' },
+  boolean: { type: 'boolean', label: 'Toggle', description: 'A true/false switch.' },
+  date: { type: 'date', label: 'Date', description: 'A date, optionally with a time.' },
+  select: { type: 'select', label: 'Select', description: 'One or more choices from a fixed list.' },
+  media: { type: 'media', label: 'Media', description: 'An image or file from the media library.' },
+  taxonomy: { type: 'taxonomy', label: 'Taxonomy', description: 'Terms from a taxonomy tree.' },
+  relation: { type: 'relation', label: 'Relation', description: 'A reference to other content items.' },
+  block: { type: 'block', label: 'Blocks', description: 'Composable blocks placed into a region.' },
+  repeater: { type: 'repeater', label: 'Repeater', description: 'A repeating group of sub-fields.' },
 };
 
 /**
@@ -326,7 +339,27 @@ export interface ValidateItemOptions {
    * always pass it.
    */
   blockTypes?: Map<string, { fields: FieldRow[] }>;
+  /**
+   * How many levels of block nesting remain. Internal — callers leave it unset.
+   *
+   * A block type may hold a `block` field, so validation recurses. This used to be bounded only by
+   * a claim that the editor never offered such a field, which was never true: the field builder
+   * renders every field type for a block type just as it does for a content type. That left the
+   * real bound at "however deep the request nests", and a hand-written payload nesting thousands
+   * of levels would recurse until the stack gave out.
+   */
+  blockDepth?: number;
 }
+
+/**
+ * How deep blocks may nest.
+ *
+ * Generous enough that no plausible page hits it — a section holding cards holding a rich text is
+ * three — and small enough that the recursion cannot exhaust anything. The editor stops offering
+ * nested block types before this, by excluding ancestors; this is the boundary's own guarantee,
+ * which has to hold for a request the editor never made.
+ */
+export const MAX_BLOCK_DEPTH = 5;
 
 /**
  * Validate a content item's field values against its content type's fields.
@@ -433,10 +466,23 @@ function validateBlocks(
       return;
     }
 
-    // Recursive, so a block containing a block field is validated all the way down. The registry is
-    // passed through unchanged; depth is bounded in practice by the editor, which does not offer a
-    // block field inside a block type.
-    const nested = validateItemData(blockType.fields, block.data, options);
+    /**
+     * Recursive, so a block containing a block field is validated all the way down.
+     *
+     * The registry passes through unchanged; only the remaining depth decreases. Refusing at the
+     * limit rather than truncating means an over-deep payload is rejected with its reason instead
+     * of being silently stored with its tail cut off.
+     */
+    const depth = options.blockDepth ?? MAX_BLOCK_DEPTH;
+    if (depth <= 0) {
+      errors.push(`${position}: blocks are nested more than ${MAX_BLOCK_DEPTH} levels deep.`);
+      return;
+    }
+
+    const nested = validateItemData(blockType.fields, block.data, {
+      ...options,
+      blockDepth: depth - 1,
+    });
 
     if (nested.success) {
       value.push({ id: block.id, type: block.type, data: nested.data ?? {} });

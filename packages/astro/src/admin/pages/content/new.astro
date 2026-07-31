@@ -2,6 +2,7 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import ItemEditor from '../../islands/ItemEditor.tsx';
 import { termOptionsForFields } from '../../termOptions.js';
+import { relationTargetsForFields } from '../../relationOptions.js';
 import {
   blockTypeOptionsForFields,
   reusableBlockOptionsForFields,
@@ -34,6 +35,10 @@ if (contentType?.kind === 'page') {
   });
   parents = items.map((item) => ({ id: item.id, title: item.title, path: item.path }));
 }
+
+const relationTargets = contentType
+  ? await relationTargetsForFields(taproot.db.db, contentType.fields)
+  : {};
 
 const termsByTaxonomy = contentType
   ? await termOptionsForFields(taproot.db.db, contentType.fields)
@@ -95,6 +100,7 @@ const defaultOgImage = findImage(media, contentType?.default_og_image_id ?? null
           initial={{ title: '', slug: '', status: 'draft', parentId: null, data: {}, seo: {} }}
           parents={parents}
           termsByTaxonomy={termsByTaxonomy}
+          relationTargets={relationTargets}
           blockTypes={blockTypes}
           reusableBlocks={reusableBlocks}
           canPublish={canPublishContent(user)}

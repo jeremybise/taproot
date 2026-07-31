@@ -2,7 +2,13 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import StatusBadge from '../../components/StatusBadge.astro';
 import Timestamp from '../../components/Timestamp.astro';
-import { countItemsByStatus, listContentTypes, listItems } from '@taproot/core';
+import {
+  countItemsByStatus,
+  listContentTypes,
+  listItems,
+  termIdsForBranch,
+} from '@taproot/core';
+import { taxonomyFilterOptions } from '../../termOptions.js';
 import { parseStatusFilter, statusFilterOptions } from '../../status.js';
 import { getTaproot, loginRedirect, canEditContent } from '../../../runtime/guards.js';
 
@@ -17,11 +23,24 @@ const search = params.get('q') ?? '';
 // list to nothing instead of reaching the query with a status that cannot exist.
 const statusFilter = parseStatusFilter(params.get('status'));
 
-const contentTypes = await listContentTypes(taproot.db.db);
+const termFilter = params.get('term') ?? '';
+
+const [contentTypes, termGroups] = await Promise.all([
+  listContentTypes(taproot.db.db),
+  taxonomyFilterOptions(taproot.db.db),
+]);
+
+/**
+ * A term filter means the whole branch beneath it, so "Academics" finds a page filed under
+ * "Sciences". Expanded once and shared by the list and the status counts, or the facet numbers
+ * would label a different set of rows than the ones on screen.
+ */
+const termIds = termFilter ? await termIdsForBranch(taproot.db.db, termFilter) : undefined;
 
 const facetFilters = {
   contentTypeId: typeFilter || undefined,
   search: search || undefined,
+  termIds,
 };
 
 const [{ items, total }, statusCounts] = await Promise.all([
@@ -34,7 +53,7 @@ const statusOptions = statusFilterOptions(statusCounts, statusFilter);
 // per-status numbers beside it even though `total` above is narrowed by the status filter.
 const statusTotal = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
 const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
-const filtered = Boolean(search || typeFilter || statusFilter);
+const filtered = Boolean(search || typeFilter || statusFilter || termFilter);
 ---
 
 <AdminLayout title="Content" user={user} breadcrumbs={[{ label: 'Content' }]}>
@@ -87,6 +106,34 @@ const filtered = Boolean(search || typeFilter || statusFilter);
         }
       </select>
     </div>
+
+
+    {
+      termGroups.length > 0 && (
+        <div>
+          <label for="term" class="block text-sm font-medium">
+            Tagged
+          </label>
+          <select
+            id="term"
+            name="term"
+            class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          >
+            <option value="">Any term</option>
+            {termGroups.map((group) => (
+              <optgroup label={group.name}>
+                {group.terms.map((term) => (
+                  <option value={term.id} selected={term.id === termFilter}>
+                    {' '.repeat(term.depth * 2)}
+                    {term.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+      )
+    }
 
     <div>
       <label for="status" class="block text-sm font-medium">Status</label>

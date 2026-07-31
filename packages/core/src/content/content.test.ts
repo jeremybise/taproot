@@ -33,10 +33,18 @@ import {
   getItemByPath,
   getRedirect,
   getSubtree,
+  itemDeleteImpact,
+  itemsReferencing,
   listItems,
   updateItem,
 } from './items.js';
-import { contentTypeInputSchema, validateItemData } from '../validation/fields.js';
+import { createMenu, createMenuItem } from './menus.js';
+import { createTaxonomy, createTerm, termIdsForBranch } from './taxonomies.js';
+import {
+  MAX_BLOCK_DEPTH,
+  contentTypeInputSchema,
+  validateItemData,
+} from '../validation/fields.js';
 
 let handle: TaprootDb;
 
@@ -826,8 +834,366 @@ describe('field validation', () => {
 
       expect(result.success).toBe(true);
     });
+
+    describe('nesting', () => {
+      /** A block type holding a block field, so validation has somewhere to recurse. */
+      const nesting = new Map([
+        [
+          'section',
+          { fields: [field({ id: 's1', api_id: 'blocks', type: 'block', config: '{}' })] },
+        ],
+        ['hero', heroType],
+      ]);
+
+      /**
+       * `depth` levels of section wrapping one hero, under the top-level `sections` field.
+       *
+       * The outermost key is the content type's field; every level below it is the section type's
+       * own `blocks` field.
+       */
+      const nest = (depth: number, leaf: Record<string, unknown> = { heading: 'bottom' }) => {
+        let blocks: unknown[] = [{ id: 'leaf', type: 'hero', data: leaf }];
+        for (let i = 0; i < depth; i += 1) {
+          blocks = [{ id: `s${i}`, type: 'section', data: { blocks } }];
+        }
+        return { sections: blocks };
+      };
+
+      it('validates a block nested inside a block', () => {
+        const result = validateItemData([blockField()], nest(1), { blockTypes: nesting });
+        expect(result.success).toBe(true);
+      });
+
+      it('reports a required field missing several levels down', () => {
+        const result = validateItemData([blockField()], nest(2, { lead: 'no heading' }), {
+          blockTypes: nesting,
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.errors.sections?.join(' ')).toMatch(/heading/);
+      });
+
+      it('refuses a payload nested past the limit rather than truncating it', () => {
+        /**
+         * The bound used to be a comment claiming the editor never offered a block field inside a
+         * block type. It did — the field builder renders every field type for a block type — so
+         * the real bound was however deep a request nested, and a hand-written payload could
+         * recurse until the stack gave out. Refusing beats truncating: a stored value silently
+         * missing its tail is worse than a rejected write.
+         */
+        const result = validateItemData([blockField()], nest(MAX_BLOCK_DEPTH + 2), {
+          blockTypes: nesting,
+        });
+
+        expect(result.success).toBe(false);
+        expect(JSON.stringify(result.errors)).toMatch(/nested more than/);
+      });
+
+      it('allows nesting right up to the limit', () => {
+        // Off-by-one here would be invisible in the failure case above and would reject a page a
+        // template legitimately builds.
+        const result = validateItemData([blockField()], nest(MAX_BLOCK_DEPTH - 1), {
+          blockTypes: nesting,
+        });
+
+        expect(result.success).toBe(true);
+      });
+    });
   });
 
+});
+
+describe('filtering a list by term', () => {
+  /**
+   * The read `taxonomy_assignments` exists for.
+   *
+   * The index has been rebuilt from `data` on every write since taxonomies shipped, justified by
+   * exactly this query — filtering a list by term without scanning every row and parsing its JSON
+   * blob — and the query was never written. These are its first callers.
+   */
+  async function seedTagged() {
+    const taxonomy = await createTaxonomy(handle.db, {
+      api_id: 'department',
+      name: 'Department',
+      name_plural: 'Departments',
+      hierarchical: true,
+    });
+    const academics = await createTerm(handle.db, taxonomy.id, { name: 'Academics' });
+    const sciences = await createTerm(handle.db, taxonomy.id, {
+      name: 'Sciences',
+      parentId: academics.id,
+    });
+    const services = await createTerm(handle.db, taxonomy.id, { name: 'Student Services' });
+
+    const type = await createContentType(handle.db, {
+      api_id: 'page',
+      name: 'Page',
+      name_plural: 'Pages',
+      kind: 'page',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      title_field: 'title',
+    });
+
+    const tags = await createField(handle.db, type.id, {
+      api_id: 'departments',
+      label: 'Departments',
+      type: 'taxonomy',
+      required: false,
+      localized: false,
+      position: 0,
+      config: { taxonomyId: taxonomy.id, multiple: true },
+      help_text: null,
+    });
+
+    const make = (title: string, termIds: string[]) =>
+      createItem(handle, type, [tags], {
+        contentTypeId: type.id,
+        title,
+        status: 'published',
+        userId: null,
+        data: { departments: termIds },
+      });
+
+    return {
+      make,
+      academics,
+      sciences,
+      services,
+      physics: await make('Physics', [sciences.id]),
+      admissions: await make('Admissions', [services.id]),
+      untagged: await make('About', []),
+    };
+  }
+
+  it('returns only items carrying the term', async () => {
+    const { services, admissions } = await seedTagged();
+
+    const { items } = await listItems(handle.db, {
+      termIds: await termIdsForBranch(handle.db, services.id),
+    });
+
+    expect(items.map((item) => item.id)).toEqual([admissions.id]);
+  });
+
+  it('includes items filed under a descendant term', async () => {
+    // Filtering by "Academics" has to find a page filed under "Sciences", or the tree is
+    // decoration and every editor has to know which leaf someone else picked.
+    const { academics, physics } = await seedTagged();
+
+    const { items } = await listItems(handle.db, {
+      termIds: await termIdsForBranch(handle.db, academics.id),
+    });
+
+    expect(items.map((item) => item.id)).toEqual([physics.id]);
+  });
+
+  it('counts an item once even when it carries several terms in the branch', async () => {
+    const { academics, sciences, make } = await seedTagged();
+    const { id } = await make('Both', [academics.id, sciences.id]);
+
+    const { items, total } = await listItems(handle.db, {
+      termIds: await termIdsForBranch(handle.db, academics.id),
+    });
+
+    // EXISTS rather than a join, so two matching assignments do not duplicate the row.
+    expect(items.filter((item) => item.id === id)).toHaveLength(1);
+    expect(total).toBe(items.length);
+  });
+
+  it('combines with the other filters rather than replacing them', async () => {
+    const { services } = await seedTagged();
+
+    const { items } = await listItems(handle.db, {
+      termIds: await termIdsForBranch(handle.db, services.id),
+      search: 'nothing-matches-this',
+    });
+
+    expect(items).toEqual([]);
+  });
+
+  it('matches nothing for an empty term list, rather than everything', async () => {
+    /**
+     * `listMedia`'s trap, in a different table. `in ()` is a syntax error, so the tempting
+     * fallthrough is to drop the clause — which turns "filter by a term with no members" into
+     * "show the whole site", on a screen whose entire purpose is narrowing.
+     */
+    await seedTagged();
+    const { items } = await listItems(handle.db, { termIds: [] });
+    expect(items).toEqual([]);
+  });
+
+  it('applies to the status facet counts too', async () => {
+    // The counts label the list. A facet that ignored the term filter would promise rows the list
+    // then refuses to show.
+    const { services } = await seedTagged();
+
+    const counts = await countItemsByStatus(handle.db, {
+      termIds: await termIdsForBranch(handle.db, services.id),
+    });
+
+    expect(counts.published).toBe(1);
+  });
+});
+
+describe('itemsReferencing', () => {
+  /** A Page type, plus an Event type with a relation field pointing at pages. */
+  async function seedRelation() {
+    const page = await seedPageType();
+
+    const event = await createContentType(handle.db, {
+      api_id: 'event',
+      name: 'Event',
+      name_plural: 'Events',
+      kind: 'collection',
+      description: null,
+      icon: null,
+      url_prefix: 'events',
+      title_field: 'title',
+    });
+
+    const hostPage = await createField(handle.db, event.id, {
+      api_id: 'host_page',
+      label: 'Part of',
+      type: 'relation',
+      required: false,
+      localized: false,
+      position: 0,
+      config: { targetContentTypeId: page.type.id, multiple: false, reverseLabel: 'Events' },
+      help_text: null,
+    });
+
+    const target = await createItem(handle, page.type, page.fields, {
+      contentTypeId: page.type.id,
+      title: 'Admissions',
+      status: 'published',
+      userId: null,
+      data: {},
+    });
+
+    return { page, event, hostPage, target };
+  }
+
+  it('finds an item pointing here through a relation field', async () => {
+    const { event, hostPage, target } = await seedRelation();
+
+    await createItem(handle, event, [hostPage], {
+      contentTypeId: event.id,
+      title: 'Spring Open House',
+      status: 'published',
+      userId: null,
+      data: { host_page: target.id },
+    });
+
+    const references = await itemsReferencing(handle.db, target.id);
+
+    expect(references).toHaveLength(1);
+    expect(references[0]!.title).toBe('Spring Open House');
+    // The label the config has always stored and nothing ever read.
+    expect(references[0]!.reverseLabel).toBe('Events');
+    expect(references[0]!.contentTypeName).toBe('Event');
+  });
+
+  it('finds an item pointing here from a multi-value relation', async () => {
+    const page = await seedPageType();
+    const related = await createField(handle.db, page.type.id, {
+      api_id: 'related',
+      label: 'Related pages',
+      type: 'relation',
+      required: false,
+      localized: false,
+      position: 1,
+      config: { targetContentTypeId: page.type.id, multiple: true, reverseLabel: 'Referenced by' },
+      help_text: null,
+    });
+
+    const target = await createItem(handle, page.type, page.fields, {
+      contentTypeId: page.type.id,
+      title: 'Tuition',
+      status: 'published',
+      userId: null,
+      data: {},
+    });
+
+    await createItem(handle, page.type, [...page.fields, related], {
+      contentTypeId: page.type.id,
+      title: 'Financial Aid',
+      status: 'published',
+      userId: null,
+      data: { related: ['someone-else', target.id] },
+    });
+
+    const references = await itemsReferencing(handle.db, target.id);
+    expect(references.map((reference) => reference.title)).toEqual(['Financial Aid']);
+  });
+
+  it('does not report an id that merely appears in a text field', async () => {
+    /**
+     * The reason this is two queries rather than one `LIKE`.
+     *
+     * Searching every item's `data` for the bare id would match it sitting in a body, a slug
+     * someone pasted, or a block's media reference, and would report a relationship that does not
+     * exist — on the screen whose whole job is to say what depends on this item.
+     */
+    const { page, target } = await seedRelation();
+
+    await createItem(handle, page.type, page.fields, {
+      contentTypeId: page.type.id,
+      title: 'Notes',
+      status: 'draft',
+      userId: null,
+      data: { body: `See item ${target.id} for details.` },
+    });
+
+    expect(await itemsReferencing(handle.db, target.id)).toEqual([]);
+  });
+
+  it('does not report a relation field pointing at a different type', async () => {
+    const { event, target } = await seedRelation();
+
+    // A relation on Event targeting Event, holding this page's id anyway. The field cannot point
+    // here, so neither can the item.
+    const other = await createField(handle.db, event.id, {
+      api_id: 'sibling',
+      label: 'Sibling event',
+      type: 'relation',
+      required: false,
+      localized: false,
+      position: 1,
+      config: { targetContentTypeId: event.id, multiple: false },
+      help_text: null,
+    });
+
+    await createItem(handle, event, [other], {
+      contentTypeId: event.id,
+      title: 'Autumn Tour',
+      status: 'published',
+      userId: null,
+      data: { sibling: target.id },
+    });
+
+    expect(await itemsReferencing(handle.db, target.id)).toEqual([]);
+  });
+
+  it('returns nothing when no relation field targets this type', async () => {
+    const page = await seedPageType();
+    const item = await createItem(handle, page.type, page.fields, {
+      contentTypeId: page.type.id,
+      title: 'Lonely',
+      status: 'draft',
+      userId: null,
+      data: {},
+    });
+
+    // Short-circuits before touching content_items at all, which is what keeps the common case
+    // from being a scan of every row on every editor load.
+    expect(await itemsReferencing(handle.db, item.id)).toEqual([]);
+  });
+
+  it('returns nothing for an item that does not exist', async () => {
+    expect(await itemsReferencing(handle.db, 'missing')).toEqual([]);
+  });
 });
 
 describe('deletion', () => {
@@ -838,16 +1204,54 @@ describe('deletion', () => {
     expect(await getItemByPath(handle.db, '/temp', { publishedOnly: false })).toBeUndefined();
   });
 
-  it('orphans children rather than cascading the delete', async () => {
+  it('refuses to delete an item that has children', async () => {
+    /**
+     * This used to orphan them instead, on the reasoning that silently deleting a whole page tree
+     * is not a recoverable mistake. That reasoning holds; orphaning was the wrong way to honour it.
+     * `parent_id` is `ON DELETE SET NULL`, so the children stayed at their old `path` and `depth`
+     * while becoming roots — the materialised path and the tree disagreed, and nothing downstream
+     * expects that. Refusing protects the same content without leaving the inconsistency behind.
+     */
     const { type, fields } = await seedPageType();
     const parent = await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Parent' });
     const child = await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Child', parentId: parent.id });
 
+    await expect(deleteItem(handle, parent.id)).rejects.toThrow(/sit beneath it/);
+
+    const { items } = await listItems(handle.db, {});
+    expect(items.map((i) => i.id).sort()).toEqual([parent.id, child.id].sort());
+  });
+
+  it('deletes once the children are gone', async () => {
+    const { type, fields } = await seedPageType();
+    const parent = await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Parent' });
+    const child = await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Child', parentId: parent.id });
+
+    await deleteItem(handle, child.id);
     await deleteItem(handle, parent.id);
 
-    // Deliberate: silently deleting a whole page tree is not a recoverable mistake.
     const { items } = await listItems(handle.db, {});
-    expect(items.map((i) => i.id)).toEqual([child.id]);
+    expect(items).toEqual([]);
+  });
+
+  it('reports a menu entry as a warning rather than a blocker', async () => {
+    // A menu item nulls its reference and stays visible in the admin as a broken entry. That is
+    // the designed behaviour, so it is something to tell the editor, not something to stop them.
+    const { type, fields } = await seedPageType();
+    const item = await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Visit' });
+
+    const menu = await createMenu(handle.db, { api_id: 'main', name: 'Main' });
+    await createMenuItem(handle.db, menu.id, {
+      label: 'Visit',
+      targetType: 'item',
+      contentItemId: item.id,
+    });
+
+    const impact = await itemDeleteImpact(handle.db, item.id);
+
+    expect(impact.blockers).toEqual([]);
+    expect(impact.warnings.join(' ')).toMatch(/menu item\(s\) point at it/);
+    await expect(deleteItem(handle, item.id)).resolves.toBeUndefined();
   });
 });
 

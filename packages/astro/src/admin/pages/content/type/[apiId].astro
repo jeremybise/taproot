@@ -2,7 +2,13 @@
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import StatusBadge from '../../../components/StatusBadge.astro';
 import Timestamp from '../../../components/Timestamp.astro';
-import { countItemsByStatus, getContentTypeByApiId, listItems } from '@taproot/core';
+import {
+  countItemsByStatus,
+  getContentTypeByApiId,
+  listItems,
+  termIdsForBranch,
+} from '@taproot/core';
+import { taxonomyFilterOptions } from '../../../termOptions.js';
 import { parseStatusFilter, statusFilterOptions } from '../../../status.js';
 import { getTaproot, loginRedirect, canEditContent } from '../../../../runtime/guards.js';
 
@@ -29,7 +35,35 @@ if (contentType.kind === 'singleton') {
 const search = Astro.url.searchParams.get('q') ?? '';
 const statusFilter = parseStatusFilter(Astro.url.searchParams.get('status'));
 
-const facetFilters = { contentTypeId: contentType.id, search: search || undefined };
+const termFilter = Astro.url.searchParams.get('term') ?? '';
+
+/**
+ * Only the taxonomies this type can actually carry.
+ *
+ * `/admin/content` offers every taxonomy because it lists everything; here, offering a term no
+ * item of this type could ever hold would be a filter guaranteed to return nothing.
+ */
+const typeTaxonomyIds = new Set(
+  contentType.fields
+    .filter((field) => field.type === 'taxonomy')
+    .map((field) => {
+      try {
+        return (JSON.parse(field.config) as { taxonomyId?: string | null }).taxonomyId ?? null;
+      } catch {
+        return null;
+      }
+    })
+    .filter((id): id is string => Boolean(id)),
+);
+
+const termGroups = typeTaxonomyIds.size
+  ? (await taxonomyFilterOptions(taproot.db.db)).filter((group) => typeTaxonomyIds.has(group.id))
+  : [];
+
+// The branch, not just the term — see the same expansion on /admin/content.
+const termIds = termFilter ? await termIdsForBranch(taproot.db.db, termFilter) : undefined;
+
+const facetFilters = { contentTypeId: contentType.id, search: search || undefined, termIds };
 
 const [{ items, total }, statusCounts] = await Promise.all([
   listItems(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 200 }),
@@ -38,7 +72,7 @@ const [{ items, total }, statusCounts] = await Promise.all([
 
 const statusOptions = statusFilterOptions(statusCounts, statusFilter);
 const statusTotal = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
-const filtered = Boolean(search || statusFilter);
+const filtered = Boolean(search || statusFilter || termFilter);
 const isHierarchical = contentType.kind === 'page';
 const plural = contentType.name_plural.toLowerCase();
 ---
@@ -83,6 +117,33 @@ const plural = contentType.name_plural.toLowerCase();
         class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
       />
     </div>
+
+    {
+      termGroups.length > 0 && (
+        <div>
+          <label for="term" class="block text-sm font-medium">
+            Tagged
+          </label>
+          <select
+            id="term"
+            name="term"
+            class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          >
+            <option value="">Any term</option>
+            {termGroups.map((group) => (
+              <optgroup label={group.name}>
+                {group.terms.map((term) => (
+                  <option value={term.id} selected={term.id === termFilter}>
+                    {' '.repeat(term.depth * 2)}
+                    {term.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+      )
+    }
 
     <div>
       <label for="status" class="block text-sm font-medium">Status</label>

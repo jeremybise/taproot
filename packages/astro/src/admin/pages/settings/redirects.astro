@@ -1,38 +1,186 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
+import Timestamp from '../../components/Timestamp.astro';
+import { listRedirects, redirectIsShadowed } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
 
+/**
+ * Redirects: the ones written automatically when content moves, and the ones an author types in.
+ *
+ * This screen was read-only for two phases, showing the automatic half and nothing else, while the
+ * table's `source` column already documented a `manual` variant "author-created and never GC'd"
+ * that nothing wrote. Migrating a site onto Taproot is the case that needs the other half, and it
+ * is most of why anyone wants the feature.
+ */
 const taproot = getTaproot(Astro.locals);
 if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
 const user = taproot.user;
 
-const redirects = await taproot.db.db
-  .selectFrom('redirects')
-  .selectAll()
-  .orderBy('created_at', 'desc')
-  .limit(200)
-  .execute();
+// Redirects reshape the site's URLs, which is configuration rather than content — the same bar as
+// editing a content type.
+const canEdit = canManageSchema(user);
 
-const autoCount = redirects.filter((r) => r.source === 'auto').length;
+const search = Astro.url.searchParams.get('q')?.trim() ?? '';
+const { redirects, total } = await listRedirects(taproot.db.db, {
+  search: search || undefined,
+  limit: 200,
+});
+
+/**
+ * Which manual redirects a live page is currently sitting on top of.
+ *
+ * The catch-all resolves a content item before it looks here, so such a row does nothing until the
+ * item moves away. Saying so beats leaving someone to wonder why the redirect they just added has
+ * no effect. Only checked for manual rows — an automatic one is written *because* content moved,
+ * so it can never be shadowed by the thing that created it.
+ */
+const shadowed = new Set<string>();
+for (const redirect of redirects) {
+  if (redirect.source !== 'manual') continue;
+  if (await redirectIsShadowed(taproot.db.db, redirect.from_path)) shadowed.add(redirect.id);
+}
+
+const autoCount = redirects.filter((redirect) => redirect.source === 'auto').length;
+
+const created = Astro.url.searchParams.get('created');
+const updated = Astro.url.searchParams.get('updated');
+const deleted = Astro.url.searchParams.get('deleted');
+const error = Astro.url.searchParams.get('error');
+
+const flash = error
+  ? error
+  : created
+    ? `Redirect from ${created} created.`
+    : updated
+      ? `Redirect from ${updated} saved.`
+      : deleted
+        ? `Redirect from ${deleted} deleted.`
+        : null;
+
+const editingId = Astro.url.searchParams.get('edit');
 ---
 
 <AdminLayout
   title="Redirects"
   user={user}
   breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Redirects' }]}
+  flash={flash}
 >
   <header class="mb-6">
     <h1 class="text-2xl font-semibold tracking-tight">Redirects</h1>
     <p class="mt-1 max-w-prose text-sm text-content-muted">
-      {autoCount} of {redirects.length} were created automatically when content moved. Renaming or
-      re-parenting a page writes these without anyone having to remember.
+      {autoCount} of {redirects.length} shown were created automatically when content moved.
+      Renaming or re-parenting a page writes those without anyone having to remember. Add your own
+      for URLs that were never Taproot pages — the ones a site arrives with.
     </p>
   </header>
 
   {
+    canEdit && (
+      <section aria-labelledby="add-heading" class="mb-8 rounded-lg border border-border p-4">
+        <h2 id="add-heading" class="text-base font-semibold">
+          Add a redirect
+        </h2>
+        <form
+          method="post"
+          action="/api/taproot/redirects"
+          class="mt-3 flex flex-wrap items-end gap-3"
+        >
+          <div class="min-w-56 flex-1">
+            <label for="fromPath" class="block text-sm font-medium">
+              From
+            </label>
+            <input
+              id="fromPath"
+              name="fromPath"
+              required
+              placeholder="/old-site/apply.html"
+              aria-describedby="fromPath-hint"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+            />
+            <p id="fromPath-hint" class="mt-1.5 text-xs text-content-subtle">
+              A path on this site.
+            </p>
+          </div>
+
+          <div class="min-w-56 flex-1">
+            <label for="toPath" class="block text-sm font-medium">
+              To
+            </label>
+            <input
+              id="toPath"
+              name="toPath"
+              required
+              placeholder="/admissions/apply"
+              aria-describedby="toPath-hint"
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+            />
+            <p id="toPath-hint" class="mt-1.5 text-xs text-content-subtle">
+              A path, or a full http(s) URL to leave the site.
+            </p>
+          </div>
+
+          <div>
+            <label for="statusCode" class="block text-sm font-medium">
+              Kind
+            </label>
+            <select
+              id="statusCode"
+              name="statusCode"
+              class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            >
+              <option value="301">301 — permanent</option>
+              <option value="302">302 — temporary</option>
+            </select>
+          </div>
+
+          <button
+            type="submit"
+            class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors"
+          >
+            Add redirect
+          </button>
+        </form>
+      </section>
+    )
+  }
+
+  <form method="get" class="mb-4 flex flex-wrap items-end gap-3">
+    <div class="min-w-56">
+      <label for="q" class="block text-sm font-medium">Search</label>
+      <input
+        id="q"
+        name="q"
+        type="search"
+        value={search}
+        placeholder="Match either path"
+        class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      />
+    </div>
+    <button
+      type="submit"
+      class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+    >
+      Search
+    </button>
+    {
+      search && (
+        <a
+          href="/admin/settings/redirects"
+          class="rounded-md px-3 py-2 text-sm font-medium text-content-muted transition-colors hover:bg-surface-sunken"
+        >
+          Clear
+        </a>
+      )
+    }
+  </form>
+
+  {
     redirects.length === 0 ? (
       <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
-        No redirects yet. They appear here as soon as a page's slug or parent changes.
+        {search
+          ? `No redirects match “${search}”.`
+          : 'No redirects yet. They appear here as soon as a page’s slug or parent changes, and you can add your own above.'}
       </p>
     ) : (
       <div class="overflow-x-auto rounded-lg border border-border">
@@ -44,26 +192,143 @@ const autoCount = redirects.filter((r) => r.source === 'auto').length;
               <th scope="col" class="px-4 py-2.5 font-medium">To</th>
               <th scope="col" class="px-4 py-2.5 font-medium">Status</th>
               <th scope="col" class="px-4 py-2.5 font-medium">Source</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Created</th>
+              {canEdit && (
+                <th scope="col" class="px-4 py-2.5 font-medium">
+                  <span class="sr-only-focusable">Actions</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
-            {redirects.map((redirect) => (
-              <tr class="border-t border-border">
-                <th scope="row" class="px-4 py-2.5 font-mono text-xs font-normal">
-                  {redirect.from_path}
-                </th>
-                <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{redirect.to_path}</td>
-                <td class="px-4 py-2.5 tabular-nums">{redirect.status_code}</td>
-                <td class="px-4 py-2.5">
-                  <span class="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
-                    {redirect.source}
-                  </span>
-                </td>
-              </tr>
-            ))}
+            {redirects.map((redirect) =>
+              editingId === redirect.id && canEdit ? (
+                <tr class="border-t border-border bg-surface-sunken">
+                  <td colspan={canEdit ? 6 : 5} class="px-4 py-3">
+                    <form
+                      method="post"
+                      action={`/api/taproot/redirects/${redirect.id}`}
+                      class="flex flex-wrap items-end gap-3"
+                    >
+                      <div class="min-w-48 flex-1">
+                        <label for={`from-${redirect.id}`} class="block text-xs font-medium">
+                          From
+                        </label>
+                        <input
+                          id={`from-${redirect.id}`}
+                          name="fromPath"
+                          value={redirect.from_path}
+                          required
+                          class="mt-1 w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 font-mono text-sm"
+                        />
+                      </div>
+                      <div class="min-w-48 flex-1">
+                        <label for={`to-${redirect.id}`} class="block text-xs font-medium">
+                          To
+                        </label>
+                        <input
+                          id={`to-${redirect.id}`}
+                          name="toPath"
+                          value={redirect.to_path}
+                          required
+                          class="mt-1 w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 font-mono text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label for={`code-${redirect.id}`} class="block text-xs font-medium">
+                          Kind
+                        </label>
+                        <select
+                          id={`code-${redirect.id}`}
+                          name="statusCode"
+                          class="mt-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm"
+                        >
+                          <option value="301" selected={redirect.status_code !== 302}>
+                            301
+                          </option>
+                          <option value="302" selected={redirect.status_code === 302}>
+                            302
+                          </option>
+                        </select>
+                      </div>
+                      <button
+                        type="submit"
+                        class="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-content"
+                      >
+                        Save
+                      </button>
+                      <a
+                        href="/admin/settings/redirects"
+                        class="rounded-md px-3 py-1.5 text-sm font-medium text-content-muted transition-colors hover:bg-surface"
+                      >
+                        Cancel
+                      </a>
+                    </form>
+                  </td>
+                </tr>
+              ) : (
+                <tr class="border-t border-border">
+                  <th scope="row" class="px-4 py-2.5 font-mono font-normal">
+                    {redirect.from_path}
+                    {shadowed.has(redirect.id) && (
+                      <span class="ml-2 rounded-full border border-status-draft bg-status-draft-subtle px-2 py-0.5 font-sans text-xs">
+                        Inactive — a page uses this URL
+                      </span>
+                    )}
+                  </th>
+                  <td class="px-4 py-2.5 font-mono text-content-muted">{redirect.to_path}</td>
+                  <td class="px-4 py-2.5 tabular-nums text-content-muted">
+                    {redirect.status_code}
+                  </td>
+                  <td class="px-4 py-2.5 text-content-muted">
+                    {redirect.source === 'auto' ? 'Automatic' : 'Added by hand'}
+                  </td>
+                  <td class="px-4 py-2.5 text-content-muted">
+                    <Timestamp value={redirect.created_at} />
+                  </td>
+                  {canEdit && (
+                    <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                      <a
+                        href={`/admin/settings/redirects?edit=${redirect.id}`}
+                        class="rounded-md border border-border-strong px-3 py-1 text-sm font-medium transition-colors hover:bg-surface-sunken"
+                      >
+                        Edit
+                        <span class="sr-only-focusable"> redirect from {redirect.from_path}</span>
+                      </a>
+                      {/*
+                        No typed confirmation, unlike a content item or a media asset: a redirect
+                        holds nothing, and re-adding one is a two-field form directly above.
+                      */}
+                      <form
+                        method="post"
+                        action={`/api/taproot/redirects/${redirect.id}`}
+                        class="ml-1 inline"
+                      >
+                        <input type="hidden" name="_method" value="delete" />
+                        <button
+                          type="submit"
+                          class="rounded-md px-3 py-1 text-sm font-medium text-danger transition-colors hover:bg-surface-sunken"
+                        >
+                          Delete
+                          <span class="sr-only-focusable"> redirect from {redirect.from_path}</span>
+                        </button>
+                      </form>
+                    </td>
+                  )}
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       </div>
+    )
+  }
+
+  {
+    total > redirects.length && (
+      <p class="mt-2 text-sm text-content-subtle">
+        Showing {redirects.length} of {total}. Search to narrow the list.
+      </p>
     )
   }
 </AdminLayout>

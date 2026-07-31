@@ -23,6 +23,7 @@ import type { MediaOption } from '../../mediaOptions.js';
 import { newId, type BlockInstance, type ContentTypeRow, type FieldRow } from '@taproot/core';
 
 import { FieldControl, type TermOption } from './FieldControl.js';
+import type { RelationTarget } from '../../relationOptions.js';
 
 /**
  * The editor for a `block` field: a page's composed regions.
@@ -55,29 +56,54 @@ interface Props {
   onChange: (blocks: BlockInstance[]) => void;
   /** Block types this field permits, already filtered by `allowedBlocks`. */
   blockTypes: BlockTypeOption[];
+  /**
+   * The whole catalogue, unfiltered — what a `block` field *inside* one of these blocks may offer.
+   *
+   * Passing `blockTypes` down instead would apply this field's `allowedBlocks` to a nested field
+   * that has an `allowedBlocks` of its own, so a Section allowing only Cards would leave a Card's
+   * own block field able to hold nothing but Cards. Defaults to `blockTypes` for callers with
+   * nothing nested to worry about.
+   */
+  allBlockTypes?: BlockTypeOption[];
   maxBlocks?: number;
   termsByTaxonomy?: Record<string, TermOption[]>;
   /** Passed through so a block's own media field works exactly as a page's does. */
   media?: MediaOption[];
+  /** Likewise for a block's own relation field. */
+  relationTargets?: Record<string, RelationTarget>;
   /** Library entries placeable in this field, already filtered to allowed block types. */
   reusableBlocks?: ReusableBlockOption[];
   /** Promoting to the library needs the editor role, so the control is hidden below it. */
   canPromote?: boolean;
   labelledBy: string;
   disabled?: boolean;
+  /**
+   * Block types already open further up this editor, innermost last.
+   *
+   * A block type may hold a `block` field, and the obvious way for that to go wrong is a type that
+   * can contain itself — an editor could then keep opening the same block forever, and the value
+   * would nest until the server refused it. Excluding the ancestors is a sharper rule than a depth
+   * number: it forbids exactly the cycles (A in A, A in B in A) and leaves genuine nesting like
+   * Section → Card alone. `MAX_BLOCK_DEPTH` still backstops it at the boundary, where a request
+   * this editor never made has to be refused too.
+   */
+  ancestorTypes?: string[];
 }
 
 export function BlockListEditor({
   value,
   onChange,
   blockTypes,
+  allBlockTypes,
   maxBlocks,
   termsByTaxonomy,
   media,
+  relationTargets,
   reusableBlocks = [],
   canPromote = false,
   labelledBy,
   disabled = false,
+  ancestorTypes = [],
 }: Props) {
   const id = useId();
   const [status, setStatus] = useState('');
@@ -95,8 +121,27 @@ export function BlockListEditor({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  /**
+   * Resolved from the *unfiltered* list on purpose.
+   *
+   * This maps an existing block to its type for rendering, so it must still find a type the add
+   * buttons below no longer offer — an ancestor, or one dropped from `allowedBlocks` after the
+   * block was placed. Filtering here would render stored content as "Unknown block".
+   */
   const byApiId = new Map(blockTypes.map((type) => [type.api_id, type]));
   const atLimit = maxBlocks !== undefined && value.length >= maxBlocks;
+
+  /** Types this field may *add*: what it permits, less anything already open above it. */
+  const placeable = blockTypes.filter((type) => !ancestorTypes.includes(type.api_id));
+
+  /**
+   * What a block field inside one of these blocks may offer: the catalogue, less this chain.
+   *
+   * Computed here rather than in the nested editor so the chain grows in one place as it descends.
+   */
+  const nestableTypes = (allBlockTypes ?? blockTypes).filter(
+    (type) => !ancestorTypes.includes(type.api_id),
+  );
 
   function move(from: number, to: number) {
     if (to < 0 || to >= value.length) return;
@@ -248,9 +293,13 @@ export function BlockListEditor({
           disabled={disabled}
           termsByTaxonomy={termsByTaxonomy}
           media={media}
+          relationTargets={relationTargets}
           reusable={block.ref ? reusableBlocks.find((e) => e.id === block.ref) : undefined}
           canPromote={canPromote && !disabled}
           promoting={promoting === block.id}
+          blockTypes={nestableTypes}
+          reusableBlocks={reusableBlocks}
+          ancestorTypes={ancestorTypes}
           onToggle={() => toggleCollapsed(block.id)}
           onMoveUp={() => move(index, index - 1)}
           onMoveDown={() => move(index, index + 1)}
@@ -292,9 +341,16 @@ export function BlockListEditor({
 
       {!disabled && (
         <div className="mt-3">
-          {blockTypes.length === 0 ? (
+          {placeable.length === 0 ? (
             <p className="rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-xs text-content-subtle">
-              No block types are available for this field. Create some under Settings â†’ Block types.
+              {blockTypes.length === 0
+                ? 'No block types are available for this field. Create some under Settings → Block types.'
+                : /*
+                     Naming the reason matters: the advice above is useless here, because the list
+                     is empty from the ancestor exclusion rather than from an empty catalogue.
+                     Creating more block types would change nothing.
+                   */
+                  'Every block type this field allows is already open further up, so adding one here would nest it inside itself.'}
             </p>
           ) : atLimit ? (
             <p className="text-xs text-content-subtle">
@@ -311,7 +367,7 @@ export function BlockListEditor({
                 about which control commits it.
               */}
               <div aria-labelledby={`${id}-add`} className="mt-1.5 flex flex-wrap gap-2">
-                {blockTypes.map((blockType) => (
+                {placeable.map((blockType) => (
                   <button
                     key={blockType.id}
                     type="button"
@@ -366,10 +422,22 @@ interface RowProps {
   disabled: boolean;
   termsByTaxonomy?: Record<string, TermOption[]>;
   media?: MediaOption[];
+  relationTargets?: Record<string, RelationTarget>;
   /** The library entry this block references, when it is a reference rather than page content. */
   reusable?: ReusableBlockOption;
   canPromote: boolean;
   promoting: boolean;
+  /**
+   * Everything needed for a `block` field *inside* this block to work.
+   *
+   * These were not passed down originally, so a nested block field reached `FieldControl` with no
+   * block types and told the editor "No block types are available for this field. Create some
+   * under Settings → Block types" — advice that could not help, because the list was empty for a
+   * reason that had nothing to do with how many block types existed.
+   */
+  blockTypes: BlockTypeOption[];
+  reusableBlocks: ReusableBlockOption[];
+  ancestorTypes: string[];
   onToggle: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -389,9 +457,13 @@ function BlockRow({
   disabled,
   termsByTaxonomy,
   media,
+  relationTargets,
   reusable,
   canPromote,
   promoting,
+  blockTypes,
+  reusableBlocks,
+  ancestorTypes,
   onToggle,
   onMoveUp,
   onMoveDown,
@@ -567,6 +639,19 @@ function BlockRow({
               value={(reusable ? reusable.data : block.data)[field.api_id]}
               termsByTaxonomy={termsByTaxonomy}
               media={media}
+              relationTargets={relationTargets}
+              /**
+               * Everything a nested `block` field needs, carried down rather than dropped.
+               *
+               * This block's own type joins the ancestor chain, so a type can never offer itself
+               * further in. Promotion is deliberately not offered inside a nested block: the
+               * library stores a block and its data, and promoting one that itself contains
+               * blocks would make "what does this entry contain" depend on when it was promoted.
+               */
+              blockTypes={blockTypes}
+              reusableBlocks={reusableBlocks}
+              canPromote={false}
+              ancestorTypes={[...ancestorTypes, block.type]}
               preview={disabled || Boolean(reusable)}
               // Two blocks of the same type share one field definition, so the block's own id is
               // what keeps their inputs from colliding on a duplicate DOM id.

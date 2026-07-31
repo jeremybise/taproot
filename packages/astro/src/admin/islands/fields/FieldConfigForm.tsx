@@ -564,7 +564,7 @@ const BlockConfig: ConfigForm = ({ config, onChange, blockTypes = [] }) => {
 };
 
 const RepeaterConfig: ConfigForm = () => (
-  <NoOptions note="Repeaters arrive in Phase 2 alongside blocks. No options to configure yet." />
+  <NoOptions note="The repeater editor is not built yet, so there is nothing to configure. A field of this type can be defined, and its stored values are preserved." />
 );
 
 /**

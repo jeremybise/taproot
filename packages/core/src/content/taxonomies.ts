@@ -438,9 +438,26 @@ export async function reorderTerms(
 /**
  * Every item id carrying any term in a branch.
  *
- * Classification only. A term says what content is about, never who may edit it — permissions are
- * a separate model in Phase 3, deliberately not built on this. See SCOPE.md.
+ * Classification only. A term says what content is about, never who may edit it: roles are flat
+ * and site-wide, and nothing anywhere derives a permission from a term. See SCOPE.md.
  */
+/**
+ * A term and everything beneath it, as ids.
+ *
+ * What a term filter actually means: filing something under "Sciences" should find it when someone
+ * filters by "Academics". Separated from `itemIdsInTermBranch` because the item list wants to
+ * *narrow a query* by the branch rather than pull every member id into memory and filter in JS —
+ * which is what the public term archive does, and what stops being reasonable at a few thousand
+ * items.
+ */
+export async function termIdsForBranch(
+  db: Kysely<Database>,
+  rootTermId: string,
+): Promise<string[]> {
+  const subtree = await getTermSubtree(db, rootTermId);
+  return subtree.map((node) => node.id);
+}
+
 export async function itemIdsInTermBranch(
   db: Kysely<Database>,
   rootTermId: string,

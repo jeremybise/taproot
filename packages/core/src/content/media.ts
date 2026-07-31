@@ -110,3 +110,64 @@ export function mediaMatchesAccept(mimeType: string, accept: string[] | undefine
   const prefixes = (accept ?? []).filter((prefix) => prefix.trim() !== '');
   return prefixes.length === 0 || prefixes.some((prefix) => mimeType.startsWith(prefix));
 }
+
+/**
+ * What deleting this asset would break.
+ *
+ * All warnings, no blockers, and that asymmetry with content items is deliberate. A missing image
+ * degrades in place — the alt text still describes it, the layout still holds, the page still
+ * serves — whereas an item deleted out from under its own children leaves the tree describing a
+ * shape it no longer has. Refusing to delete an image because some page uses it would make the
+ * library impossible to tidy, since the useful assets are exactly the used ones.
+ *
+ * `default_og_image_id` is checked because it is inherited rather than copied: clearing it changes
+ * the social card of every item that never set its own, which is a bigger blast radius than the
+ * one page an editor is looking at.
+ */
+export async function mediaDeleteImpact(
+  db: Kysely<Database>,
+  mediaId: string,
+): Promise<{ blockers: string[]; warnings: string[] }> {
+  const warnings: string[] = [];
+
+  const types = await db
+    .selectFrom('content_types')
+    .select('name')
+    .where('default_og_image_id', '=', mediaId)
+    .execute();
+
+  if (types.length > 0) {
+    warnings.push(
+      `It is the default social image for ${types.map((type) => type.name).join(', ')}. ` +
+        'Every item of those types that has not set its own loses its social card.',
+    );
+  }
+
+  /**
+   * A `LIKE` over `data`, the same prefilter `countBlockUsage` uses.
+   *
+   * A media field stores a bare id, and so does the SEO panel's `ogImageId`, so there is no key
+   * shape to match on the way a block envelope has one. Over-reporting here costs a warning that
+   * names one page too many; under-reporting would silently break a page.
+   */
+  const usedIn = await db
+    .selectFrom('content_items')
+    .select(['title', 'path'])
+    .where((eb) =>
+      eb.or([eb('data', 'like', `%${mediaId}%`), eb('seo', 'like', `%${mediaId}%`)]),
+    )
+    .orderBy('path')
+    .limit(20)
+    .execute();
+
+  if (usedIn.length > 0) {
+    const titles = usedIn
+      .slice(0, 5)
+      .map((row) => row.title)
+      .join(', ');
+    const more = usedIn.length > 5 ? `, and ${usedIn.length - 5} more` : '';
+    warnings.push(`${usedIn.length} content item(s) use it: ${titles}${more}.`);
+  }
+
+  return { blockers: [], warnings };
+}

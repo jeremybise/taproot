@@ -92,6 +92,19 @@ export interface ItemFilters {
   status?: ContentStatus;
   parentId?: string | null;
   search?: string;
+  /**
+   * Term ids to filter by — an item carrying any one of them matches.
+   *
+   * A *list* rather than a single id because a term filter means the whole branch: filing something
+   * under "Sciences" should find it when someone filters by "Academics". The expansion is the
+   * caller's, through `termIdsForBranch`, so this stays a synchronous query builder that the status
+   * counts can share.
+   *
+   * `undefined` means no filter. An empty array means *nothing matches*, following `listMedia`'s
+   * precedent — with `in ()` being a syntax error, the tempting fallthrough is the dangerous one,
+   * because it silently turns "filter by a term with no members" into "show everything".
+   */
+  termIds?: string[];
 }
 
 type ItemQuery = SelectQueryBuilder<Database, 'content_items', {}>;
@@ -119,6 +132,35 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
     q = q.where((eb) =>
       eb.or([eb(sql`lower(title)`, 'like', needle), eb(sql`lower(path)`, 'like', needle)]),
     );
+  }
+
+  if (filters.termIds !== undefined) {
+    const termIds = filters.termIds;
+
+    /**
+     * A correlated EXISTS against the derived assignment index.
+     *
+     * This is the read `taxonomy_assignments` exists to serve. Tags are authored into `data` and
+     * the table is rebuilt from them, which looks like redundancy worth removing — what it buys is
+     * exactly this: filtering a list by term without scanning every row and parsing its JSON blob.
+     * The index shipped with the taxonomy work and this query never did, so until now the argument
+     * for keeping it had no caller to point at.
+     *
+     * EXISTS rather than `id IN (subquery)` so an item carrying three terms in the branch still
+     * counts once, without a DISTINCT over the join.
+     */
+    q =
+      termIds.length === 0
+        ? q.where(sql<boolean>`1 = 0`)
+        : q.where((eb) =>
+            eb.exists(
+              eb
+                .selectFrom('taxonomy_assignments')
+                .select('taxonomy_assignments.content_item_id')
+                .whereRef('taxonomy_assignments.content_item_id', '=', 'content_items.id')
+                .where('taxonomy_assignments.term_id', 'in', termIds),
+            ),
+          );
   }
 
   return q;
@@ -595,8 +637,231 @@ export async function restoreRevision(
   });
 }
 
+/**
+ * What has to be cleared before this item can be deleted, and what merely changes if it is.
+ *
+ * Same shape and same reasoning as `contentTypeDeleteBlockers`: one function that both the guard
+ * and the screen read, so a screen cannot work out for itself that a delete would succeed and then
+ * be refused. Blockers are phrased as standalone clauses so they read correctly both bulleted and
+ * after the error's `Cannot delete X:` prefix.
+ *
+ * The split between the two lists is the difference between a broken invariant and a consequence.
+ * Descendants block, because `parent_id` is `ON DELETE SET NULL` and the delete would leave them
+ * at root with a `path` and `depth` still describing where they used to be — the materialised path
+ * and the tree would disagree, which nothing downstream expects. A menu entry or an incoming
+ * relation is a consequence: both already degrade visibly and on purpose, so the editor should be
+ * told rather than stopped.
+ */
+export interface ItemDeleteImpact {
+  blockers: string[];
+  warnings: string[];
+}
+
+export async function itemDeleteImpact(
+  db: Kysely<Database>,
+  itemId: string,
+): Promise<ItemDeleteImpact> {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+
+  const item = await db
+    .selectFrom('content_items')
+    .select(['id', 'path'])
+    .where('id', '=', itemId)
+    .executeTakeFirst();
+
+  if (!item) return { blockers: ['it no longer exists.'], warnings };
+
+  const children = await db
+    .selectFrom('content_items')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .where('parent_id', '=', itemId)
+    .executeTakeFirst();
+
+  const childCount = Number(children?.count ?? 0);
+  if (childCount > 0) {
+    blockers.push(
+      `${childCount} item(s) sit beneath it. Move or delete them first, or they are left at the ` +
+        'top level with URLs that still describe the old position.',
+    );
+  }
+
+  const menuEntries = await db
+    .selectFrom('menu_items')
+    .innerJoin('menus', 'menus.id', 'menu_items.menu_id')
+    .select(['menus.name as menu_name'])
+    .where('menu_items.content_item_id', '=', itemId)
+    .execute();
+
+  if (menuEntries.length > 0) {
+    const names = [...new Set(menuEntries.map((entry) => entry.menu_name))].join(', ');
+    warnings.push(
+      `${menuEntries.length} menu item(s) point at it, in: ${names}. They stay in the admin as ` +
+        'broken entries and stop rendering on the site.',
+    );
+  }
+
+  const referencing = await itemsReferencing(db, itemId, 20);
+  if (referencing.length > 0) {
+    const titles = referencing
+      .slice(0, 5)
+      .map((reference) => reference.title)
+      .join(', ');
+    const more = referencing.length > 5 ? `, and ${referencing.length - 5} more` : '';
+    warnings.push(
+      `${referencing.length} item(s) reference it through a relation field: ${titles}${more}. ` +
+        'Those fields keep the id and show it as missing.',
+    );
+  }
+
+  return { blockers, warnings };
+}
+
+export class ItemError extends Error {
+  constructor(
+    message: string,
+    readonly code: 'in_use',
+  ) {
+    super(message);
+    this.name = 'ItemError';
+  }
+}
+
 export async function deleteItem(handle: TaprootDb, id: string): Promise<void> {
+  const { blockers } = await itemDeleteImpact(handle.db, id);
+  if (blockers.length > 0) {
+    // Enforced here rather than only in the route, so the REST API cannot do what the admin
+    // refuses. The editor is not the boundary.
+    throw new ItemError(`Cannot delete this item: ${blockers[0]}`, 'in_use');
+  }
+
   await handle.db.deleteFrom('content_items').where('id', '=', id).execute();
+}
+
+/** One item pointing at another through a `relation` field. */
+export interface IncomingReference {
+  id: string;
+  title: string;
+  path: string;
+  status: ContentStatus;
+  /** The relation field on the referring item that points here. */
+  fieldApiId: string;
+  fieldLabel: string;
+  /**
+   * What this side of the relationship is called, from the field's `reverseLabel`.
+   *
+   * The config has collected this since the field type was designed and nothing ever read it,
+   * which is what made the reverse side of a relation a promise rather than a feature.
+   */
+  reverseLabel: string | null;
+  contentTypeName: string;
+}
+
+/**
+ * Which items point at this one through a relation field.
+ *
+ * The reverse side of `relation`, which SCOPE names as the thing Wolly gets wrong. Without it a
+ * relation is one-directional in practice: an editor looking at a page has no way to know what
+ * depends on it, and finds out by deleting it.
+ *
+ * Two steps, and the first is what makes the second honest. Relation targets live in another
+ * type's JSON `config`, so the set of fields that *could* point here is found by reading the
+ * `fields` table; only then is `content_items.data` searched, narrowed to the types that own one
+ * of those fields. A `LIKE` for the bare id across every item would also match the id sitting in
+ * a text field or a block's media reference, and would report a relationship that does not exist.
+ *
+ * Same trade as `countBlockUsage`: relation values live inside a JSON blob and have no rows of
+ * their own, so this cannot be an indexed join. It runs on one screen and when deleting an item,
+ * and is bounded by `limit`.
+ */
+export async function itemsReferencing(
+  db: Kysely<Database>,
+  itemId: string,
+  limit = 50,
+): Promise<IncomingReference[]> {
+  const item = await db
+    .selectFrom('content_items')
+    .select('content_type_id')
+    .where('id', '=', itemId)
+    .executeTakeFirst();
+
+  if (!item) return [];
+
+  const relationFields = await db
+    .selectFrom('fields')
+    .selectAll()
+    .where('type', '=', 'relation')
+    .execute();
+
+  const pointingHere = relationFields.filter((field) => {
+    try {
+      const config = JSON.parse(field.config) as { targetContentTypeId?: string | null };
+      return config.targetContentTypeId === item.content_type_id;
+    } catch {
+      return false;
+    }
+  });
+
+  if (pointingHere.length === 0) return [];
+
+  const ownerTypeIds = [...new Set(pointingHere.map((field) => field.content_type_id))];
+
+  const candidates = await db
+    .selectFrom('content_items')
+    .innerJoin('content_types', 'content_types.id', 'content_items.content_type_id')
+    .select([
+      'content_items.id as id',
+      'content_items.title as title',
+      'content_items.path as path',
+      'content_items.status as status',
+      'content_items.content_type_id as content_type_id',
+      'content_items.data as data',
+      'content_types.name as content_type_name',
+    ])
+    .where('content_items.content_type_id', 'in', ownerTypeIds)
+    .where('content_items.data', 'like', `%${itemId}%`)
+    .orderBy('content_items.path')
+    .execute();
+
+  const references: IncomingReference[] = [];
+
+  for (const candidate of candidates) {
+    const data = parseJson<Record<string, unknown>>(candidate.data, {});
+
+    for (const field of pointingHere) {
+      if (field.content_type_id !== candidate.content_type_id) continue;
+
+      // Checked against the field's own key rather than trusting the `LIKE`, which is only a
+      // prefilter — it matches the id anywhere in the blob, including places that are not a
+      // relation to it at all.
+      const stored = data[field.api_id];
+      const points = Array.isArray(stored) ? stored.includes(itemId) : stored === itemId;
+      if (!points) continue;
+
+      let reverseLabel: string | null = null;
+      try {
+        reverseLabel =
+          (JSON.parse(field.config) as { reverseLabel?: string }).reverseLabel ?? null;
+      } catch {
+        // A malformed config costs the group its name, not the reference its visibility.
+      }
+
+      references.push({
+        id: candidate.id,
+        title: candidate.title,
+        path: candidate.path,
+        status: candidate.status as ContentStatus,
+        fieldApiId: field.api_id,
+        fieldLabel: field.label,
+        reverseLabel,
+        contentTypeName: candidate.content_type_name,
+      });
+
+      if (references.length >= limit) return references;
+    }
+  }
+
+  return references;
 }
 
 // ---------------------------------------------------------------------------
@@ -736,7 +1001,19 @@ function buildRedirectStatements(
 
   for (const rewrite of moved) {
     statements.push(
-      db.deleteFrom('redirects').where('from_path', '=', rewrite.newPath),
+      /**
+       * Automatic rows only. `source: 'manual'` is documented on the table as "author-created and
+       * never GC'd", and now that authors can create them, this is where that promise is kept.
+       *
+       * Keeping the row is safe as well as promised: the catch-all resolves a content item before
+       * it consults the redirect table, so a manual redirect leaving a path a live item now
+       * occupies is simply inert — and becomes correct again the moment that item moves away,
+       * which is the situation the author wrote it for.
+       */
+      db
+        .deleteFrom('redirects')
+        .where('from_path', '=', rewrite.newPath)
+        .where('source', '=', 'auto'),
 
       db
         .insertInto('redirects')

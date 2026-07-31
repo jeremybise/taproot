@@ -1,0 +1,115 @@
+---
+/**
+ * The delete affordance, shared by every screen that has one.
+ *
+ * Extracted from `DeleteContentType`, which was already one component serving two screens for the
+ * reason that applies here too: the screens differ in the noun and in what is at stake, not in
+ * behaviour, and a second copy is what lets one of them quietly keep an outdated confirmation or
+ * drop the blocker list.
+ *
+ * `blockers` must come from the same function the delete guard reads — `contentTypeDeleteBlockers`,
+ * `itemDeleteImpact`, `mediaDeleteImpact` — never from a count the page worked out for itself. A
+ * screen that decides for itself whether a delete would succeed drifts the moment a blocker is
+ * added, and the failure mode is a button that is offered and then refused.
+ *
+ * `warnings` is the other half of that: consequences that are real but not disqualifying. Showing
+ * them beside the confirmation rather than blocking on them is what keeps the guard list meaning
+ * "this will fail" instead of "someone thought twice about this".
+ */
+interface Props {
+  /** What is being deleted, lowercase: "content item", "media asset", "block type". */
+  noun: string;
+  /** The string that has to be typed to confirm. Short and unambiguous — a slug or an api_id. */
+  confirmToken: string;
+  /** Form action for the delete. */
+  action: string;
+  blockers: string[];
+  warnings?: string[];
+  /** Why it cannot be deleted, shown above the blocker list. */
+  blockedIntro?: string;
+  /** What deleting does, shown above the confirmation. */
+  allowedIntro?: string;
+}
+
+const {
+  noun,
+  confirmToken,
+  action,
+  blockers,
+  warnings = [],
+  blockedIntro = `This ${noun} cannot be deleted yet. The following have to be cleared first:`,
+  allowedIntro = `Deleting this ${noun} cannot be undone.`,
+} = Astro.props;
+
+const confirmId = 'delete-confirm';
+---
+
+<section aria-labelledby="delete-heading" class="mt-12 border-t border-border pt-8">
+  <h2 id="delete-heading" class="text-base font-semibold">Delete this {noun}</h2>
+
+  {
+    blockers.length > 0 ? (
+      <>
+        <p class="mt-1 max-w-prose text-sm text-content-muted">{blockedIntro}</p>
+        <ul class="mt-3 max-w-prose list-disc space-y-1 pl-5 text-sm text-content-muted">
+          {blockers.map((blocker) => (
+            <li>{blocker}</li>
+          ))}
+        </ul>
+      </>
+    ) : (
+      <>
+        <p class="mt-1 max-w-prose text-sm text-content-muted">{allowedIntro}</p>
+
+        {warnings.length > 0 && (
+          <div class="mt-3 max-w-prose rounded-md border border-warning bg-warning-subtle px-4 py-3">
+            <p class="text-sm font-medium">What this will change</p>
+            <ul class="mt-1.5 list-disc space-y-1 pl-5 text-sm">
+              {warnings.map((warning) => (
+                <li>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/*
+          The confirmation is a short machine-ish token rather than the display name: it is
+          unambiguous and shown right above the input, where a display name can carry punctuation
+          that makes an exact match a guessing game.
+        */}
+        <form
+          method="post"
+          action={action}
+          class="mt-4 flex max-w-xl flex-wrap items-end gap-3 rounded-lg border border-danger bg-surface-raised p-4"
+        >
+          <input type="hidden" name="_method" value="delete" />
+
+          <div class="min-w-56 flex-1">
+            <label for={confirmId} class="block text-sm font-medium">
+              Type <code class="font-mono">{confirmToken}</code> to confirm
+            </label>
+            <input
+              id={confirmId}
+              name="confirm"
+              required
+              autocomplete="off"
+              spellcheck="false"
+              aria-describedby={`${confirmId}-help`}
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+            />
+            <p id={`${confirmId}-help`} class="mt-1.5 text-xs text-content-subtle">
+              Checked on the server, so nothing is deleted by a stray press of Enter.
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            class="rounded-md bg-danger px-4 py-2 text-sm font-medium text-danger-content transition-colors hover:bg-danger-hover"
+          >
+            Delete {noun}
+          </button>
+        </form>
+      </>
+    )
+  }
+</section>

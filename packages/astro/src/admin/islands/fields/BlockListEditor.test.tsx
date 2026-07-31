@@ -225,6 +225,87 @@ describe('editing a block', () => {
   });
 });
 
+describe('a block field inside a block', () => {
+  /**
+   * A `section` block whose own `blocks` field holds more blocks.
+   *
+   * Nothing prevented an author defining this — the field builder renders every field type for a
+   * block type — but the editor never passed the block catalogue into a nested field, so it
+   * rendered "No block types are available for this field. Create some under Settings → Block
+   * types" and no amount of creating block types helped. There was no test, which is why.
+   */
+  const section = blockType({
+    id: 'bt-section',
+    api_id: 'section',
+    name: 'Section',
+    fields: [
+      field({
+        id: 'f3',
+        content_type_id: 'section',
+        api_id: 'blocks',
+        label: 'Blocks',
+        type: 'block',
+      }),
+    ],
+  });
+
+  const nested = [{ id: 's', type: 'section', data: { blocks: [] } }];
+
+  it('offers block types inside the nested field', () => {
+    setup({ value: nested, blockTypes: [section, hero, quote] });
+
+    // The outer field's own add buttons, plus the nested field's.
+    expect(screen.getAllByRole('button', { name: '+ Hero' })).toHaveLength(2);
+    expect(screen.queryByText(/No block types are available/)).toBeNull();
+  });
+
+  it('does not offer a block type inside itself', () => {
+    setup({ value: nested, blockTypes: [section, hero, quote] });
+
+    // "+ Section" exists once, at the top level. Offering it again inside a Section is the one
+    // arrangement that lets an editor descend forever.
+    expect(screen.getAllByRole('button', { name: '+ Section' })).toHaveLength(1);
+  });
+
+  it('says why the nested list is empty when every type is an ancestor', () => {
+    // The old copy sent the editor to Settings → Block types, which could not have helped: the
+    // list is empty because of where they are, not because of what exists.
+    setup({ value: nested, blockTypes: [section] });
+
+    expect(screen.getByText(/already open further up/)).toBeTruthy();
+    expect(screen.queryByText(/Create some under Settings/)).toBeNull();
+  });
+
+  it('does not apply the outer field allowedBlocks to the nested one', () => {
+    // FieldControl narrows `blockTypes` by this field's `allowedBlocks` before handing it over, so
+    // the catalogue has to travel separately or a Section allowing only Sections would leave its
+    // own block field able to hold nothing.
+    setup({
+      value: nested,
+      blockTypes: [section],
+      allBlockTypes: [section, hero, quote],
+    });
+
+    expect(screen.getByRole('button', { name: '+ Hero' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '+ Quote' })).toBeTruthy();
+  });
+
+  it('writes a nested block back through the outer block data', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup({ value: nested, blockTypes: [section, hero, quote] });
+
+    // Scoped to the Section's row rather than picked out of the flat list by index: the outer
+    // field's add buttons render after the list, so an index here would silently mean the other
+    // one and the test would pass against the wrong control.
+    const row = screen.getByRole('listitem');
+    await user.click(within(row).getByRole('button', { name: '+ Quote' }));
+
+    const next = onChange.mock.calls.at(-1)![0];
+    expect(next[0].data.blocks).toHaveLength(1);
+    expect((next[0].data.blocks as { type: string }[])[0]!.type).toBe('quote');
+  });
+});
+
 describe('a block whose type no longer exists', () => {
   it('shows an error rather than rendering nothing', () => {
     // Deleting a block type in use is refused, so this is unusual — but silently dropping the

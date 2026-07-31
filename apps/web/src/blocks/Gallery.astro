@@ -1,5 +1,6 @@
 ---
 import { getTaproot } from '@taproot/astro/runtime/guards';
+import { TaprootImage } from '@taproot/astro/components';
 
 /**
  * A block template.
@@ -18,10 +19,24 @@ const taproot = getTaproot(Astro.locals);
 
 const ids = Array.isArray(images) ? images : [];
 
+// One query for the whole gallery, and it selects the crop columns because `TaprootImage` resolves
+// the focal point per image rather than centre-cropping all of them alike.
 const rows = ids.length
   ? await taproot.db.db
       .selectFrom('media')
-      .select(['id', 'storage_key', 'alt_text'])
+      .select([
+        'id',
+        'storage_key',
+        'alt_text',
+        'width',
+        'height',
+        'hotspot_x',
+        'hotspot_y',
+        'crop_top',
+        'crop_right',
+        'crop_bottom',
+        'crop_left',
+      ])
       .where('id', 'in', ids)
       .execute()
   : [];
@@ -44,13 +59,9 @@ const assets = ids
         {assets.map((asset) => (
           <li>
             {/* Alt text comes from the media library, where it is authored once and reused
-                everywhere the asset appears. An empty string is the correct value for an image
-                the editor marked decorative, so it is passed through rather than defaulted. */}
-            <img
-              src={taproot.storage.publicUrl(asset.storage_key)}
-              alt={asset.alt_text ?? ''}
-              loading="lazy"
-            />
+                everywhere the asset appears — `TaprootImage` reads it from the row unless a call
+                site overrides it, and an empty string stays an empty string. */}
+            <TaprootImage asset={asset} ratio={4 / 3} class="gallery-image" />
           </li>
         ))}
       </ul>
@@ -71,11 +82,12 @@ const assets = ids
     padding: 0;
     list-style: none;
   }
-  .gallery img {
-    display: block;
-    width: 100%;
-    aspect-ratio: 4 / 3;
-    object-fit: cover;
+  /*
+    The 4:3 box is the component's, from the ratio it was given — the same number that resolved the
+    crop. Setting `aspect-ratio` here as well would let the two drift, and the image would be
+    letterboxed inside a frame of a shape it was not cropped for.
+  */
+  .gallery :global(.gallery-image) {
     border-radius: 0.375rem;
   }
   .gallery figcaption {

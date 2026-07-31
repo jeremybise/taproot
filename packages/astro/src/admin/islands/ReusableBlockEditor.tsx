@@ -2,6 +2,7 @@
 import type { FieldRow } from '@taproot/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
+import type { RelationTarget } from '../relationOptions.js';
 import type { MediaOption } from '../mediaOptions.js';
 
 /**
@@ -17,6 +18,7 @@ interface Props {
   fields: FieldRow[];
   initial: { name: string; description: string; data: Record<string, unknown> };
   termsByTaxonomy?: Record<string, TermOption[]>;
+  relationTargets?: Record<string, RelationTarget>;
   media?: MediaOption[];
   usageCount: number;
   canEdit: boolean;
@@ -27,6 +29,7 @@ export default function ReusableBlockEditor({
   fields,
   initial,
   termsByTaxonomy,
+  relationTargets,
   media,
   usageCount,
   canEdit,
@@ -137,6 +140,7 @@ export default function ReusableBlockEditor({
               value={data[field.api_id]}
               errors={errors[field.api_id]}
               termsByTaxonomy={termsByTaxonomy}
+              relationTargets={relationTargets}
               media={media}
               preview={!canEdit}
               onChange={(value) => setData({ ...data, [field.api_id]: value })}

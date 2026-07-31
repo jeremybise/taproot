@@ -7,6 +7,7 @@ import {
   cropOf,
   cropRect,
   hotspotOf,
+  cropFrame,
   resolveCrop,
 } from './imageCrop.js';
 
@@ -210,6 +211,71 @@ describe('cropBackground', () => {
         // A background can never need to be smaller than its box; that would letterbox.
         for (const part of css.backgroundSize.split(' ')) {
           expect(Number.parseFloat(part)).toBeGreaterThanOrEqual(100 - 1e-6);
+        }
+      }
+    }
+  });
+});
+
+describe('cropFrame', () => {
+  it('leaves an uncropped image at natural size and origin', () => {
+    expect(cropFrame({ x: 0, y: 0, width: 1, height: 1 })).toEqual({
+      width: '100.000%',
+      height: '100.000%',
+      left: '0.000%',
+      top: '0.000%',
+    });
+  });
+
+  it('scales by the inverse of the rectangle and offsets in the scaled space', () => {
+    // Showing the right-hand half means an image twice as wide, slid left by its own half-width —
+    // which in the scaled element's own percentage terms is 100%, not 50%.
+    expect(cropFrame({ x: 0.5, y: 0, width: 0.5, height: 1 })).toEqual({
+      width: '200.000%',
+      height: '100.000%',
+      left: '-100.000%',
+      top: '0.000%',
+    });
+  });
+
+  it('never divides by a zero-sized rectangle', () => {
+    // Cannot arise from `resolveCrop`, whose insets are refused past 0.9 — but this is exported,
+    // and Infinity here would blank the image rather than fail loudly.
+    expect(cropFrame({ x: 0, y: 0, width: 0, height: 0 })).toEqual({
+      width: '100.000%',
+      height: '100.000%',
+      left: '0.000%',
+      top: '0.000%',
+    });
+  });
+
+  it('keeps the image undistorted for every orientation and target ratio', () => {
+    /**
+     * The property the whole component rests on.
+     *
+     * Scaling width and height by their own inverses only lands back on the image's natural
+     * proportions because `resolveCrop` returns a rectangle whose *real-pixel* aspect is the
+     * target. If that ever stopped holding, every cropped image on every site would stretch, and
+     * it is the kind of wrong that looks like a CSS bug rather than a maths one.
+     */
+    const sources = [
+      { width: 1600, height: 900 },
+      { width: 900, height: 1600 },
+      { width: 1200, height: 1200 },
+    ];
+    const ratios = [16 / 9, 1200 / 630, 1, 3 / 4, 16 / 5];
+
+    for (const source of sources) {
+      for (const ratio of ratios) {
+        for (const hotspot of [0, 0.5, 1]) {
+          const media = { ...source, hotspot_x: hotspot, hotspot_y: hotspot };
+          const frame = cropFrame(resolveCrop(media, ratio));
+
+          const pct = (value: string) => Number.parseFloat(value) / 100;
+          // The rendered element's aspect, given a container of `ratio`.
+          const rendered = (ratio * pct(frame.width)) / pct(frame.height);
+
+          expect(rendered).toBeCloseTo(source.width / source.height, 3);
         }
       }
     }

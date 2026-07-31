@@ -7,6 +7,15 @@ import type { ContentStatus } from '@taproot/core';
  * in the editor teaches editors that the colour means nothing. The item editor imports the same
  * labels it renders in its status select.
  */
+/**
+ * Presentation only. Which statuses a role may *set* is a permission question and lives in
+ * `runtime/guards.ts`.
+ *
+ * This module used to carry a `needsPublish` flag as well. The editor's status select honoured it,
+ * but the three API routes that enforce publishing each hardcoded `status === 'published'` instead
+ * — so the one place naming the rule was the one place not enforcing it, and `scheduled` and
+ * `archived` were gated in the dropdown and open at the boundary.
+ */
 export interface StatusMeta {
   label: string;
   /**
@@ -17,8 +26,6 @@ export interface StatusMeta {
    * to stay literal strings.
    */
   badgeClass: string;
-  /** Whether moving an item into this status requires the editor role or higher. */
-  needsPublish: boolean;
   /**
    * Whether the editor offers this status.
    *
@@ -41,31 +48,26 @@ export const STATUS_META: Record<ContentStatus, StatusMeta> = {
   draft: {
     label: 'Draft',
     badgeClass: 'border-status-draft bg-status-draft-subtle',
-    needsPublish: false,
     settable: true,
   },
   in_review: {
     label: 'In review',
     badgeClass: 'border-status-review bg-status-review-subtle',
-    needsPublish: false,
     settable: true,
   },
   scheduled: {
     label: 'Scheduled',
     badgeClass: 'border-status-scheduled bg-status-scheduled-subtle',
-    needsPublish: true,
     settable: false,
   },
   published: {
     label: 'Published',
     badgeClass: 'border-status-published bg-status-published-subtle',
-    needsPublish: true,
     settable: true,
   },
   archived: {
     label: 'Archived',
     badgeClass: 'border-status-archived bg-status-archived-subtle',
-    needsPublish: true,
     settable: true,
   },
 };
@@ -82,7 +84,6 @@ export function statusMeta(status: string): StatusMeta {
     STATUS_META[status as ContentStatus] ?? {
       label: status.replace(/_/g, ' '),
       badgeClass: 'border-border bg-surface-sunken',
-      needsPublish: true,
       settable: false,
     }
   );

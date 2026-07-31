@@ -1,12 +1,13 @@
 ---
 import type { ContentTypeRow } from '@taproot/core';
+import DangerZone from './DangerZone.astro';
 
 /**
  * The delete affordance for a content type or a block type.
  *
- * One component for both screens, for the same reason `StatusBadge` is one component: the two
- * differ only in the noun, and a second copy is what lets one of them quietly keep an outdated
- * confirmation or drop the blocker list.
+ * A thin wrapper over `DangerZone` now that content items and media assets have one too — this
+ * keeps the two schema screens' wording, which is about content being left with no schema to
+ * render it, without a second copy of the confirmation form.
  *
  * `blockers` comes from `contentTypeDeleteBlockers`, never from a count the page worked out for
  * itself — the guard and this screen have to agree about whether the delete would succeed.
@@ -18,70 +19,13 @@ interface Props {
 
 const { contentType, blockers } = Astro.props;
 const noun = contentType.kind === 'block' ? 'block type' : 'content type';
-const confirmId = 'delete-confirm';
 ---
 
-<section aria-labelledby="delete-heading" class="mt-12 border-t border-border pt-8">
-  <h2 id="delete-heading" class="text-base font-semibold">Delete this {noun}</h2>
-
-  {
-    blockers.length > 0 ? (
-      <>
-        <p class="mt-1 max-w-prose text-sm text-content-muted">
-          This {noun} cannot be deleted yet. Deleting it would leave content behind with no schema
-          to render it, so the following have to be cleared first:
-        </p>
-        <ul class="mt-3 max-w-prose list-disc space-y-1 pl-5 text-sm text-content-muted">
-          {blockers.map((blocker) => (
-            <li>{blocker}</li>
-          ))}
-        </ul>
-      </>
-    ) : (
-      <>
-        <p class="mt-1 max-w-prose text-sm text-content-muted">
-          Nothing uses this {noun}, so it can be deleted. Its fields go with it, and this cannot be
-          undone.
-        </p>
-
-        {/*
-          The confirmation is the `api_id` rather than the display name: it is short, unambiguous,
-          and shown right above the input, where a display name can carry punctuation that makes an
-          exact match a guessing game.
-        */}
-        <form
-          method="post"
-          action={`/api/taproot/content-types/${contentType.id}`}
-          class="mt-4 flex max-w-xl flex-wrap items-end gap-3 rounded-lg border border-danger bg-surface-raised p-4"
-        >
-          <input type="hidden" name="_method" value="delete" />
-
-          <div class="min-w-56 flex-1">
-            <label for={confirmId} class="block text-sm font-medium">
-              Type <code class="font-mono">{contentType.api_id}</code> to confirm
-            </label>
-            <input
-              id={confirmId}
-              name="confirm"
-              required
-              autocomplete="off"
-              spellcheck="false"
-              aria-describedby={`${confirmId}-help`}
-              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
-            />
-            <p id={`${confirmId}-help`} class="mt-1.5 text-xs text-content-subtle">
-              Checked on the server, so nothing is deleted by a stray press of Enter.
-            </p>
-          </div>
-
-          <button
-            type="submit"
-            class="rounded-md bg-danger px-4 py-2 text-sm font-medium text-danger-content transition-colors hover:bg-danger-hover"
-          >
-            Delete {noun}
-          </button>
-        </form>
-      </>
-    )
-  }
-</section>
+<DangerZone
+  noun={noun}
+  confirmToken={contentType.api_id}
+  action={`/api/taproot/content-types/${contentType.id}`}
+  blockers={blockers}
+  blockedIntro={`This ${noun} cannot be deleted yet. Deleting it would leave content behind with no schema to render it, so the following have to be cleared first:`}
+  allowedIntro={`Nothing uses this ${noun}, so it can be deleted. Its fields go with it, and this cannot be undone.`}
+/>

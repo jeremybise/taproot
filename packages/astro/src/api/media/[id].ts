@@ -35,6 +35,47 @@ export const PATCH = handle(
   { role: 'contributor' },
 );
 
+/**
+ * POST carries the delete, because an HTML form can only GET or POST.
+ *
+ * Same shape as the content-type and content-item deletes — see `content-types/[id].ts`.
+ */
+export const POST = handle(
+  async ({ context, taproot }) => {
+    const id = context.params.id!;
+    const asset = await taproot.db.db
+      .selectFrom('media')
+      .select(['id', 'filename', 'storage_key'])
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    if (!asset) return apiError(404, 'Media asset not found.');
+
+    const form = await context.request.formData();
+    if (form.get('_method') !== 'delete') return apiError(400, 'Unsupported form action.');
+
+    if (String(form.get('confirm') ?? '').trim() !== asset.filename) {
+      return context.redirect(
+        `/admin/media/${id}?${new URLSearchParams({
+          error: `Type ${asset.filename} exactly to confirm. Nothing was deleted.`,
+        })}`,
+        303,
+      );
+    }
+
+    // Row first: a stored object with no row is invisible clutter, whereas a row pointing at a
+    // deleted object renders as a broken image on the live site.
+    await taproot.db.db.deleteFrom('media').where('id', '=', id).execute();
+    await taproot.storage.delete(asset.storage_key);
+
+    return context.redirect(
+      `/admin/media?${new URLSearchParams({ deleted: asset.filename })}`,
+      303,
+    );
+  },
+  { role: 'editor' },
+);
+
 export const DELETE = handle(
   async ({ context, taproot }) => {
     const asset = await taproot.db.db

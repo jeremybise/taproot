@@ -2,13 +2,16 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import ItemEditor from '../../islands/ItemEditor.tsx';
 import RevisionHistory from '../../components/RevisionHistory.astro';
+import ReferencedBy from '../../components/ReferencedBy.astro';
+import DangerZone from '../../components/DangerZone.astro';
 import { termOptionsForFields } from '../../termOptions.js';
+import { relationTargetsForFields } from '../../relationOptions.js';
 import {
   blockTypeOptionsForFields,
   reusableBlockOptionsForFields,
 } from '../../blockTypeOptions.js';
 import { findImage, mediaOptions } from '../../mediaOptions.js';
-import { getContentType, getItem, listItems } from '@taproot/core';
+import { getContentType, getItem, itemDeleteImpact, listItems } from '@taproot/core';
 import {
   getTaproot,
   loginRedirect,
@@ -39,6 +42,12 @@ if (contentType.kind === 'page') {
 
 const termsByTaxonomy = await termOptionsForFields(taproot.db.db, contentType.fields);
 
+const relationTargets = await relationTargetsForFields(
+  taproot.db.db,
+  contentType.fields,
+  item.data,
+);
+
 const blockTypes = await blockTypeOptionsForFields(taproot.db.db, contentType.fields);
 const reusableBlocks = await reusableBlockOptionsForFields(taproot.db.db, contentType.fields);
 
@@ -47,11 +56,25 @@ const reusableBlocks = await reusableBlockOptionsForFields(taproot.db.db, conten
 const media = await mediaOptions(taproot.db.db, taproot.storage);
 const defaultOgImage = findImage(media, contentType.default_og_image_id);
 
+/**
+ * Deleting is an editor's action, and a singleton has no delete at all — its whole contract is
+ * that exactly one exists, so removing it would leave the sidebar entry pointing at nothing until
+ * someone visited it again.
+ */
+const canDelete = canPublishContent(user) && contentType.kind !== 'singleton';
+const deleteImpact = canDelete
+  ? await itemDeleteImpact(taproot.db.db, item.id)
+  : { blockers: [], warnings: [] };
+
 const saved = Astro.url.searchParams.get('saved') === '1';
 const updated = Astro.url.searchParams.get('updated') === '1';
 const restored = Astro.url.searchParams.get('restored');
 
-const flash = saved
+const error = Astro.url.searchParams.get('error');
+
+const flash = error
+  ? error
+  : saved
   ? 'Content item created.'
   : updated
     ? 'Changes saved.'
@@ -119,6 +142,7 @@ const flash = saved
     }}
     parents={parents}
     termsByTaxonomy={termsByTaxonomy}
+    relationTargets={relationTargets}
     blockTypes={blockTypes}
     reusableBlocks={reusableBlocks}
     canPublish={canPublishContent(user)}
@@ -129,10 +153,26 @@ const flash = saved
     origin={Astro.url.origin}
   />
 
+  <ReferencedBy db={taproot.db.db} itemId={item.id} />
+
   <RevisionHistory
     db={taproot.db.db}
     itemId={item.id}
     fields={contentType.fields}
     canEdit={canEditContent(user)}
   />
+
+  {
+    canDelete && (
+      <DangerZone
+        noun="content item"
+        confirmToken={item.slug}
+        action={`/api/taproot/items/${item.id}`}
+        blockers={deleteImpact.blockers}
+        warnings={deleteImpact.warnings}
+        blockedIntro="This item cannot be deleted yet:"
+        allowedIntro="Deleting this item removes its content and its revision history. This cannot be undone."
+      />
+    )
+  }
 </AdminLayout>

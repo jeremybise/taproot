@@ -196,6 +196,42 @@ export function cropBackground(rect: CropRect): CropBackground {
 }
 
 /**
+ * The same rectangle, as an `<img>` scaled and offset inside an `aspect-ratio` box.
+ *
+ * `cropBackground` is the right answer for the editor's previews, where the frames are decorative
+ * and repeated. It is the wrong one for a page: a background image has no `alt`, is not fetched by
+ * `srcset`, and is skipped by every image-aware crawler. Delivery needs a real `<img>`, so the
+ * element is scaled up by the inverse of the rectangle and offset instead.
+ *
+ * No distortion, given the container carries the same aspect ratio the rectangle was resolved for:
+ * `resolveCrop` returns a rectangle whose *real-pixel* aspect is the target, so scaling width and
+ * height by their own inverses lands back on the image's natural proportions. That precondition is
+ * why the component owns the wrapper rather than leaving it to a caller's CSS.
+ */
+export interface CropFrame {
+  width: string;
+  height: string;
+  left: string;
+  top: string;
+}
+
+export function cropFrame(rect: CropRect): CropFrame {
+  const pct = (value: number) => `${(value * 100).toFixed(3)}%`;
+
+  // Guarded because a zero-width rectangle would divide to Infinity and blank the image. It cannot
+  // arise from `resolveCrop`, whose crop insets are refused past 0.9 — but this is exported.
+  const width = rect.width > 0 ? 1 / rect.width : 1;
+  const height = rect.height > 0 ? 1 / rect.height : 1;
+
+  return {
+    width: pct(width),
+    height: pct(height),
+    left: pct(-rect.x * width),
+    top: pct(-rect.y * height),
+  };
+}
+
+/**
  * The aspect ratios the editor previews.
  *
  * The point of showing several at once is that an editor picking a focal point is making one
