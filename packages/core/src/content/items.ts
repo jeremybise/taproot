@@ -588,9 +588,16 @@ export async function updateItem(
          * again months later, and the sweep sees a `publish_at` in the past and takes it live
          * immediately. Tying the value's lifetime to the status it belongs to is what stops that.
          */
+        /**
+         * `undefined` means "not provided"; `null` means "clear it". `??` cannot tell them apart,
+         * so writing it that way silently ignored a request to remove the date — the same class of
+         * bug as deriving a PATCH schema with `.partial()` and having a `.default()` survive.
+         */
         publish_at:
           status === 'scheduled'
-            ? (input.publishAt ?? existing.publish_at)
+            ? input.publishAt !== undefined
+              ? input.publishAt
+              : existing.publish_at
             : null,
         updated_by: input.userId ?? existing.updated_by,
         updated_at: timestamp,

@@ -27,7 +27,7 @@ of SCOPE.md before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 817 tests |
+| `npm test` | Vitest, 819 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -136,8 +136,14 @@ status to in_review" is how it used to be spelled — which is why nobody could 
 the feature work on a deployment where nobody wired up a cron, which is every deployment on day
 one. `publishDueItems` then makes the *stored* status agree. Only the sweep would let a missed cron
 silently hold a launch; only the read rule would leave the CMS lying about its own content.
-`publish_at` is cleared whenever the status leaves `scheduled`, in **both** paths — a stale time is
-a booby trap, because rescheduling later inherits a moment in the past, which means immediately.
+`publish_at` is cleared whenever the status leaves `scheduled`, in **both** write paths — a stale
+time is a booby trap, because rescheduling later inherits a moment in the past, which means
+immediately. On `updateItem` the value distinguishes `undefined` ("not provided", keep it) from
+`null` ("clear it"); `??` collapses the two and silently ignored a request to remove the date, the
+same shape as a `.partial()` PATCH schema keeping a `.default()`. Revisions deliberately do **not**
+snapshot it — a scheduled moment is an intention about the future, so restoring an old revision
+lands in `scheduled` with no date: invisible, never swept, and shown as an empty required field.
+Fails closed and says so.
 
 **The audit log is append-only and nothing may make it aimable.** `recordAuditEntry` never throws:
 the action it describes has already happened, and failing it would report a failure that did not

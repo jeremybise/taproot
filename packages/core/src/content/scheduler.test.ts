@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDb, type TaprootDb } from '../db/client.js';
 import { migrateToLatest } from '../db/migrations/index.js';
 import { createContentType, createField } from './types.js';
-import { createItem, getItemByPath, updateItem } from './items.js';
+import { createItem, getItemByPath, restoreRevision, updateItem } from './items.js';
 import { dueForPublishing, publishDueItems } from './scheduler.js';
 import { listAuditEntries } from './auditLog.js';
 import type { ContentTypeRow, FieldRow } from '../db/schema.js';
@@ -211,6 +211,43 @@ describe('publish_at’s lifetime', () => {
 
     const after = await getItemByPath(handle.db, item.path, { publishedOnly: false });
     expect(after?.publish_at).toBeNull();
+  });
+
+  it('can be cleared while the item stays scheduled', async () => {
+    const item = await scheduled('Due', iso(60_000));
+    await updateItem(handle, type, fields, item.id, { status: 'scheduled', publishAt: null });
+
+    const after = await getItemByPath(handle.db, item.path, { publishedOnly: false });
+    expect(after?.publish_at).toBeNull();
+  });
+
+  it('leaves a restored scheduled revision dateless rather than instantly live', async () => {
+    /**
+     * Revisions snapshot authored content, not `publish_at` — a scheduled moment is an intention
+     * about the future, and resurrecting last month's would mean restoring an old draft published
+     * it on the spot.
+     *
+     * So a restore back into `scheduled` lands with no date: invisible to visitors, never swept,
+     * and shown in the editor as an empty required field. It fails closed and says so, which is
+     * the right end of the trade — the alternative silently publishes.
+     */
+    const item = await scheduled('Due', iso(-60_000));
+    await publishDueItems(handle.db);
+    await updateItem(handle, type, fields, item.id, { status: 'draft' });
+
+    const first = await handle.db
+      .selectFrom('revisions')
+      .select('id')
+      .where('content_item_id', '=', item.id)
+      .where('revision_number', '=', 1)
+      .executeTakeFirstOrThrow();
+
+    await restoreRevision(handle, type, fields, item.id, first.id, null);
+
+    const after = await getItemByPath(handle.db, item.path, { publishedOnly: false });
+    expect(after?.publish_at).toBeNull();
+    // And therefore not served to anyone.
+    expect(await getItemByPath(handle.db, item.path)).toBeUndefined();
   });
 
   it('survives an edit that keeps the item scheduled', async () => {
