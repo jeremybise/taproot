@@ -14,7 +14,16 @@ import type { MediaOption } from '../mediaOptions.js';
  */
 
 interface Props {
-  id: string;
+  /**
+   * The entry being edited, or `undefined` when creating one.
+   *
+   * Creating goes through this same component rather than a separate form, so the two cannot
+   * drift — and because a library row is only ever written validated, which means creation has to
+   * collect the content rather than making an empty row and filling it in afterwards. Pages that
+   * reference an entry skip field validation precisely because the row already passed it.
+   */
+  id?: string;
+  blockType?: string;
   fields: FieldRow[];
   initial: { name: string; description: string; data: Record<string, unknown> };
   termsByTaxonomy?: Record<string, TermOption[]>;
@@ -26,6 +35,7 @@ interface Props {
 
 export default function ReusableBlockEditor({
   id,
+  blockType,
   fields,
   initial,
   termsByTaxonomy,
@@ -49,15 +59,25 @@ export default function ReusableBlockEditor({
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/taproot/reusable-blocks/${id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), description: description.trim() || null, data }),
-      });
+      const creating = id === undefined;
+      const response = await fetch(
+        creating ? '/api/taproot/reusable-blocks' : `/api/taproot/reusable-blocks/${id}`,
+        {
+          method: creating ? 'POST' : 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            description: description.trim() || null,
+            data,
+            ...(creating ? { blockType } : {}),
+          }),
+        },
+      );
 
       const body = (await response.json().catch(() => null)) as {
         error?: string;
         fields?: Record<string, string[]>;
+        reusableBlock?: { id: string };
       } | null;
 
       if (!response.ok) {
@@ -65,6 +85,15 @@ export default function ReusableBlockEditor({
         setFailed(true);
         setMessage(body?.error ?? `Save failed (${response.status}).`);
         return;
+      }
+
+      if (id === undefined) {
+        // Straight to the entry's own screen, which is where its usage list and delete live.
+        const created = body?.reusableBlock;
+        if (created) {
+          window.location.href = `/admin/blocks/${created.id}?created=1`;
+          return;
+        }
       }
 
       setFailed(false);

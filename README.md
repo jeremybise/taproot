@@ -124,7 +124,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (694 covering dialects, auth, sign-in throttling, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
+| `npm test` | Unit tests (747 covering dialects, auth, sign-in throttling, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -255,7 +255,7 @@ degradation is asserted; the measured behaviour needs eyes.
 npm test
 ```
 
-694 tests. The ones worth knowing about:
+747 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.

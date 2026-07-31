@@ -1,0 +1,120 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import ReusableBlockEditor from '../../islands/ReusableBlockEditor.tsx';
+import { termOptionsForFields } from '../../termOptions.js';
+import { relationTargetsForFields } from '../../relationOptions.js';
+import { mediaOptions } from '../../mediaOptions.js';
+import { blockTypeRegistry, listBlockTypes } from '@taproot/core';
+import { getTaproot, loginRedirect, canPublishContent } from '../../../runtime/guards.js';
+
+/**
+ * Create a library entry from scratch.
+ *
+ * Promotion from a page was the only way in, and the empty state said so: "open a page with
+ * blocks, then use Save to the library". That is the right *primary* path — most shared content
+ * starts as something written on a page that turns out to belong everywhere — but it made the
+ * obvious case awkward: setting up a term's key dates before any page referenced them meant
+ * creating a throwaway page to promote from.
+ *
+ * Two steps in one route. Picking the type first is unavoidable, because the fields to author
+ * depend on it. Authoring then happens in `ReusableBlockEditor` — the *same* component an existing
+ * entry uses, in create mode — rather than a second form, so the two cannot drift.
+ *
+ * The content is collected before the row exists rather than after, because a library row is only
+ * ever written validated: a page that references an entry skips field validation on the grounds
+ * that the entry already passed it, and an "empty now, fill it in later" row would quietly break
+ * that invariant.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+// Same bar as editing one: shared content changes pages other people own.
+if (!canPublishContent(user)) return Astro.redirect('/admin/blocks');
+
+const blockTypes = await listBlockTypes(taproot.db.db);
+const chosen = Astro.url.searchParams.get('type');
+const registry = await blockTypeRegistry(taproot.db.db);
+const blockType = chosen ? registry.get(chosen) : undefined;
+
+// Step two needs a real type. Anything else falls back to the picker rather than erroring.
+const fields = blockType?.fields ?? [];
+const termsByTaxonomy = blockType ? await termOptionsForFields(taproot.db.db, fields) : {};
+const relationTargets = blockType ? await relationTargetsForFields(taproot.db.db, fields) : {};
+const media = blockType ? await mediaOptions(taproot.db.db, taproot.storage) : [];
+---
+
+<AdminLayout
+  title="New reusable block"
+  user={user}
+  breadcrumbs={[{ label: 'Reusable blocks', href: '/admin/blocks' }, { label: 'New' }]}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">New reusable block</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      {
+        blockType
+          ? `Writing a ${blockType.name.toLowerCase()}. It appears on a page once someone adds it from the library.`
+          : 'Pick a block type. You will write its content next.'
+      }
+    </p>
+  </header>
+
+  {
+    blockTypes.length === 0 ? (
+      <p class="max-w-prose rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        There are no block types yet. Create one under{' '}
+        <a href="/admin/settings/blocks" class="underline underline-offset-2">
+          Settings → Block types
+        </a>{' '}
+        first — a library entry is an instance of one.
+      </p>
+    ) : blockType ? (
+      <ReusableBlockEditor
+        client:load
+        blockType={blockType.api_id}
+        fields={fields}
+        initial={{ name: '', description: '', data: {} }}
+        termsByTaxonomy={termsByTaxonomy}
+        relationTargets={relationTargets}
+        media={media}
+        usageCount={0}
+        canEdit={true}
+      />
+    ) : (
+      <form method="get" class="max-w-xl space-y-5 rounded-lg border border-border bg-surface-raised p-5">
+        <fieldset>
+          <legend class="text-sm font-medium">Block type</legend>
+          <div class="mt-2 space-y-2">
+            {blockTypes.map((candidate, index) => (
+              <div class="flex gap-2.5 rounded-md border border-border bg-surface px-3 py-2.5">
+                <input
+                  id={`type-${candidate.api_id}`}
+                  type="radio"
+                  name="type"
+                  value={candidate.api_id}
+                  checked={index === 0}
+                  required
+                  class="mt-1"
+                />
+                <label for={`type-${candidate.api_id}`} class="min-w-0">
+                  <span class="block text-sm font-medium">{candidate.name}</span>
+                  {candidate.description && (
+                    <span class="block text-xs text-content-subtle">{candidate.description}</span>
+                  )}
+                </label>
+              </div>
+            ))}
+          </div>
+        </fieldset>
+
+        <button
+          type="submit"
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          Continue
+        </button>
+      </form>
+    )
+  }
+</AdminLayout>

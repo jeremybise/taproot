@@ -25,7 +25,18 @@ export function storageFromEnv(
   if (bindings?.MEDIA) {
     return new R2StorageAdapter({
       bucket: bindings.MEDIA,
-      publicBaseUrl: env.TAPROOT_MEDIA_URL ?? '/media',
+      /**
+       * The default points at the route that actually serves R2 objects.
+       *
+       * It used to be `/media`, which nothing served — so a deployment without a custom domain on
+       * the bucket produced uploads that succeeded and images that 404'd, a configuration gap
+       * presenting as a broken picture. This couples core to the integration's fixed API prefix,
+       * which is a small ugliness in exchange for a default that works.
+       *
+       * Setting `TAPROOT_MEDIA_URL` to a custom domain still wins, and is still the faster answer:
+       * it serves from Cloudflare's edge without waking a Worker per image.
+       */
+      publicBaseUrl: env.TAPROOT_MEDIA_URL ?? '/api/taproot/media/file',
     });
   }
 

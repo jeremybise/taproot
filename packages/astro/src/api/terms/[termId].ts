@@ -1,4 +1,4 @@
-import { deleteTerm, getTerm, updateTerm } from '@taproot/core';
+import { deleteTerm, getTerm, listTerms, reorderTerms, updateTerm } from '@taproot/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent } from '../_shared.js';
@@ -35,6 +35,41 @@ export const POST = handle(
       if (form.get('_method') === 'delete') {
         await deleteTerm(taproot.db, termId);
         return back({ deleted: term.name });
+      }
+
+      const direction = form.get('move');
+      if (direction === 'up' || direction === 'down') {
+        /**
+         * Reordering happens **among siblings**, not across the whole flat list.
+         *
+         * `position` is scoped to a parent — `listTerms` sorts by depth, then position, then name
+         * — so moving a term past one at a different level would write a position that means
+         * nothing and leave the list looking unchanged. Filtering to the siblings first is what
+         * makes "up" mean the thing directly above it in the tree.
+         *
+         * `reorderTerms` has existed since taxonomies shipped with no caller at all; this is it.
+         */
+        const siblings = (await listTerms(taproot.db.db, term.taxonomy_id)).filter(
+          (candidate) => candidate.parent_id === term.parent_id,
+        );
+
+        const from = siblings.findIndex((candidate) => candidate.id === termId);
+        const to = direction === 'up' ? from - 1 : from + 1;
+        if (from === -1 || to < 0 || to >= siblings.length) {
+          // Already at the end. Nothing to say and nothing to do — the button is disabled there
+          // anyway, so this is a hand-built request or a stale page.
+          return back({});
+        }
+
+        const ordered = [...siblings];
+        const [moved] = ordered.splice(from, 1);
+        ordered.splice(to, 0, moved!);
+
+        await reorderTerms(
+          taproot.db,
+          ordered.map((candidate) => candidate.id),
+        );
+        return back({ moved: term.name });
       }
 
       const parsed = patchSchema.safeParse({

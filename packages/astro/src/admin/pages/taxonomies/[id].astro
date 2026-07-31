@@ -28,18 +28,38 @@ function flatten(nodes: TermNode[], depth = 0): { term: TermNode; depth: number 
 
 const rows = flatten(tree);
 
+/**
+ * Where a term sits among its own siblings, for disabling the move buttons at the ends.
+ *
+ * Siblings rather than screen rows: `position` is scoped to a parent, so the first child of the
+ * second root is at the top of its own list even though there are rows above it. Offering "move
+ * up" there would be a button that does nothing.
+ */
+function siblingPosition(term: TermNode): 'first' | 'last' | 'middle' | 'only' {
+  const siblings = terms.filter((candidate) => candidate.parent_id === term.parent_id);
+  if (siblings.length === 1) return 'only';
+
+  const index = siblings.findIndex((candidate) => candidate.id === term.id);
+  if (index === 0) return 'first';
+  if (index === siblings.length - 1) return 'last';
+  return 'middle';
+}
+
 const added = Astro.url.searchParams.get('added');
 const updated = Astro.url.searchParams.get('updated');
 const deleted = Astro.url.searchParams.get('deleted');
+const moved = Astro.url.searchParams.get('moved');
 const error = Astro.url.searchParams.get('error');
 
 const flash = added
   ? `Added ${added}.`
   : updated
     ? `Saved ${updated}.`
-    : deleted
-      ? `Deleted ${deleted}. Any child terms moved up a level.`
-      : null;
+    : moved
+      ? `Moved ${moved}.`
+      : deleted
+        ? `Deleted ${deleted}. Any child terms moved up a level.`
+        : null;
 ---
 
 <AdminLayout
@@ -197,16 +217,50 @@ const flash = added
 
               <div class="mt-2 flex items-center gap-3 text-xs text-content-subtle">
                 <code class="font-mono">{term.slug}</code>
+
                 {canEditTerms && (
-                  <form method="post" action={`/api/taproot/terms/${term.id}`}>
-                    <input type="hidden" name="_method" value="delete" />
-                    <button
-                      type="submit"
-                      class="text-danger transition-colors hover:underline"
-                    >
-                      Delete<span class="sr-only-focusable"> {term.name}</span>
-                    </button>
-                  </form>
+                  <>
+                    {/*
+                      Buttons rather than dragging, and the only ordering control there is.
+
+                      The house rule elsewhere is that dragging is added *alongside* keyboard
+                      controls; here there is nothing to add it to yet, so the keyboard path is
+                      built first — which is the order that guarantees it exists at all. Ordering
+                      is per-sibling, so "up" means the term directly above it in the tree rather
+                      than the row above it on screen.
+                    */}
+                    <form method="post" action={`/api/taproot/terms/${term.id}`} class="inline">
+                      <input type="hidden" name="move" value="up" />
+                      <button
+                        type="submit"
+                        disabled={siblingPosition(term) === 'first' || siblingPosition(term) === 'only'}
+                        class="transition-colors hover:underline disabled:opacity-40 disabled:hover:no-underline"
+                      >
+                        Move up<span class="sr-only-focusable"> {term.name}</span>
+                      </button>
+                    </form>
+
+                    <form method="post" action={`/api/taproot/terms/${term.id}`} class="inline">
+                      <input type="hidden" name="move" value="down" />
+                      <button
+                        type="submit"
+                        disabled={siblingPosition(term) === 'last' || siblingPosition(term) === 'only'}
+                        class="transition-colors hover:underline disabled:opacity-40 disabled:hover:no-underline"
+                      >
+                        Move down<span class="sr-only-focusable"> {term.name}</span>
+                      </button>
+                    </form>
+
+                    <form method="post" action={`/api/taproot/terms/${term.id}`}>
+                      <input type="hidden" name="_method" value="delete" />
+                      <button
+                        type="submit"
+                        class="text-danger transition-colors hover:underline"
+                      >
+                        Delete<span class="sr-only-focusable"> {term.name}</span>
+                      </button>
+                    </form>
+                  </>
                 )}
               </div>
             </div>

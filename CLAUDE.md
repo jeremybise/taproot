@@ -27,7 +27,7 @@ of SCOPE.md before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 734 tests |
+| `npm test` | Vitest, 747 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -359,6 +359,14 @@ many), *Block*, *Reusable Block*, *Content Type*.
     reach one. Every call site used to be handed an images-only list regardless, because the only
     list on hand was the one the SEO panel needed. `mediaMatchesAccept` is shared by the client
     filter and the SQL one so the first page cannot offer what a search would hide.
+  - **`/api/taproot/media/file/[...key]` serves R2 objects**, and is what `publicBaseUrl` now
+    defaults to. It used to default to `/media`, which nothing served, so an R2 deployment without
+    a custom domain on the bucket produced successful uploads and 404ing images — a configuration
+    gap presenting as a broken picture. A custom domain via `TAPROOT_MEDIA_URL` still wins and is
+    still faster: it serves from the edge without waking a Worker per image. The route takes its
+    content type from the `media` row rather than the key, because the key is derived from a name a
+    user chose and `image/svg+xml` on this origin is same-origin script; `nosniff` and a sandbox CSP
+    back that up.
   - **Upload-in-place asks for alt text.** That is the moment someone knows what the image is for,
     and an upload path that never asks is how a library fills with images nobody can describe.
 - **A media field's stored shape follows its own config** — an array when it allows several files,
@@ -408,6 +416,10 @@ many), *Block*, *Reusable Block*, *Content Type*.
   - Referenced blocks skip field validation on the page, because the library row already validated
     it. Requiring a page that stores no content to satisfy a required field would make the
     reference unsavable.
+  - **A library row is only ever written validated**, which is what lets a referencing page skip
+    field validation. Creating one from scratch therefore collects its content first, through the
+    *same* `ReusableBlockEditor` an existing entry uses — there is no "empty entry, fill it in
+    later" path, because that row would break the invariant the whole feature rests on.
   - Deleting an entry is **refused** while anything references it. A reference with no target
     renders as a gap on exactly the pages nobody is watching — which is why the content was shared.
   - Deleting a block *type* also checks the library, because `countBlockUsage` only sees blocks

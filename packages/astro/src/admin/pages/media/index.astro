@@ -1,17 +1,25 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listMedia } from '@taproot/core';
 import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
 if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
 const user = taproot.user;
 
-const assets = await taproot.db.db
-  .selectFrom('media')
-  .selectAll()
-  .orderBy('created_at', 'desc')
-  .limit(100)
-  .execute();
+/**
+ * Through `listMedia` rather than a query of its own.
+ *
+ * The picker has searched the library since it was built and this screen never did — the same
+ * service, the same filename-and-alt-text match, reached from one place and not the other. A
+ * library you can only scroll is a library you cannot use past its first hundred assets, which is
+ * exactly where the picker's search was already earning its keep.
+ */
+const search = Astro.url.searchParams.get('q')?.trim() ?? '';
+const { media: assets, total } = await listMedia(taproot.db.db, {
+  search: search || undefined,
+  limit: 100,
+});
 
 const withUrls = assets.map((asset) => ({
   ...asset,
@@ -35,10 +43,40 @@ const uploadError = Astro.url.searchParams.get('error');
   <header class="mb-6">
     <h1 class="text-2xl font-semibold tracking-tight">Media</h1>
     <p class="mt-1 text-sm text-content-muted">
-      {assets.length} {assets.length === 1 ? 'asset' : 'assets'} · stored via the{' '}
-      <code class="font-mono">{taproot.storage.name}</code> adapter
+      {total} {total === 1 ? 'asset' : 'assets'}{search ? ` matching “${search}”` : ''} · stored
+      via the <code class="font-mono">{taproot.storage.name}</code> adapter
     </p>
   </header>
+
+  <form method="get" class="mb-6 flex flex-wrap items-end gap-3">
+    <div class="min-w-56">
+      <label for="q" class="block text-sm font-medium">Search</label>
+      <input
+        id="q"
+        name="q"
+        type="search"
+        value={search}
+        placeholder="Filename or alt text"
+        class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      />
+    </div>
+    <button
+      type="submit"
+      class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+    >
+      Search
+    </button>
+    {
+      search && (
+        <a
+          href="/admin/media"
+          class="rounded-md px-3 py-2 text-sm font-medium text-content-muted transition-colors hover:bg-surface-sunken"
+        >
+          Clear
+        </a>
+      )
+    }
+  </form>
 
   <div role="alert" aria-live="assertive">
     {

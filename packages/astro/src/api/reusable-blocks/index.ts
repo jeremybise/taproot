@@ -25,6 +25,15 @@ const createSchema = z.object({
  */
 export const POST = handle(
   async ({ context, taproot, user }) => {
+    /**
+     * Two callers, one shape.
+     *
+     * Promoting a block on a page sends the content it is promoting; the new-entry screen sends
+     * content the author has just written into the same editor. Both arrive as JSON with a full
+     * `data`, and both are validated here — which they must be, because a page referencing an
+     * entry skips field validation on the grounds that the library row already passed it. An
+     * "empty entry, fill it in later" path would quietly break that.
+     */
     const input = await readJson(context.request, createSchema);
 
     const registry = await blockTypeRegistry(taproot.db.db);
