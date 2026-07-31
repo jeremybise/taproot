@@ -2,6 +2,7 @@ import {
   contentTypeInputSchema,
   deleteContentType,
   getContentType,
+  recordAuditEntry,
   updateContentType,
 } from '@taproot/core';
 
@@ -34,7 +35,7 @@ export const PATCH = handle(
  * disabled submit button would have been bypassed by turning JavaScript off.
  */
 export const POST = handle(
-  async ({ context, taproot }) => {
+  async ({ context, taproot, user }) => {
     const id = context.params.id!;
     const contentType = await getContentType(taproot.db.db, id);
     if (!contentType) return apiError(404, 'Content type not found.');
@@ -54,6 +55,14 @@ export const POST = handle(
 
     try {
       await deleteContentType(taproot.db.db, id);
+      await recordAuditEntry(taproot.db.db, {
+        action: 'content_type.deleted',
+        subjectType: 'content_type',
+        subjectId: id,
+        subjectLabel: contentType.name,
+        actor: user,
+        detail: { apiId: contentType.api_id, kind: contentType.kind },
+      });
     } catch (error) {
       return back({
         error: error instanceof Error ? error.message : 'Could not delete that type.',

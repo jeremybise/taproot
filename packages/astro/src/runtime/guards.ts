@@ -1,4 +1,4 @@
-import type { ContentStatus, User } from '@taproot/core';
+import { transitionRole, type ContentStatus, type User } from '@taproot/core';
 
 import type { TaprootContext } from './context.js';
 
@@ -64,12 +64,17 @@ export function statusRequiresPublish(status: string): boolean {
 /**
  * Whether this user may move an item from one status to another.
  *
- * Two separate rules, and missing either one leaves a hole that the other closes on only one side:
+ * Two questions, asked in order, and they are genuinely different:
  *
- *  - Entering a status that reaches visitors needs the editor role. That is the obvious half.
- *  - *Leaving* `published` needs it too. Only the first half was implemented, so a contributor
- *    could take a live page to `draft` and it would vanish from the site — publishing was gated
- *    and unpublishing was free.
+ *  1. **Is this move legal at all?** The workflow table in core owns that, and the answer does not
+ *     depend on who is asking — `archived → published` is refused for an admin too, because it is
+ *     an arrow that does not exist rather than a permission they lack.
+ *  2. **May *you* make it?** Only then, and only for a move that exists.
+ *
+ * Both halves matter. Entering a status that reaches visitors needs the editor role, which is the
+ * obvious one; *leaving* `published` needs it too, which is the one that was missing — publishing
+ * was gated and unpublishing was free, so a contributor could take a live page to draft and it
+ * would simply vanish from the site.
  *
  * `to` being undefined means the write does not touch status, which is the common case for an
  * ordinary edit and is nobody's business but `canEditContent`'s.
@@ -79,7 +84,28 @@ export function canChangeStatus(
   from: ContentStatus | undefined,
   to: ContentStatus | undefined,
 ): boolean {
-  return !statusChangeNeedsPublish(from, to) || canPublishContent(user);
+  if (to === undefined || to === from) return true;
+
+  /**
+   * A create has no previous status, so there is no transition to look up — only "may you put
+   * something straight into this status", which is the same question `statusRequiresPublish`
+   * answers.
+   */
+  if (from === undefined) {
+    return statusRequiresPublish(to) ? canPublishContent(user) : canEditContent(user);
+  }
+
+  /**
+   * Everything else goes through the workflow table, which is the single place the graph lives.
+   *
+   * An illegal move is refused for everyone including admins — `archived → published` is not a
+   * permission an admin lacks, it is an arrow that does not exist, and a page coming back from
+   * the archive goes through draft so somebody reads it first.
+   */
+  const role = transitionRole(from, to);
+  if (role === null) return false;
+  if (role === 'unchanged') return true;
+  return hasRole(user, role);
 }
 
 /**
@@ -95,7 +121,12 @@ export function statusChangeNeedsPublish(
   to: ContentStatus | undefined,
 ): boolean {
   if (to === undefined || to === from) return false;
-  return statusRequiresPublish(to) || from === 'published';
+  if (from === undefined) return statusRequiresPublish(to);
+
+  const role = transitionRole(from, to);
+  // An illegal move is not "needs publish" — it is not on offer at all, and the editor filters it
+  // out by legality before it ever asks about the role.
+  return role === 'editor';
 }
 
 export function canManageUsers(user: User | undefined): boolean {

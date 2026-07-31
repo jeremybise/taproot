@@ -150,6 +150,36 @@ turned off something that is now on by default. Remove it.
 
 ---
 
+## 4b. Scheduled publishing
+
+Scheduling works with no configuration: a page goes live for visitors at its scheduled moment
+whether or not anything is running, because visibility is computed when the page is requested.
+
+What a scheduler adds is the *record* catching up — the status turning from Scheduled to Published,
+and `published_at` being stamped. Without one, the admin keeps saying "scheduled" about a page the
+public can already see, and offers a button to reconcile it by hand.
+
+Set a secret and point any scheduler at the endpoint:
+
+```bash
+npx wrangler secret put TAPROOT_CRON_SECRET
+```
+
+```
+POST https://your-domain/api/taproot/scheduler/run
+Authorization: Bearer <TAPROOT_CRON_SECRET>
+```
+
+It is idempotent — running it twice publishes nothing the second time — so a scheduler that retries
+on timeout cannot double-publish. Every fifteen minutes is plenty; the endpoint is cheap when there
+is nothing due.
+
+> Cloudflare Cron Triggers need a `scheduled()` export from the Worker, which the Astro adapter does
+> not currently expose. Until it does, use a separate small Worker with a cron trigger that makes
+> this request, or any external scheduler. An admin can also run it from the content list.
+
+---
+
 ## 5. Deploy
 
 ```bash

@@ -1016,9 +1016,13 @@ await ensureItem(
   '/events/financial-aid-night',
 );
 
-// `scheduled` is storable and the API accepts it, but no job flips a scheduled item live yet, so
-// the editor does not offer it. Seeding one keeps that gap visible instead of letting a status
-// exist in the schema that nothing in the running system ever demonstrates.
+/**
+ * A scheduled item, with a time far enough out that a fresh clone never has to race it.
+ *
+ * Dated rather than relative so reseeding is idempotent — a `now + 7 days` would write a different
+ * value on every run and make the row look edited when nothing touched it. Visitors do not see
+ * this one, which is the point: it demonstrates the status rather than the sweep.
+ */
 await ensureItem(
   handle,
   event.type,
@@ -1027,6 +1031,7 @@ await ensureItem(
     contentTypeId: event.type.id,
     title: 'Summer Orientation',
     status: 'scheduled',
+    publishAt: '2026-08-01T08:00:00.000Z',
     userId: admin.id,
     data: {
       starts_at: '2026-08-24T13:00:00.000Z',

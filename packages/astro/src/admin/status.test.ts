@@ -38,9 +38,8 @@ describe('status metadata', () => {
 
     expect(meta.label).toBe('pending legal review');
     expect(meta.badgeClass).toBe('border-border bg-surface-sunken');
-    // Unknown means untrusted: it must not be offered in the editor. Whether a contributor may
-    // move an item into it is `statusRequiresPublish`'s question, tested in guards.test.ts.
-    expect(meta.settable).toBe(false);
+    // Whether anyone may move an item into it is `statusRequiresPublish`'s question, tested in
+    // guards.test.ts — and it fails closed there for exactly this case.
   });
 });
 
@@ -69,15 +68,19 @@ describe('parseStatusFilter', () => {
 });
 
 describe('statusFilterOptions', () => {
-  it('always offers the statuses the editor can set, even at zero', () => {
-    const offered = statusFilterOptions(noCounts, undefined).map((option) => option.status);
+  it('offers every status in workflow order, even at zero', () => {
+    /**
+     * `scheduled` used to be excluded here while nothing could produce one. The scheduler produces
+     * them now, so the filter shows the whole pipeline — and a count of zero is information about
+     * the pipeline rather than a reason to hide a stage of it.
+     */
+    const offered = statusFilterOptions(noCounts).map((option) => option.status);
 
-    expect(offered).toEqual(['draft', 'in_review', 'published', 'archived']);
+    expect(offered).toEqual(['draft', 'in_review', 'scheduled', 'published', 'archived']);
   });
 
-  it('adds a non-settable status once something is in it', () => {
-    const offered = statusFilterOptions({ ...noCounts, scheduled: 2 }, undefined);
-
+  it('reports the count for each', () => {
+    const offered = statusFilterOptions({ ...noCounts, scheduled: 2 });
     expect(offered.find((option) => option.status === 'scheduled')?.count).toBe(2);
   });
 

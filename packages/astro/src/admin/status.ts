@@ -26,14 +26,6 @@ export interface StatusMeta {
    * to stay literal strings.
    */
   badgeClass: string;
-  /**
-   * Whether the editor offers this status.
-   *
-   * `scheduled` is storable and the API accepts it, but nothing yet flips a scheduled item live,
-   * so offering it in the editor would promise a behaviour that does not exist. It still gets a
-   * colour and a filter option so items created through the API are visible rather than invisible.
-   */
-  settable: boolean;
 }
 
 export const STATUS_ORDER = [
@@ -48,27 +40,22 @@ export const STATUS_META: Record<ContentStatus, StatusMeta> = {
   draft: {
     label: 'Draft',
     badgeClass: 'border-status-draft bg-status-draft-subtle',
-    settable: true,
   },
   in_review: {
     label: 'In review',
     badgeClass: 'border-status-review bg-status-review-subtle',
-    settable: true,
   },
   scheduled: {
     label: 'Scheduled',
     badgeClass: 'border-status-scheduled bg-status-scheduled-subtle',
-    settable: false,
   },
   published: {
     label: 'Published',
     badgeClass: 'border-status-published bg-status-published-subtle',
-    settable: true,
   },
   archived: {
     label: 'Archived',
     badgeClass: 'border-status-archived bg-status-archived-subtle',
-    settable: true,
   },
 };
 
@@ -84,7 +71,6 @@ export function statusMeta(status: string): StatusMeta {
     STATUS_META[status as ContentStatus] ?? {
       label: status.replace(/_/g, ' '),
       badgeClass: 'border-border bg-surface-sunken',
-      settable: false,
     }
   );
 }
@@ -105,18 +91,19 @@ export function parseStatusFilter(value: string | null | undefined): ContentStat
 /**
  * Which statuses to offer in a filter, given how many items each currently matches.
  *
- * Statuses the editor can set are always listed, so the filter reads as a complete picture of the
- * workflow rather than shifting as content moves through it. The rest appear only when they have
- * something to show — or when one is already selected, since dropping the selected option would
- * silently reset the filter the page is currently applying.
+ * All of them, always, in workflow order — so the filter reads as a complete picture of the
+ * pipeline rather than shifting as content moves through it, and a count of zero is information
+ * rather than an absence.
+ *
+ * This used to take a `settable` flag per status, which existed solely to hide `scheduled` while
+ * nothing could produce one. The scheduler produces them now, the flag was true for every status,
+ * and a field that is the same for every row is not a field.
  */
 export function statusFilterOptions(
   counts: Record<ContentStatus, number>,
-  selected: ContentStatus | undefined,
+  _selected?: ContentStatus | undefined,
 ): { status: ContentStatus; label: string; count: number }[] {
-  return STATUS_ORDER.filter(
-    (status) => STATUS_META[status].settable || counts[status] > 0 || status === selected,
-  ).map((status) => ({
+  return STATUS_ORDER.map((status) => ({
     status,
     label: STATUS_META[status].label,
     count: counts[status] ?? 0,

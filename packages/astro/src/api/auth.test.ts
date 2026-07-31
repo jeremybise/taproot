@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   MAX_ATTEMPTS,
+  beginTwoFactorEnrolment,
+  confirmTwoFactorEnrolment,
+  countUserSessions,
   countUsers,
   createPasswordResetToken,
+  createSession,
   createUser,
+  generateTotpCode,
   setPassword,
+  twoFactorStatus,
   verifyCredentials,
   type User,
 } from '@taproot/core';
@@ -279,6 +285,67 @@ describe('adding a user', () => {
       (await createUserRoute(h.context({ json: { email: 'x@y.edu', name: 'X', role: 'viewer' } })))
         .status,
     ).toBe(403);
+  });
+
+  it('clears a colleague’s two-factor, but never your own', async () => {
+    /**
+     * The lockout this exists for: a lost phone *and* lost recovery codes, where the only fix used
+     * to be a database console while the sign-in screen said "ask an administrator".
+     *
+     * Refused on yourself because your own is behind a password check on the account screen, and
+     * offering it here would route around that — turning an unattended admin session into a way to
+     * strip the protection off the account it belongs to.
+     */
+    const me = await admin();
+    const colleague = await createUser(h.db.db, { email: 'stuck@campus.edu', name: 'Stuck' });
+    const { secret } = await beginTwoFactorEnrolment(h.db.db, colleague);
+    await confirmTwoFactorEnrolment(h.db.db, colleague.id, await generateTotpCode(secret));
+
+    const cleared = await userAction(
+      h.context({ params: { id: colleague.id }, form: { action: 'clear-two-factor' } }),
+    );
+    expect(location(cleared)).toMatch(/two-factor cleared/);
+    expect((await twoFactorStatus(h.db.db, colleague.id)).enabled).toBe(false);
+
+    const own = await userAction(
+      h.context({ params: { id: me.id }, form: { action: 'clear-two-factor' } }),
+    );
+    expect(location(own)).toMatch(/Use Your account/);
+  });
+
+  it('ends a colleague’s sessions without touching the account', async () => {
+    // A lost laptop needs the sessions gone, not the account — the person on the phone to you
+    // still has work to do.
+    await admin();
+    const colleague = await createUser(h.db.db, { email: 'lost@campus.edu', name: 'Lost' });
+    await createSession(h.db.db, colleague.id);
+    await createSession(h.db.db, colleague.id);
+
+    const response = await userAction(
+      h.context({ params: { id: colleague.id }, form: { action: 'sign-out' } }),
+    );
+
+    expect(location(response)).toMatch(/2 sessions ended/);
+    expect(await countUserSessions(h.db.db, colleague.id)).toBe(0);
+    // Still active, still able to sign in again.
+    expect((await h.db.db.selectFrom('users').select('is_active').where('id', '=', colleague.id).executeTakeFirst())?.is_active).toBeTruthy();
+  });
+
+  it('signing yourself out everywhere keeps the browser you are holding', async () => {
+    /**
+     * Otherwise the safe, precautionary action logs you out for taking it — and people who get
+     * punished for taking a precaution stop taking it.
+     */
+    const me = await admin();
+    const { token } = await createSession(h.db.db, me.id);
+    await createSession(h.db.db, me.id);
+
+    const context = h.context({ params: { id: me.id }, form: { action: 'sign-out' } });
+    (context.locals as { taproot: { sessionToken?: string } }).taproot.sessionToken = token;
+
+    await userAction(context);
+
+    expect(await countUserSessions(h.db.db, me.id)).toBe(1);
   });
 
   it('refuses to leave the site with no administrator', async () => {

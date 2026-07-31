@@ -1,13 +1,19 @@
 import { useId, useState } from 'react';
-import { slugify, type ContentStatus, type FieldRow, type SeoData } from '@taproot/core';
+import {
+  slugify,
+  transitionLabel,
+  transitionsFrom,
+  type ContentStatus,
+  type FieldRow,
+  type SeoData,
+} from '@taproot/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
 import SeoPanel from './SeoPanel.js';
 import type { MediaOption } from '../mediaOptions.js';
 import type { RelationTarget } from '../relationOptions.js';
-import { STATUS_META, STATUS_ORDER } from '../status.js';
-import { statusChangeNeedsPublish } from '../../runtime/guards.js';
+import { STATUS_META } from '../status.js';
 
 /**
  * The content item editor.
@@ -29,6 +35,7 @@ interface Props {
     title: string;
     slug: string;
     status: ContentStatus;
+    publishAt: string | null;
     parentId: string | null;
     data: Record<string, unknown>;
     seo: SeoData;
@@ -57,19 +64,6 @@ interface Props {
   /** Where this item resolves publicly. Empty for a singleton, which has no path of its own. */
   path?: string;
   origin?: string;
-}
-
-/**
- * The statuses the editor offers, in workflow order.
- *
- * Derived from the shared table rather than listed again here, so a status can never carry one
- * label in a list and another in the editor. `scheduled` is normally excluded — nothing yet flips
- * a scheduled item live, so offering it would promise a behaviour that does not exist — but an
- * item already in that status keeps its option, or the select would render blank and quietly
- * misreport what the item is while still saving it unchanged.
- */
-function statusOptions(current: ContentStatus): ContentStatus[] {
-  return STATUS_ORDER.filter((status) => STATUS_META[status].settable || status === current);
 }
 
 export default function ItemEditor({
@@ -101,6 +95,14 @@ export default function ItemEditor({
    */
   const [slugLinked, setSlugLinked] = useState(!itemId && !initial.slug);
   const [status, setStatus] = useState<ContentStatus>(initial.status);
+  /**
+   * Held as the `datetime-local` string the input speaks, converted only at the boundary.
+   *
+   * That input has no timezone and the API wants ISO 8601, so a round trip through `Date` is
+   * unavoidable; doing it once on the way out beats doing it on every keystroke and beats storing
+   * two representations that can disagree.
+   */
+  const [publishAt, setPublishAt] = useState(toLocalInput(initial.publishAt));
   const [parentId, setParentId] = useState<string | null>(initial.parentId);
   const [data, setData] = useState<Record<string, unknown>>(initial.data);
   const [seo, setSeo] = useState<SeoData>(initial.seo);
@@ -108,6 +110,15 @@ export default function ItemEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const formId = useId();
+
+  /**
+   * What can be done from where the item *is*, not from what the form currently shows.
+   *
+   * The API compares against the row in the database, so measuring from local state would offer a
+   * chain of moves — draft to review to published in one save — that the boundary would refuse as
+   * a single jump. One save is one transition.
+   */
+  const transitions = transitionsFrom(initial.status);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -118,7 +129,17 @@ export default function ItemEditor({
     // Blank overrides are dropped rather than stored as empty strings. `resolveSeo` treats blank
     // as absent anyway, but persisting `metaTitle: ""` would make a cleared field look deliberate
     // in a revision diff and in the API response.
-    const payload = { title, slug, status, parentId, data, seo: pruneSeo(seo) };
+    const payload = {
+      title,
+      slug,
+      status,
+      // Only meaningful while scheduled; the server clears it on any other status anyway, and
+      // sending a stale value would be asking it to.
+      publishAt: status === 'scheduled' ? fromLocalInput(publishAt) : null,
+      parentId,
+      data,
+      seo: pruneSeo(seo),
+    };
     const url = itemId ? `/api/taproot/items/${itemId}` : '/api/taproot/items';
 
     try {
@@ -262,9 +283,14 @@ export default function ItemEditor({
 
           <div className="mt-3">
             <div className="flex items-baseline justify-between gap-2">
-              <label htmlFor={`${formId}-status`} className="block text-sm font-medium">
+              {/*
+                A span, not a `<label for>`: what follows is a list of buttons, and a label
+                pointing at a `<ul>` is silently inert — `scripts/a11y-audit.mjs` checks exactly
+                that. The list is named by it through `aria-labelledby` instead.
+              */}
+              <span id={`${formId}-status-label`} className="block text-sm font-medium">
                 Status
-              </label>
+              </span>
               {/*
                 The same badge the lists use, so the colour an editor learns while scanning a list
                 means the same thing here. It tracks local state rather than the saved value, which
@@ -276,33 +302,85 @@ export default function ItemEditor({
                 {STATUS_META[status].label}
               </span>
             </div>
-            <select
-              id={`${formId}-status`}
-              value={status}
-              onChange={(e) => setStatus(e.target.value as ContentStatus)}
-              className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
-            >
-              {statusOptions(status).map((option) => {
-                /**
-                 * Measured from the *saved* status, not the one currently selected.
-                 *
-                 * The API compares against the row in the database, so anything else here would
-                 * disable a different set of options than the server refuses — and moving off
-                 * `published` is restricted whatever it moves to.
-                 */
-                const blocked = statusChangeNeedsPublish(initial.status, option) && !canPublish;
+            {/*
+              Named actions rather than a status dropdown.
+
+              A `<select>` of statuses asks an editor to know that "in_review" is how you submit
+              something and that archived pages come back as drafts — the workflow was in the
+              model and nowhere in the interface. Buttons named after the act put the graph on the
+              screen: what you can do from here, and what each one is called.
+
+              Offered from the same table the API enforces, filtered to legal moves and then to the
+              ones this role may make, so the screen cannot offer something the boundary refuses.
+            */}
+            <ul aria-labelledby={`${formId}-status-label`} className="mt-2 space-y-1.5">
+              {transitions.map(({ to, role }) => {
+                const blocked = !canPublish && role === 'editor';
                 return (
-                  <option key={option} value={option} disabled={blocked}>
-                    {STATUS_META[option].label}
-                    {blocked ? ' (needs editor role)' : ''}
-                  </option>
+                  <li key={to}>
+                    <button
+                      type="button"
+                      disabled={blocked || busy}
+                      aria-describedby={blocked ? `${formId}-role-note` : undefined}
+                      onClick={() => setStatus(to)}
+                      className={`w-full rounded-md border px-3 py-2 text-left text-sm font-medium transition-colors disabled:opacity-50 ${
+                        status === to
+                          ? 'border-accent bg-accent-subtle'
+                          : 'border-border-strong hover:bg-surface-sunken'
+                      }`}
+                    >
+                      {transitionLabel(initial.status, to)}
+                      {status === to && initial.status !== to && (
+                        // The button is a staged intent, not the act — nothing moves until Save,
+                        // and saying so is what stops someone leaving the page thinking it did.
+                        <span className="ml-1 font-normal text-content-muted">
+                          — on save
+                        </span>
+                      )}
+                    </button>
+                  </li>
                 );
               })}
-            </select>
+
+              {status !== initial.status && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setStatus(initial.status)}
+                    className="w-full rounded-md px-3 py-1.5 text-left text-sm text-content-muted transition-colors hover:bg-surface-sunken"
+                  >
+                    Keep as {STATUS_META[initial.status].label.toLowerCase()}
+                  </button>
+                </li>
+              )}
+            </ul>
+
+            {status === 'scheduled' && (
+              <div className="mt-3">
+                <label htmlFor={`${formId}-publish-at`} className="block text-sm font-medium">
+                  Goes live
+                </label>
+                <input
+                  id={`${formId}-publish-at`}
+                  type="datetime-local"
+                  required
+                  value={publishAt}
+                  onChange={(event) => setPublishAt(event.target.value)}
+                  aria-describedby={`${formId}-publish-at-hint`}
+                  className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+                />
+                <p id={`${formId}-publish-at-hint`} className="mt-1.5 text-xs text-content-subtle">
+                  {publishAt && fromLocalInput(publishAt)! <= new Date().toISOString()
+                    ? 'That time has already passed, so this goes live as soon as it is saved.'
+                    : 'Your local time. The page appears for visitors at that moment.'}
+                </p>
+              </div>
+            )}
+
             {!canPublish && (
-              <p className="mt-1.5 text-xs text-content-subtle">
+              <p id={`${formId}-role-note`} className="mt-2 text-xs text-content-subtle">
                 {initial.status === 'published'
-                  ? 'This item is live. Taking it down is an editor’s decision, so its status is fixed for your role — you can still edit the content.'
+                  ? 'This item is live. Taking it down is an editor’s decision — you can still edit the content.'
                   : 'Your role can save drafts and submit for review. An editor publishes.'}
               </p>
             )}
@@ -367,6 +445,31 @@ export default function ItemEditor({
  * shows up as a real change in the revision diff — a save that changed nothing looks like one that
  * did.
  */
+/**
+ * ISO 8601 → the `YYYY-MM-DDTHH:mm` a `datetime-local` input speaks, in the browser's zone.
+ *
+ * The conversion is the whole reason this is fiddly: the stored value is absolute and the input is
+ * wall-clock. Someone scheduling "9am" means 9am where they are, which is what a local input gets
+ * right and a naive string slice gets wrong by however many hours they are from UTC.
+ */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+}
+
+/** The inverse. An empty or unparseable input is null rather than an invalid date. */
+function fromLocalInput(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function pruneSeo(seo: SeoData): SeoData {
   const pruned: SeoData = {};
 

@@ -3,6 +3,7 @@ import {
   createPasswordResetToken,
   createUser,
   listUsers,
+  recordAuditEntry,
   type UserRole,
 } from '@taproot/core';
 import { z } from 'zod';
@@ -58,6 +59,15 @@ export const POST = handle(
 
     const { token, expiresAt } = await createPasswordResetToken(taproot.db.db, created.id, {
       createdBy: user.id,
+    });
+
+    await recordAuditEntry(taproot.db.db, {
+      action: 'user.created',
+      subjectType: 'user',
+      subjectId: created.id,
+      subjectLabel: created.email,
+      actor: user,
+      detail: { role: created.role },
     });
 
     if (isForm) {

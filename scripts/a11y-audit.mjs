@@ -51,6 +51,7 @@ const ROUTES = [
   '/admin/settings/blocks',
   '/admin/settings/blocks/new',
   '/admin/settings/users',
+  '/admin/settings/audit',
   '/admin/account',
   '/admin/settings/system',
   '/admin/media',

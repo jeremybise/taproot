@@ -140,6 +140,43 @@ export async function invalidateUserSessions(db: Kysely<Database>, userId: strin
   await db.deleteFrom('sessions').where('user_id', '=', userId).execute();
 }
 
+/**
+ * Drop every session for a user except the one presented.
+ *
+ * What "sign out everywhere" should mean when you are signing *yourself* out: the point is the
+ * laptop left on a train, not the browser you are currently holding. Signing yourself out along
+ * with it turns a precautionary action into an interruption, and people who get logged out for
+ * doing the safe thing stop doing the safe thing.
+ *
+ * An admin doing this to someone else passes no token, which drops all of them — correct, because
+ * none of those sessions is theirs to keep.
+ */
+export async function invalidateOtherSessions(
+  db: Kysely<Database>,
+  userId: string,
+  keepToken?: string,
+): Promise<number> {
+  let query = db.deleteFrom('sessions').where('user_id', '=', userId);
+  if (keepToken) query = query.where('id', '!=', await hashSessionToken(keepToken));
+
+  const result = await query.executeTakeFirst();
+  return Number(result.numDeletedRows ?? 0);
+}
+
+/** How many sessions a user currently has, so an admin can see what they are looking at. */
+export async function countUserSessions(db: Kysely<Database>, userId: string): Promise<number> {
+  const row = await db
+    .selectFrom('sessions')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .where('user_id', '=', userId)
+    // Expired rows are deleted lazily as they are encountered, so a count that included them
+    // would report sessions nobody can use.
+    .where('expires_at', '>=', new Date().toISOString())
+    .executeTakeFirst();
+
+  return Number(row?.count ?? 0);
+}
+
 /** Delete sessions that have already expired. Safe to call on a schedule. */
 export async function purgeExpiredSessions(db: Kysely<Database>): Promise<number> {
   const result = await db.deleteFrom('sessions').where('expires_at', '<', now()).executeTakeFirst();

@@ -1,4 +1,10 @@
-import { deleteItem, getContentType, getItem, updateItem } from '@taproot/core';
+import {
+  deleteItem,
+  getContentType,
+  getItem,
+  recordAuditEntry,
+  updateItem,
+} from '@taproot/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent, readJson } from '../_shared.js';
@@ -16,6 +22,8 @@ const patchSchema = z.object({
   slug: z.string().optional(),
   parentId: z.string().nullish(),
   status: z.enum(['draft', 'in_review', 'scheduled', 'published', 'archived']).optional(),
+  /** When a scheduled item goes live. ISO 8601. Cleared automatically when status leaves scheduled. */
+  publishAt: z.string().datetime().nullish(),
   data: z.record(z.string(), z.unknown()).optional(),
   // Written explicitly as `.optional()` on the shared schema rather than derived with
   // `.partial()`, which does not strip a `.default()` and would send `{}` on every request that
@@ -50,10 +58,30 @@ export const PATCH = handle(
       slug: input.slug,
       parentId: input.parentId,
       status: input.status,
+      publishAt: input.publishAt,
       data: input.data,
       seo: input.seo,
       userId: user.id,
     });
+
+    /**
+     * Only status changes are logged, not every save.
+     *
+     * Every save already appends a revision with its author, which is a finer record than an audit
+     * entry could be. What revisions do not answer is "who put this in front of the public, and
+     * when" — a question asked after the fact, across items, by someone who was not involved.
+     * Logging saves as well would bury exactly that in noise.
+     */
+    if (input.status && input.status !== existing.status) {
+      await recordAuditEntry(taproot.db.db, {
+        action: `item.${input.status}`,
+        subjectType: 'item',
+        subjectId: item.id,
+        subjectLabel: item.title,
+        actor: user,
+        detail: { from: existing.status, to: input.status, path: item.path },
+      });
+    }
 
     return json({ item });
   },
@@ -68,7 +96,7 @@ export const PATCH = handle(
  * JavaScript off would bypass.
  */
 export const POST = handle(
-  async ({ context, taproot }) => {
+  async ({ context, taproot, user }) => {
     const id = context.params.id!;
     const item = await getItem(taproot.db.db, id);
     if (!item) return apiError(404, 'Content item not found.');
@@ -90,6 +118,15 @@ export const POST = handle(
         error: error instanceof Error ? error.message : 'Could not delete that item.',
       });
     }
+
+    await recordAuditEntry(taproot.db.db, {
+      action: 'item.deleted',
+      subjectType: 'item',
+      subjectId: id,
+      subjectLabel: item.title,
+      actor: user,
+      detail: { path: item.path, status: item.status },
+    });
 
     /**
      * Back to the item's own type rather than to "All content".

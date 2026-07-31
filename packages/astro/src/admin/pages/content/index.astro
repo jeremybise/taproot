@@ -4,6 +4,7 @@ import StatusBadge from '../../components/StatusBadge.astro';
 import Timestamp from '../../components/Timestamp.astro';
 import {
   countItemsByStatus,
+  dueForPublishing,
   listContentTypes,
   listItems,
   termIdsForBranch,
@@ -48,6 +49,16 @@ const [{ items, total }, statusCounts] = await Promise.all([
   countItemsByStatus(taproot.db.db, facetFilters),
 ]);
 
+/**
+ * Anything whose scheduled time has passed but whose status has not caught up.
+ *
+ * A visitor already sees these — visibility is computed on read — so this is not a warning that
+ * something is late. It is the admin's view catching up, and the button is for a deployment with
+ * no cron wired up, where otherwise the list would keep saying "scheduled" about a live page.
+ */
+const due = canEditContent(user) ? await dueForPublishing(taproot.db.db, 20) : [];
+const published = Astro.url.searchParams.get('published');
+
 const statusOptions = statusFilterOptions(statusCounts, statusFilter);
 // The "All statuses" count comes from the same facet query, so it stays consistent with the
 // per-status numbers beside it even though `total` above is narrowed by the status filter.
@@ -56,7 +67,51 @@ const typeNames = new Map(contentTypes.map((type) => [type.id, type.name]));
 const filtered = Boolean(search || typeFilter || statusFilter || termFilter);
 ---
 
-<AdminLayout title="Content" user={user} breadcrumbs={[{ label: 'Content' }]}>
+<AdminLayout
+  title="Content"
+  user={user}
+  breadcrumbs={[{ label: 'Content' }]}
+  flash={
+    published
+      ? `Published ${published} scheduled ${Number(published) === 1 ? 'item' : 'items'}.`
+      : null
+  }
+>
+  {
+    due.length > 0 && (
+      <section
+        aria-labelledby="due-heading"
+        class="mb-6 rounded-lg border border-status-scheduled bg-status-scheduled-subtle p-4"
+      >
+        <h2 id="due-heading" class="text-sm font-semibold">
+          {due.length} scheduled {due.length === 1 ? 'item is' : 'items are'} past their time
+        </h2>
+        <p class="mt-1 max-w-prose text-sm">
+          Visitors can already see {due.length === 1 ? 'it' : 'them'} — a page goes live at its
+          scheduled moment whether or not anything has run. This only updates the status here.
+          Wire up a scheduler (see DEPLOYMENT.md) and it happens on its own.
+        </p>
+        <ul class="mt-2 list-disc pl-5 text-sm">
+          {due.slice(0, 5).map((item) => (
+            <li>
+              <a href={`/admin/content/${item.id}`} class="underline-offset-2 hover:underline">
+                {item.title}
+              </a>
+            </li>
+          ))}
+          {due.length > 5 && <li>and {due.length - 5} more</li>}
+        </ul>
+        <form method="post" action="/api/taproot/scheduler/run" class="mt-3">
+          <button
+            type="submit"
+            class="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+          >
+            Update {due.length === 1 ? 'it' : 'them'} now
+          </button>
+        </form>
+      </section>
+    )
+  }
   <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
     <div>
       <h1 class="text-2xl font-semibold tracking-tight">Content</h1>

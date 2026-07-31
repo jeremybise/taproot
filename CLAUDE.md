@@ -27,7 +27,7 @@ of SCOPE.md before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 747 tests |
+| `npm test` | Vitest, 785 tests |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -122,6 +122,38 @@ something. Things that follow, none of them optional now that this is the front 
   same counters as the password step, because six digits is a million possibilities. Turning it off
   or reissuing recovery codes needs the password; cancelling an *unconfirmed* enrolment does not,
   because an unconfirmed secret protects nothing.
+
+**The workflow is a graph in core, not a status column.** `content/workflow.ts` holds every legal
+transition and the role each needs, and `canChangeStatus` asks it two questions in order: is this
+move legal *at all* (which does not depend on who is asking — `archived → published` is refused for
+an admin too, because a page coming back from the archive goes through draft so somebody reads it
+first), and only then may *you* make it. The item editor renders `transitionsFrom` as named buttons
+rather than a status `<select>`, because "submit for review" is an act with a name and "set the
+status to in_review" is how it used to be spelled — which is why nobody could find it.
+
+**Scheduling is two halves and needs both.** Visibility is computed on read (`visibleToPublic` in
+`items.ts`), so a page goes live at its moment whether or not a sweep has run — that is what makes
+the feature work on a deployment where nobody wired up a cron, which is every deployment on day
+one. `publishDueItems` then makes the *stored* status agree. Only the sweep would let a missed cron
+silently hold a launch; only the read rule would leave the CMS lying about its own content.
+`publish_at` is cleared whenever the status leaves `scheduled`, in **both** paths — a stale time is
+a booby trap, because rescheduling later inherits a moment in the past, which means immediately.
+
+**The audit log is append-only and nothing may make it aimable.** `recordAuditEntry` never throws:
+the action it describes has already happened, and failing it would report a failure that did not
+occur. `actor_email` and `subject_label` are copied at write time rather than joined, because a log
+records what was true *then* — an entry about a deleted page stays readable, where a join renders
+two nulls. `subject_id` has no foreign key for the same reason: a cascade would delete the evidence
+along with the subject. Retention is a dated sweep; "delete entries about me" is the capability an
+audit log must not have.
+
+**An admin can clear someone else's second factor and end their sessions, but not their own.**
+Losing a phone *and* the recovery codes used to mean a database console while the sign-in screen
+said "ask an administrator". Your own two-factor goes through the account screen, which asks for
+your password — offering it on the users screen would route around that and turn an unattended
+admin session into a way to strip the protection off the account it belongs to. Signing *yourself*
+out everywhere keeps the current browser, because being logged out for taking a precaution teaches
+people not to take it.
 
 **Publish permission is one rule, in `guards.ts`.** `canChangeStatus(user, from, to)` answers every
 "may this person do that" about a status, and both the API routes and the item editor's select read

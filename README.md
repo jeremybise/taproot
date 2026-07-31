@@ -124,7 +124,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (747 covering dialects, auth, sign-in throttling, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
+| `npm test` | Unit tests (785 covering dialects, auth, sign-in throttling, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -255,7 +255,7 @@ degradation is asserted; the measured behaviour needs eyes.
 npm test
 ```
 
-747 tests. The ones worth knowing about:
+785 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -320,8 +320,8 @@ npm test
 
 ## What's next
 
-**Phase 3**, per [SCOPE.md](SCOPE.md): user management, the draft/review/schedule/publish workflow
-with role gates, a scheduler, and an audit log.
+**Phase 3 is done.** User management, the draft/review/schedule/publish workflow with role gates, a
+scheduler, and an audit log all shipped. [Phase 3.5](SCOPE.md) — Content Releases — is next.
 
 It is smaller than it used to be. The plan called for departments as a first-class entity — with
 membership, ownership of content items, and role assignments scoped to them — and that turned out
@@ -329,12 +329,6 @@ to be the wrong reading of what a department is here. A department is *what a pa
 is what a taxonomy does, and the Phase 1 `department` taxonomy already does it. With no ownership
 dimension, there is nothing for a scoped role to scope, so roles are flat and site-wide: Admin,
 Editor, Contributor, Viewer.
-
-That model is already built and enforced on every screen and every route, and **user management
-shipped early** — it had to, because email and password became the primary sign-in method and a CMS
-you cannot add a second person to is not much of a CMS. So what Phase 3 actually still owes is the
-workflow: role-gated transitions between draft, review, scheduled, and published; something that
-flips a scheduled item live; and an audit log.
 
 The honest cost of flat roles is that a contributor who can edit one page can edit them all. The
 answer if that starts to bite is a role × content-type matrix, which is a small retrofit precisely

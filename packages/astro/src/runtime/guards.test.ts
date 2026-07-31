@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ContentStatus, User } from '@taproot/core';
+import { isLegalTransition, type ContentStatus, type User } from '@taproot/core';
 
 import {
   canChangeStatus,
@@ -141,7 +141,15 @@ describe('canChangeStatus', () => {
     expect(canChangeStatus(undefined, 'published', 'draft')).toBe(false);
   });
 
-  it('covers every status pair without throwing', () => {
+  it('covers every status pair without throwing, and agrees with the workflow table', () => {
+    /**
+     * An admin can make every *legal* move and no illegal one.
+     *
+     * This used to assert an admin could make every move full stop, which was true when status was
+     * a free-form column and stopped being true when the workflow became a graph. Legality is not
+     * a permission: `archived → published` is refused for everyone, because a page coming back
+     * from the archive goes through draft so that somebody reads it first.
+     */
     const statuses: ContentStatus[] = [
       'draft',
       'in_review',
@@ -149,13 +157,26 @@ describe('canChangeStatus', () => {
       'published',
       'archived',
     ];
+
     for (const from of statuses) {
       for (const to of statuses) {
         expect(typeof canChangeStatus(contributor, from, to)).toBe('boolean');
-        // An admin outranks an editor, so nothing an editor may do is closed to them.
-        expect(canChangeStatus(admin, from, to)).toBe(true);
+        expect(canChangeStatus(admin, from, to)).toBe(isLegalTransition(from, to));
       }
     }
+  });
+
+  it('refuses an illegal move to everyone, admins included', () => {
+    expect(canChangeStatus(admin, 'archived', 'published')).toBe(false);
+    expect(canChangeStatus(admin, 'archived', 'in_review')).toBe(false);
+    // The one way out of the archive.
+    expect(canChangeStatus(admin, 'archived', 'draft')).toBe(true);
+  });
+
+  it('lets a contributor withdraw their own submission', () => {
+    // Pulling something back out of review is not a demotion needing an editor — a contributor who
+    // spots their own mistake should not have to ask someone else to un-submit it.
+    expect(canChangeStatus(contributor, 'in_review', 'draft')).toBe(true);
   });
 });
 

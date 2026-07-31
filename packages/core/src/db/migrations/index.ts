@@ -12,6 +12,8 @@ import * as m0006 from './0006_content_type_og_image.js';
 import * as m0007 from './0007_reusable_blocks.js';
 import * as m0008 from './0008_password_auth.js';
 import * as m0009 from './0009_two_factor.js';
+import * as m0010 from './0010_audit_log.js';
+import * as m0011 from './0011_scheduling.js';
 
 /**
  * The migration registry.
@@ -34,6 +36,8 @@ export const migrations: Record<string, Migration> = {
   '0007_reusable_blocks': m0007,
   '0008_password_auth': m0008,
   '0009_two_factor': m0009,
+  '0010_audit_log': m0010,
+  '0011_scheduling': m0011,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

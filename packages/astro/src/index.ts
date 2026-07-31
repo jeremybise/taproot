@@ -110,6 +110,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/settings/blocks/[id]', 'settings/blocks/[id]'],
           ['/settings/redirects', 'settings/redirects'],
           ['/settings/users', 'settings/users'],
+          ['/settings/audit', 'settings/audit'],
           ['/settings/system', 'settings/system'],
         ];
 
@@ -161,6 +162,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/menus/[id]/items', 'menus/[id]/items'],
           ['/menus/[id]/reorder', 'menus/[id]/reorder'],
           ['/menu-items/[itemId]', 'menu-items/[itemId]'],
+          ['/scheduler/run', 'scheduler/run'],
           ['/theme', 'theme'],
         ];
 

@@ -240,13 +240,41 @@ export async function getItem(
  * This is the hot path — every public page view runs it — which is why `path` is a unique indexed
  * column rather than something reconstructed by walking parents at request time.
  */
+/**
+ * The SQL condition for "a visitor may see this".
+ *
+ * One expression, used by every reader — the rule that decides what the public sees is exactly the
+ * kind that must not be implemented twice. It lives here rather than in `scheduler.ts` because
+ * `scheduler.ts` already depends on this module, and the reverse would close the loop.
+ *
+ * A `scheduled` item whose time has passed is included whether or not a sweep has run: that is
+ * what makes "goes live at 9am" true on a deployment where nobody wired up a cron.
+ */
+export function visibleToPublic(eb: any) {
+  return eb.or([
+    eb('status', '=', 'published'),
+    eb.and([
+      eb('status', '=', 'scheduled'),
+      eb('publish_at', 'is not', null),
+      eb('publish_at', '<=', now()),
+    ]),
+  ]);
+}
+
 export async function getItemByPath(
   db: Kysely<Database>,
   path: string,
   options: { publishedOnly?: boolean } = {},
 ): Promise<ContentItem | undefined> {
   let query = db.selectFrom('content_items').selectAll().where('path', '=', normalizePath(path));
-  if (options.publishedOnly !== false) query = query.where('status', '=', 'published');
+  /**
+   * A scheduled item whose time has passed counts as visible, whether or not a sweep has run yet.
+   *
+   * That is what makes "goes live at 9am" true on a deployment where nobody wired up a cron —
+   * which is every deployment on its first day. The sweep then makes the *stored* status agree;
+   * without this rule, a missed cron would silently hold a launch.
+   */
+  if (options.publishedOnly !== false) query = query.where(visibleToPublic);
 
   const row = await query.executeTakeFirst();
   return row ? hydrateItem(row) : undefined;
@@ -312,6 +340,8 @@ export interface CreateItemInput {
   status?: ContentStatus;
   data?: Record<string, unknown>;
   seo?: SeoData;
+  /** When a `scheduled` item should go live. ISO 8601. */
+  publishAt?: string | null;
   userId?: string | null;
 }
 
@@ -389,6 +419,9 @@ export async function createItem(
     data: stringifyJson(validation.data ?? {}),
     seo: stringifyJson(input.seo ?? {}),
     published_at: status === 'published' ? timestamp : null,
+    // Set through the scheduling path rather than at creation: an item is not scheduled until
+    // somebody picks a time, and a create that lands straight in `scheduled` has none yet.
+    publish_at: input.publishAt ?? null,
     created_by: input.userId ?? null,
     updated_by: input.userId ?? null,
     created_at: timestamp,
@@ -429,6 +462,14 @@ export interface UpdateItemInput {
   status?: ContentStatus;
   data?: Record<string, unknown>;
   seo?: SeoData;
+  /**
+   * When a `scheduled` item should go live. ISO 8601, or null to clear.
+   *
+   * Cleared automatically whenever the status leaves `scheduled` — see the write below. A stale
+   * time left on a published page is a booby trap: reschedule it later and it goes live in the
+   * past, which is to say immediately.
+   */
+  publishAt?: string | null;
   userId?: string | null;
   /**
    * How the resulting revision should be labelled. Defaults to `save`.
@@ -540,6 +581,17 @@ export async function updateItem(
         seo: stringifyJson(seo),
         published_at:
           status === 'published' ? (existing.published_at ?? timestamp) : existing.published_at,
+        /**
+         * Cleared the moment the status leaves `scheduled`.
+         *
+         * A stale time left behind on a published or archived page is a booby trap: schedule it
+         * again months later, and the sweep sees a `publish_at` in the past and takes it live
+         * immediately. Tying the value's lifetime to the status it belongs to is what stops that.
+         */
+        publish_at:
+          status === 'scheduled'
+            ? (input.publishAt ?? existing.publish_at)
+            : null,
         updated_by: input.userId ?? existing.updated_by,
         updated_at: timestamp,
       })

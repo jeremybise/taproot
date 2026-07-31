@@ -143,8 +143,8 @@ Block field type, page composition, Reusable Block promotion + usage tracking, a
 
 The presets are the *demo site's*, not Taproot's: `apps/web` seeds hero, call to action, prose, quote, and gallery block types and supplies an Astro component for each. Taproot ships no block templates, because a CMS that shipped a hero component would be shipping a design.
 
-**Phase 3 — Workflow**
-The draft/review/schedule/publish workflow with role gates, a scheduler that actually flips a scheduled item live, and an audit log.
+**Phase 3 — Workflow** *(complete)*
+The draft/review/schedule/publish workflow with role gates, a scheduler that actually flips a scheduled item live, and an audit log. The workflow is a transition graph in core rather than a status column, so an illegal move is refused for everyone including admins; scheduling is visible-on-read plus a sweep, so it works with no cron wired up; the audit log is append-only and records consequential actions rather than every save.
 
 **User management already shipped**, ahead of this phase and out of order: making email/password the primary sign-in method meant a deployment had no way to add a second person, which is not a state to leave a CMS in. Creating users, assigning roles, deactivating, and set-password links are all built. Materially smaller than this phase used to be: it was scoped around departments as an ownership entity and a role model narrowed to them, and both were dropped once departments turned out to be classification — which Phase 1's taxonomies already deliver. The flat role model is already built and enforced; what is missing is the screen to administer it. Read the constraints at the end of the Roles & permissions section before starting; they are what keep Phase 3.75 from turning into a rewrite of this one.
 

@@ -25,6 +25,8 @@ const createSchema = z.object({
   slug: z.string().optional(),
   parentId: z.string().nullish(),
   status: z.enum(['draft', 'in_review', 'scheduled', 'published', 'archived']).default('draft'),
+  /** When a scheduled item goes live. ISO 8601. */
+  publishAt: z.string().datetime().nullish(),
   data: z.record(z.string(), z.unknown()).default({}),
   seo: seoSchema.default({}),
 });
@@ -48,6 +50,7 @@ export const POST = handle(
       slug: input.slug,
       parentId: input.parentId ?? null,
       status: input.status,
+      publishAt: input.publishAt,
       data: input.data,
       seo: input.seo,
       userId: user.id,

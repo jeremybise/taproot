@@ -124,6 +124,27 @@ export interface TotpRecoveryCodesTable {
   created_at: Timestamp;
 }
 
+/**
+ * One entry in the append-only audit log.
+ *
+ * `actor_email` and `subject_label` are copied in at write time rather than joined at read time,
+ * because a log records what was true *then*: an entry stays readable after the person and the
+ * thing it describes are both gone. `subject_id` has no foreign key for the same reason — a
+ * cascade would delete the evidence along with the subject.
+ */
+export interface AuditLogTable {
+  id: string;
+  actor_id: string | null;
+  actor_email: string | null;
+  action: string;
+  subject_type: string;
+  subject_id: string | null;
+  subject_label: string | null;
+  /** JSON text, or null. */
+  detail: string | null;
+  created_at: Timestamp;
+}
+
 export interface SessionsTable {
   /** SHA-256 of the session token. The raw token is only ever in the cookie. */
   id: string;
@@ -248,7 +269,16 @@ export interface ContentItemsTable {
   data: JsonText;
   /** SEO overrides: meta title/description, OG image. Authored through the editor's SEO panel. */
   seo: JsonText;
+  /** When it went live. Written at the moment it happens. */
   published_at: string | null;
+  /**
+   * When a `scheduled` item should go live.
+   *
+   * Separate from `published_at` on purpose: one is a record and the other an intention, and
+   * sharing a column would make "published two hours ago" and "goes live in two hours" the same
+   * value distinguished only by a status the scheduler is mid-way through changing.
+   */
+  publish_at: string | null;
   created_by: string | null;
   updated_by: string | null;
   created_at: Timestamp;
@@ -450,6 +480,7 @@ export interface MenuItemsTable {
  */
 export interface Database {
   users: UsersTable;
+  audit_log: AuditLogTable;
   login_attempts: LoginAttemptsTable;
   login_challenges: LoginChallengesTable;
   totp_recovery_codes: TotpRecoveryCodesTable;
@@ -473,6 +504,7 @@ export interface Database {
 }
 
 export type User = Selectable<UsersTable>;
+export type AuditLogRow = Selectable<AuditLogTable>;
 export type PasswordResetTokenRow = Selectable<PasswordResetTokensTable>;
 export type NewUser = Insertable<UsersTable>;
 export type UserUpdate = Updateable<UsersTable>;

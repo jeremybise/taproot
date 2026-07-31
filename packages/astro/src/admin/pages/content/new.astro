@@ -97,7 +97,15 @@ const defaultOgImage = findImage(media, contentType?.default_og_image_id ?? null
           contentTypeId={contentType.id}
           contentTypeName={contentType.name}
           fields={contentType.fields}
-          initial={{ title: '', slug: '', status: 'draft', parentId: null, data: {}, seo: {} }}
+          initial={{
+            title: '',
+            slug: '',
+            status: 'draft',
+            publishAt: null,
+            parentId: null,
+            data: {},
+            seo: {},
+          }}
           parents={parents}
           termsByTaxonomy={termsByTaxonomy}
           relationTargets={relationTargets}

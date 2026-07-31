@@ -39,6 +39,15 @@ const userCount = canManageUsers(user)
     )?.n
   : 0;
 
+const auditCount = canManageUsers(user)
+  ? (
+      await taproot.db.db
+        .selectFrom('audit_log')
+        .select((eb) => eb.fn.countAll<number>().as('n'))
+        .executeTakeFirst()
+    )?.n
+  : 0;
+
 const sections = [
   ...(canManageSchema(user)
     ? [
@@ -72,6 +81,12 @@ const sections = [
           title: 'Users & access',
           description: 'Who can sign in, and what each of them may do.',
           meta: `${Number(userCount ?? 0)} ${Number(userCount ?? 0) === 1 ? 'user' : 'users'}`,
+        },
+        {
+          href: '/admin/settings/audit',
+          title: 'Audit log',
+          description: 'Publishing, deletions, and changes to who can do what.',
+          meta: `${Number(auditCount ?? 0)} ${Number(auditCount ?? 0) === 1 ? 'entry' : 'entries'}`,
         },
       ]
     : []),

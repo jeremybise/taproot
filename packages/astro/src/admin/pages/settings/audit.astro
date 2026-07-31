@@ -1,0 +1,206 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import { listAuditActions, listAuditEntries, listUsers } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageUsers } from '../../../runtime/guards.js';
+
+/**
+ * The audit log.
+ *
+ * Admin-only, because it names people and what they did. Read-only, because the value of a log is
+ * that it cannot be tidied by whoever it embarrasses — there is no delete here and no API that
+ * offers one; retention is a dated sweep in core, not something aimable from a screen.
+ *
+ * It records *consequential* actions rather than every write. Saves already append a revision with
+ * their author, which is a finer record than this could be; what revisions cannot answer is "who
+ * put that in front of the public" or "who cleared someone's second factor", asked afterwards and
+ * across items. Logging saves as well would bury exactly those.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageUsers(user)) return Astro.redirect('/admin/settings');
+
+const params = Astro.url.searchParams;
+const action = params.get('action') ?? '';
+const actorId = params.get('actor') ?? '';
+
+const [{ entries, total }, actions, users] = await Promise.all([
+  listAuditEntries(taproot.db.db, {
+    action: action || undefined,
+    actorId: actorId || undefined,
+    limit: 200,
+  }),
+  // Offered from what exists rather than a fixed list, so a filter never names an action this
+  // deployment has never performed.
+  listAuditActions(taproot.db.db),
+  listUsers(taproot.db.db),
+]);
+
+const actorNames = new Map(users.map((row) => [row.id, row.name]));
+
+/** `item.published` → "Item published". The verbs are dotted and past tense by convention. */
+function describe(value: string): string {
+  const [subject, ...rest] = value.split('.');
+  const verb = rest.join('.').replace(/_/g, ' ');
+  return `${(subject ?? '').replace(/_/g, ' ')} ${verb}`.replace(/^./, (c) => c.toUpperCase());
+}
+
+/** Where a subject can still be opened. A deleted one has nowhere to go, which is the point. */
+function subjectHref(entry: (typeof entries)[number]): string | null {
+  if (!entry.subject_id || entry.action.endsWith('.deleted')) return null;
+  switch (entry.subject_type) {
+    case 'item':
+      return `/admin/content/${entry.subject_id}`;
+    case 'content_type':
+      return `/admin/settings/types/${entry.subject_id}`;
+    case 'user':
+      return '/admin/settings/users';
+    default:
+      return null;
+  }
+}
+
+const filtered = Boolean(action || actorId);
+---
+
+<AdminLayout
+  title="Audit log"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Audit log' }]}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Audit log</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      {total} {total === 1 ? 'entry' : 'entries'}{filtered ? ' matching this filter' : ''}. Records
+      publishing, deletions, and changes to people's access — not every save, which the revision
+      history on each item already covers in more detail.
+    </p>
+  </header>
+
+  <form method="get" class="mb-6 flex flex-wrap items-end gap-3">
+    <div>
+      <label for="action" class="block text-sm font-medium">Action</label>
+      <select
+        id="action"
+        name="action"
+        class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      >
+        <option value="">All actions</option>
+        {
+          actions.map((value) => (
+            <option value={value} selected={value === action}>
+              {describe(value)}
+            </option>
+          ))
+        }
+      </select>
+    </div>
+
+    <div>
+      <label for="actor" class="block text-sm font-medium">Person</label>
+      <select
+        id="actor"
+        name="actor"
+        class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      >
+        <option value="">Anyone</option>
+        {
+          users.map((row) => (
+            <option value={row.id} selected={row.id === actorId}>
+              {row.name}
+            </option>
+          ))
+        }
+      </select>
+    </div>
+
+    <button
+      type="submit"
+      class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+    >
+      Filter
+    </button>
+
+    {
+      filtered && (
+        <a
+          href="/admin/settings/audit"
+          class="rounded-md px-3 py-2 text-sm font-medium text-content-muted transition-colors hover:bg-surface-sunken"
+        >
+          Clear
+        </a>
+      )
+    }
+  </form>
+
+  {
+    entries.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        {filtered
+          ? 'Nothing matches this filter.'
+          : 'Nothing recorded yet. Entries appear as content is published or deleted, and as people are added or their access changes.'}
+      </p>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only-focusable">Audit entries, newest first</caption>
+          <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 font-medium">When</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Who</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Action</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Subject</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr class="border-t border-border align-top">
+                <th scope="row" class="px-4 py-2.5 font-normal whitespace-nowrap text-content-muted">
+                  <Timestamp value={entry.created_at} />
+                </th>
+                <td class="px-4 py-2.5">
+                  {/*
+                    The email is the copy taken at write time, so an entry stays readable after the
+                    account is gone. The current name is shown when there still is one.
+                  */}
+                  {entry.actor_id && actorNames.has(entry.actor_id)
+                    ? actorNames.get(entry.actor_id)
+                    : (entry.actor_email ?? <span class="text-content-subtle">Taproot</span>)}
+                </td>
+                <td class="px-4 py-2.5">{describe(entry.action)}</td>
+                <td class="px-4 py-2.5">
+                  {subjectHref(entry) ? (
+                    <a href={subjectHref(entry)!} class="underline-offset-2 hover:underline">
+                      {entry.subject_label ?? entry.subject_id}
+                    </a>
+                  ) : (
+                    <span class="text-content-muted">
+                      {entry.subject_label ?? entry.subject_id ?? '—'}
+                    </span>
+                  )}
+                </td>
+                <td class="px-4 py-2.5 text-xs text-content-subtle">
+                  {entry.detail
+                    ? Object.entries(entry.detail)
+                        .map(([key, value]) => `${key}: ${String(value)}`)
+                        .join(' · ')
+                    : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  {
+    total > entries.length && (
+      <p class="mt-2 text-sm text-content-subtle">
+        Showing the {entries.length} most recent of {total}. Filter to narrow the list.
+      </p>
+    )
+  }
+</AdminLayout>
