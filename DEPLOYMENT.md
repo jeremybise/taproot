@@ -55,15 +55,16 @@ npx wrangler r2 bucket create taproot-media
 The bucket name is already in `wrangler.jsonc` as `taproot-media`. As with D1, the **binding** name
 `MEDIA` is what `storageFromEnv()` looks for — change the bucket name freely, but leave the binding.
 
-**Uploaded media needs a public URL, and this is required rather than recommended.** Nothing in
-Taproot serves bytes back out of R2 — there is no `/media/*` route — so an R2 deployment resolves
-image URLs only through a bucket you have exposed yourself. Attach a custom domain to the bucket in
-the Cloudflare dashboard (R2 → your bucket → Settings → Public access), then set
-`TAPROOT_MEDIA_URL` (step 4) to that origin.
+**Giving the bucket a public URL is strongly recommended, and no longer required.** Media works
+without one: image URLs default to `/api/taproot/media/file/…`, a route that reads the object out
+of R2 and serves it. That used to default to `/media`, which nothing served — so skipping this step
+produced uploads that succeeded, rows that listed, and every `<img>` pointing at a 404, a
+configuration gap presenting as a broken picture.
 
-Skip this and uploads still succeed: rows are written, the admin lists them, and every `<img>`
-points at a path nothing answers. The failure is silent and looks like a broken image rather than a
-missing setting.
+Do it anyway if you can. The fallback bills a Worker invocation per image and cannot match serving
+from Cloudflare's edge. Attach a custom domain in the dashboard (R2 → your bucket → Settings →
+Public access), then set `TAPROOT_MEDIA_URL` (step 4) to that origin — which routes around the
+fallback entirely.
 
 ---
 
