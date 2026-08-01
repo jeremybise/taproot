@@ -1,11 +1,41 @@
 ---
 title: Installing it
-description: Getting Taproot running locally from a fresh clone.
+description: Starting a new Taproot server, or running this repository from a clone.
 ---
 
 Taproot needs Node 22.12 or newer and nothing else. There is no image library to compile, no
-password-hashing binary, and no database server — a fresh clone installs without a C++ toolchain on
-any platform.
+password-hashing binary, and no database server — it installs without a C++ toolchain on any
+platform.
+
+There are two ways in, and they answer different questions. **Start a new server** if you are
+building a site. **Clone this repository** if you want to see the demo, or work on Taproot itself.
+
+## Starting a new server
+
+```bash
+npm create taproot my-cms
+cd my-cms
+npm install
+npm run db:migrate
+npm run dev
+```
+
+Then open <http://localhost:4321>. There are no accounts yet, so it takes you to a one-time setup
+screen that creates the first administrator.
+
+It asks one question: whether to start **blank**, or with a **minimal starter** — a Page type with a
+few fields, a home page, and a menu, so the admin has something in it rather than being an empty
+shell you have to populate before anything is visible. Blank is right if you already know your
+content model.
+
+> **Complete the setup screen before putting the server anywhere public.** Until an account exists,
+> whoever reaches the URL first becomes the administrator.
+
+What this creates is **the CMS server**, not the website. The site visitors read is a separate Astro
+project that installs `@taprootcms/astro` and reads over HTTP — see
+[Getting started](/build/getting-started/). Taproot does not scaffold that half, because it would
+mean generating somebody's front end, and Taproot ships no templates for the same reason it ships no
+block components.
 
 ## From a clone
 

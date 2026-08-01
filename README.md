@@ -18,6 +18,19 @@ administering a site, and running the server.
 
 ## Quick start
 
+**Starting your own CMS:**
+
+```bash
+npm create taproot my-cms
+cd my-cms && npm install && npm run db:migrate && npm run dev
+```
+
+It asks whether to start blank or with a minimal starter, then <http://localhost:4321> takes you to
+a setup screen that creates the first administrator. What that scaffolds is the **server**; the
+website is a separate project that installs `@taprootcms/astro` and reads over HTTP.
+
+**Running this repository**, which is the demo and the reference consumer:
+
 ```bash
 npm install
 cp .env.example apps/studio/.env
@@ -160,12 +173,13 @@ toolchain — Taproot has zero native dependencies.
 ## Layout
 
 ```
-packages/core     @taprootcms/core    data layer, auth, content services, storage. No framework
-packages/studio   @taprootcms/studio  the SERVER: admin panel, REST API, delivery API
-packages/astro    @taprootcms/astro   the CLIENT a site installs. No database; ~460K built
-apps/studio       the CMS deployment — owns the database, runs the scheduler
-apps/web          the reference consumer — holds an API key, reads over HTTP
-apps/docs         the handbook
+packages/core            @taprootcms/core    data layer, auth, content services, storage
+packages/studio          @taprootcms/studio  the SERVER: admin panel, REST API, delivery API
+packages/astro           @taprootcms/astro   the CLIENT a site installs. No database; ~460K built
+packages/create-taproot  create-taproot      npm create taproot
+apps/studio              the CMS deployment — owns the database, runs the scheduler
+apps/web                 the reference consumer — holds an API key, reads over HTTP
+apps/docs                the handbook
 ```
 
 The names are the architecture. `@taprootcms/astro` is what a *site* installs; the server is

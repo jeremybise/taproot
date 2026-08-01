@@ -1,0 +1,31 @@
+{
+  "name": "create-taproot",
+  "version": "0.1.0",
+  "description": "Scaffold a Taproot CMS server",
+  "license": "MIT",
+  "type": "module",
+  "//name": "Unscoped on purpose. `npm create taproot` resolves to the package `create-<name>`, so the documented command only works from an unscoped `create-taproot`. Under the @taprootcms scope the command would be `npm create @taprootcms`, which is what everybody would then have to remember.",
+  "//js": "Plain .mjs rather than TypeScript, and no dependencies. This runs through `npx` on a machine that has installed nothing, so it cannot have a build step and cannot afford an install before it starts. The prompts are node:readline/promises.",
+  "bin": {
+    "create-taproot": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "template",
+    "template-minimal"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeremybise/taproot.git",
+    "directory": "packages/create-taproot"
+  },
+  "homepage": "https://github.com/jeremybise/taproot#readme",
+  "bugs": "https://github.com/jeremybise/taproot/issues",
+  "keywords": ["cms", "astro", "cloudflare", "create", "scaffold", "taproot"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

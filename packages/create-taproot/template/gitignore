@@ -1,0 +1,19 @@
+# Named `gitignore` in the published package and renamed to `.gitignore` on scaffold — npm strips
+# a file called `.gitignore` from a tarball, so a template carrying one ships without it.
+
+node_modules/
+dist/
+.astro/
+.wrangler/
+
+# The local database and anything uploaded to local disk storage.
+data/
+public/uploads/
+
+# Secrets. `.env.example` is the one that is committed.
+.env
+.env.local
+.env.*.local
+
+.DS_Store
+*.log
