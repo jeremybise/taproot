@@ -11,7 +11,7 @@ almost never think about that as an editor — except that the admin is at its o
 `/admin` on the public site. If you run the server, the split matters more, and
 [Deploying](/operate/deploying/) starts there.
 
-This handbook covers three jobs, and you probably only need one of them.
+This handbook covers four jobs, and you probably only need one of them.
 
 ## If you write content
 
@@ -32,6 +32,12 @@ The pages worth reading even if you think you know them:
 You decide what kinds of content exist and who may touch them.
 [Content types](/admin/content-types/) is where the site's shape is defined, and
 [People and access](/admin/users/) is where you add colleagues and choose what each can do.
+
+## If you build the website
+
+[Building a site](/build/getting-started/) is yours. A Taproot site is an ordinary Astro app that
+reads content over HTTP — you install one small package, hold an API key, and render whatever comes
+back. Taproot ships no templates and no design, so the whole of the front end is yours to write.
 
 ## If you run the server
 

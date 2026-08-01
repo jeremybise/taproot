@@ -82,6 +82,26 @@ export default defineConfig({
           ],
         },
         {
+          /**
+           * The developer half, added after the standalone split.
+           *
+           * The handbook was originally scoped at editors, admins, and operators — correct while
+           * Taproot was one embedded app with no consumer to build. Once the delivery API became
+           * the product's whole external surface, the half nobody could use from the docs was this
+           * one.
+           */
+          label: 'Building a site',
+          items: [
+            { label: 'Getting started', slug: 'build/getting-started' },
+            { label: 'The client', slug: 'build/the-client' },
+            { label: 'Rendering a page', slug: 'build/rendering-a-page' },
+            { label: 'Blocks', slug: 'build/blocks' },
+            { label: 'Images and media', slug: 'build/images' },
+            { label: 'Menus and term URLs', slug: 'build/menus' },
+            { label: 'Preview and types', slug: 'build/preview-and-types' },
+          ],
+        },
+        {
           label: 'Running the site',
           items: [
             { label: 'Content types', slug: 'admin/content-types' },
