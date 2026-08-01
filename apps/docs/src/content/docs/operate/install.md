@@ -11,14 +11,20 @@ any platform.
 
 ```bash
 npm install
-cp .env.example apps/web/.env
+cp .env.example apps/studio/.env
+cp apps/web/.env.example apps/web/.env
 npm run db:seed
 npm run dev
 ```
 
-The admin is at `http://localhost:4321/admin`. Sign in with **admin@example.com** / **taproot**.
+That starts **two** servers, which is Taproot's shape rather than an inconvenience:
 
-Every value in `.env.example` has a working default. Nothing needs editing to get a dev server up.
+- **The CMS** at `http://localhost:4321` — the admin is at `/admin`. Sign in with
+  **admin@example.com** / **taproot**.
+- **The site** at `http://localhost:4323` — a demo campus website that reads content from the CMS
+  over HTTP. It has no database and no admin panel.
+
+Every value in both `.env.example` files has a working default. Nothing needs editing.
 
 ## What the seed gives you
 
@@ -33,7 +39,8 @@ there. `npm run db:reset` deletes the local database and starts over.
 
 | | |
 |---|---|
-| `npm run dev` | Dev server on :4321 |
+| `npm run dev` | Both servers — CMS on :4321, site on :4323 |
+| `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run docs` | This handbook, on :4322 |
 | `npm run db:seed` | Migrate and seed. Safe to repeat |
 | `npm run db:reset` | Delete the local database and reseed |
@@ -54,14 +61,19 @@ holds the SQLite file open.
 
 ```
 packages/core     data layer, auth, content services, storage. No framework
-packages/astro    the Astro integration: admin panel, REST API, typed client
-apps/web          the demo campus site
+packages/studio   the CMS server: admin panel, REST API, delivery API
+packages/astro    the client a site installs. No database
+apps/studio       the CMS deployment
+apps/web          the reference consumer — a site reading over HTTP
 apps/docs         this handbook
 ```
 
+The package a *site* installs is `@taproot/astro`. `@taproot/studio` is the server, and a site
+never installs it.
+
 ## Where the data goes
 
-Locally, a SQLite file at `apps/web/data/taproot.sqlite`, through Node's built-in SQLite. No server
+Locally, a SQLite file at `apps/studio/data/taproot.sqlite`, through Node's built-in SQLite. No server
 to install, nothing to configure.
 
 In production, Cloudflare D1. Postgres is wired but is not the tested target.

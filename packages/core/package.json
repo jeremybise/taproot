@@ -8,6 +8,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
+    "./pure": "./dist/pure.js",
     "./db": "./dist/db/index.js",
     "./auth": "./dist/auth/index.js",
     "./content": "./dist/content/index.js",

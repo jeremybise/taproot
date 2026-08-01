@@ -411,41 +411,6 @@ function toDeliveryMenuItem(entry: ResolvedMenuItem): DeliveryMenuItem | null {
   };
 }
 
-/**
- * Turn delivered menu entries into hrefs, applying the site's own term-URL policy.
- *
- * The other half of the callback that could not cross the wire — the consumer supplies exactly the
- * `termHref` it would have passed to `resolveMenu`, and gets the same result. Shipped here so both
- * sides of the boundary share one implementation; it moves into the consumer package in 3.75b.
- */
-export function applyTermHrefs(
-  items: DeliveryMenuItem[],
-  termHref: (term: { id: string; name: string; slug: string; taxonomyApiId: string }) => string | null,
-): { id: string; label: string; href: string; openInNewTab: boolean; children: ReturnType<typeof applyTermHrefs> }[] {
-  return items
-    .map((entry) => {
-      const href =
-        entry.target.type === 'item'
-          ? entry.target.path
-          : entry.target.type === 'url'
-            ? entry.target.url
-            : termHref(entry.target);
-
-      // A term the site publishes no page for drops out, which is what `resolveMenu` does with the
-      // same answer. Nothing is wrong — there is simply nowhere to link to.
-      if (href === null) return null;
-
-      return {
-        id: entry.id,
-        label: entry.label,
-        href,
-        openInNewTab: entry.openInNewTab,
-        children: applyTermHrefs(entry.children, termHref),
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-}
-
 // ---------------------------------------------------------------------------
 // Reference collection
 // ---------------------------------------------------------------------------

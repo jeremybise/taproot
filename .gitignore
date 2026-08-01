@@ -17,8 +17,9 @@ dist/
 *.sqlite-shm
 data/
 
-# Locally uploaded media (production uses R2/S3)
-apps/web/public/uploads/
+# Locally uploaded media (production uses R2/S3). Lives with the CMS, which owns the database
+# and the storage adapter — the consumer has neither.
+apps/studio/public/uploads/
 
 # Build info
 *.tsbuildinfo

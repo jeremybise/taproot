@@ -9,7 +9,10 @@ import { createTaxonomy, createTerm } from './taxonomies.js';
 import { createReusableBlock } from './reusableBlocks.js';
 import { resolveSeo } from './seo.js';
 import { ancestorPaths } from './paths.js';
-import { applyTermHrefs, deliverMenu, deliverySchema, resolveDelivery } from './delivery.js';
+import { deliverMenu, deliverySchema, resolveDelivery } from './delivery.js';
+// Moved out of `delivery.ts` so it is reachable from `@taproot/core/pure` — a consumer runs it,
+// and `delivery.ts` imports Kysely.
+import { applyTermHrefs } from './menuHrefs.js';
 import type { ContentTypeRow, FieldRow } from '../db/schema.js';
 import type { StorageAdapter } from '../storage/types.js';
 

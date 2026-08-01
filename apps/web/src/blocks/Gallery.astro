@@ -1,6 +1,6 @@
 ---
-import { getTaproot } from '@taproot/studio/runtime/guards';
-import { TaprootImage } from '@taproot/studio/components';
+import { TaprootImage } from '@taproot/astro/components';
+import type { DeliveryMedia } from '@taproot/astro';
 
 /**
  * A block template.
@@ -12,44 +12,23 @@ interface Props {
   /** Media ids in the order the editor arranged them. */
   images?: string[] | null;
   caption?: string | null;
+  media?: Record<string, DeliveryMedia>;
 }
 
-const { images, caption } = Astro.props;
-const taproot = getTaproot(Astro.locals);
+const { images, caption, media = {} } = Astro.props;
 
 const ids = Array.isArray(images) ? images : [];
 
-// One query for the whole gallery, and it selects the crop columns because `TaprootImage` resolves
-// the focal point per image rather than centre-cropping all of them alike.
-const rows = ids.length
-  ? await taproot.db.db
-      .selectFrom('media')
-      .select([
-        'id',
-        'storage_key',
-        'alt_text',
-        'width',
-        'height',
-        'hotspot_x',
-        'hotspot_y',
-        'crop_top',
-        'crop_right',
-        'crop_bottom',
-        'crop_left',
-      ])
-      .where('id', 'in', ids)
-      .execute()
-  : [];
-
 /**
- * Ordered by the stored list, not by whatever order the database returned.
+ * Mapped in the stored order, which is the editor's arrangement.
  *
- * `where in` gives no ordering guarantee, and the editor's arrangement is the whole point of the
- * field's move buttons — losing it here would make them look broken.
+ * That order is the whole point of the field's move buttons, and it survives here for free now:
+ * the ids come back in order and the map is keyed by id, where the old database query needed an
+ * explicit re-sort because `where in` gives no ordering guarantee.
  */
 const assets = ids
-  .map((id) => rows.find((row) => row.id === id))
-  .filter((row): row is (typeof rows)[number] => Boolean(row));
+  .map((id) => media[id])
+  .filter((asset): asset is DeliveryMedia => Boolean(asset));
 ---
 
 {
@@ -59,7 +38,7 @@ const assets = ids
         {assets.map((asset) => (
           <li>
             {/* Alt text comes from the media library, where it is authored once and reused
-                everywhere the asset appears — `TaprootImage` reads it from the row unless a call
+                everywhere the asset appears — `TaprootImage` reads it from the asset unless a call
                 site overrides it, and an empty string stays an empty string. */}
             <TaprootImage asset={asset} ratio={4 / 3} class="gallery-image" />
           </li>

@@ -13,6 +13,8 @@ export * from './reusableBlocks.js';
 export * from './revisions.js';
 export * from './releases.js';
 export * from './delivery.js';
+export * from './preview.js';
+export * from './menuHrefs.js';
 export * from './typegen.js';
 export * from './taxonomies.js';
 export * from './menus.js';

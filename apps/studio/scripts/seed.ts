@@ -5,6 +5,7 @@ import {
   createMenu,
   createMenuItem,
   createRelease,
+  hashSessionToken,
   createReusableBlock,
   createTaxonomy,
   createTerm,
@@ -62,6 +63,20 @@ const DEV_EMAIL = 'admin@example.com';
  * which does enforce the minimum.
  */
 const DEV_PASSWORD = 'taproot';
+
+/**
+ * A fixed API key for local development, so the reference consumer works from a fresh clone.
+ *
+ * The same reasoning as the fixed development password above, and the same limits: this is seed
+ * data, the seed is a development tool, and anything it creates is public knowledge. It is spelled
+ * to be unmistakable in a log or a leak.
+ *
+ * A real deployment never runs the seed and creates its keys under Settings -> API keys, where the
+ * token is random and shown exactly once. Nothing here changes that path — the row is inserted
+ * directly rather than through `createApiKey`, precisely so that function keeps its promise that a
+ * token it returns was randomly generated.
+ */
+const DEV_API_KEY = `tpr_${'devkey'.padEnd(64, '0')}`;
 
 const { handle, target } = await openDb();
 console.log(`Seeding ${target}`);
@@ -1286,6 +1301,43 @@ if (existingReleases.length > 0) {
   }
 
   console.log(`  release ${release.name} (created, ${staged} items staged)`);
+}
+
+// --- A development API key -------------------------------------------------
+//
+// Without one the reference consumer in apps/web cannot read anything, and `npm run dev` from a
+// fresh clone would give you a working CMS beside a site showing an error. The zero-setup story is
+// a standing requirement, so the seed provides the key and apps/web/.env.example carries it.
+
+const existingKey = await handle.db
+  .selectFrom('api_keys')
+  .select('id')
+  .where('id', '=', await hashSessionToken(DEV_API_KEY))
+  .executeTakeFirst();
+
+if (existingKey) {
+  console.log('  api key (existing)');
+} else {
+  const keyTimestamp = now();
+  await handle.db
+    .insertInto('api_keys')
+    .values({
+      // `id` is the hash of the token, exactly as `createApiKey` does it — the raw value is never
+      // stored, not even for a key whose value is written down in a checked-in example file.
+      id: await hashSessionToken(DEV_API_KEY),
+      label: 'Local development (seeded)',
+      token_prefix: DEV_API_KEY.slice(0, 12),
+      scopes: JSON.stringify(['content:read']),
+      expires_at: null,
+      revoked_at: null,
+      last_used_at: null,
+      created_by: admin.id,
+      created_at: keyTimestamp,
+      updated_at: keyTimestamp,
+    })
+    .execute();
+
+  console.log('  api key (created, for apps/web)');
 }
 
 const counts = await handle.db

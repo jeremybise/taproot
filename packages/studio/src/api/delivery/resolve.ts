@@ -1,4 +1,9 @@
-import { resolveDelivery } from '@taproot/core';
+import {
+  PREVIEW_PARAM,
+  buildItemPayload,
+  resolveDelivery,
+  resolvePreviewToken,
+} from '@taproot/core';
 
 import { apiError, handleScoped, json } from '../_shared.js';
 import { deliveryCache, notModified } from './cache.js';
@@ -18,9 +23,40 @@ import { deliveryCache, notModified } from './cache.js';
  */
 export const GET = handleScoped(
   async ({ context, taproot }) => {
-    const path = new URL(context.request.url).searchParams.get('path');
+    const url = new URL(context.request.url);
+    const path = url.searchParams.get('path');
     if (path === null) {
       return apiError(400, 'A `path` query parameter is required.');
+    }
+
+    /**
+     * A preview token, which is the only way to see unpublished content here.
+     *
+     * Deliberately not a boolean flag: `?preview=1` would be a parameter anyone could add, and the
+     * reason the old same-origin version was safe is that it checked the *session* rather than the
+     * parameter. The token is the replacement for that session, and `resolvePreviewToken` answers
+     * `undefined` for absent, malformed, unknown, and expired alike — so this cannot be probed.
+     *
+     * The payload is built by the same function the published path uses, which is what stops a
+     * preview being a preview of something nobody will ever see.
+     */
+    const preview = await resolvePreviewToken(
+      taproot.db.db,
+      url.searchParams.get(PREVIEW_PARAM),
+    );
+
+    if (preview) {
+      const payload = await buildItemPayload(taproot.db.db, preview.item, {
+        origin: url.origin,
+        storage: taproot.storage,
+        includeUnpublished: true,
+      });
+
+      // Never cached and never indexed: this is content that is not live, and a shared cache
+      // holding it would serve a draft to somebody with no token at all.
+      return json(payload, {
+        headers: { 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' },
+      });
     }
 
     const result = await resolveDelivery(taproot.db.db, path, {

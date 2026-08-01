@@ -1,8 +1,10 @@
 import {
   getContentTypeByApiId,
+  getTaxonomyByApiId,
   listItems,
   termIdsForBranch,
   type ContentStatus,
+  type DeliveryTermRef,
 } from '@taproot/core';
 
 import { apiError, handleScoped, json } from '../_shared.js';
@@ -45,8 +47,49 @@ export const GET = handleScoped(
      * belongs here rather than in the consumer, which would otherwise need the whole term tree
      * before it could ask the question.
      */
-    const termId = params.get('term');
-    const termIds = termId ? await termIdsForBranch(db, termId) : undefined;
+    /**
+     * `term` takes an id, **or** a slug when `taxonomy` names which vocabulary it belongs to.
+     *
+     * The slug form is what a term archive actually needs: a URL like `/department/student-services`
+     * carries a slug, and making the consumer translate it first would mean a second round trip —
+     * on the endpoint that exists to avoid extra round trips. Ids are unique, so the two forms
+     * cannot collide.
+     */
+    const termParam = params.get('term');
+    const taxonomyApiId = params.get('taxonomy');
+
+    let termIds: string[] | undefined;
+    let term: DeliveryTermRef | undefined;
+
+    if (termParam) {
+      let resolvedId = termParam;
+
+      if (taxonomyApiId) {
+        const taxonomy = await getTaxonomyByApiId(db, taxonomyApiId);
+        if (!taxonomy) return apiError(404, `No taxonomy with api_id "${taxonomyApiId}".`);
+
+        const row = await db
+          .selectFrom('terms')
+          .select(['id', 'name', 'slug'])
+          .where('taxonomy_id', '=', taxonomy.id)
+          .where('slug', '=', termParam)
+          .executeTakeFirst();
+
+        if (!row) return apiError(404, `No term "${termParam}" in "${taxonomyApiId}".`);
+
+        resolvedId = row.id;
+        /**
+         * Returned so an archive page can render the term's real name.
+         *
+         * The alternative is un-slugifying, which turns "Student Services" into "student services"
+         * and throws away the capitalisation an editor chose — and gets a term like "PhD" wrong in
+         * a way no rule can recover.
+         */
+        term = { id: row.id, name: row.name, slug: row.slug, taxonomyApiId };
+      }
+
+      termIds = await termIdsForBranch(db, resolvedId);
+    }
 
     const limit = Math.min(Number(params.get('limit') ?? 50) || 50, 200);
     const offset = Math.max(Number(params.get('offset') ?? 0) || 0, 0);
@@ -80,6 +123,9 @@ export const GET = handleScoped(
           updatedAt: item.updated_at,
         })),
         total,
+        // Present only when a slug was resolved, so a consumer can tell "no such term" from
+        // "a term with nothing in it" — which are a 404 and an empty archive respectively.
+        ...(term ? { term } : {}),
       },
       { headers: { 'cache-control': 'public, max-age=0, s-maxage=60', vary: 'authorization' } },
     );

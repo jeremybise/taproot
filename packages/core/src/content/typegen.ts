@@ -215,21 +215,21 @@ export function generateTypes(schema: DeliverySchema, options: GenerateOptions =
      * Narrowing on `block.type` in a renderer is the ergonomics a site wants, and it is also what
      * makes an unhandled block type a compile error rather than a blank space on a page.
      *
-     * Two members per block type, because a block placed inline and one referencing the library
-     * genuinely have different shapes: an inline block carries its fields at the top level, while a
-     * reusable one stores `{ ref }` and the delivery API fills in `data` at read time. Collapsing
-     * them into one optional-everything type would type-check code that crashes on the other shape.
+     * **One member per block type, with the fields under `data`.** An earlier version emitted two —
+     * an inline block with its fields at the top level, and a referencing one with them under
+     * `data` — which was a plausible guess and wrong. `BlockInstance` in core always has `data`;
+     * `ref` only says the library owns it, and `resolveBlockReferences` fills the same `data` in at
+     * read time. Templates written against the guessed shape would have compiled and then read
+     * `undefined` from every field.
      */
     parts.push(
       '/** Any block instance, discriminated by `type`. */',
       'export type TaprootBlock =',
-      ...schema.blockTypes.flatMap((type) => {
+      ...schema.blockTypes.map((type) => {
         const literal = JSON.stringify(type.apiId);
-        const data = `${typeName(type.apiId)}Data`;
-        return [
-          `  | ({ id: string; type: ${literal}; reusable?: false } & ${data})`,
-          `  | { id: string; type: ${literal}; reusable: true; ref: string; data: ${data} }`,
-        ];
+        // `ref` is present when the content belongs to the reusable-block library. The fields are
+        // in `data` either way, which is what lets a renderer ignore the distinction entirely.
+        return `  | { id: string; type: ${literal}; data: ${typeName(type.apiId)}Data; ref?: string }`;
       }),
       '',
     );

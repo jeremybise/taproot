@@ -1,7 +1,6 @@
 ---
-import { resolveMenu, termArchivePath } from '@taproot/core';
-import { getTaproot } from '@taproot/studio/runtime/guards';
-import { PUBLIC_TERM_TAXONOMIES } from '../site.ts';
+import { applyTermHrefs } from '@taproot/astro';
+import { taproot, termHref } from '../taproot.ts';
 
 interface Props {
   title: string;
@@ -31,23 +30,22 @@ const siteName = 'Riverbend College';
 const pageTitle = `${title} · ${siteName}`;
 
 /**
- * The site navigation, resolved from the `main` menu on every request.
+ * The site navigation, fetched from the CMS on every request.
  *
- * Published-only by default, so an unpublished page leaves the navigation without anyone editing
- * the menu, and a moved page keeps its place because the menu stores a reference rather than a
- * URL. An empty or missing menu renders no nav at all rather than an empty landmark.
+ * Published-only, so an unpublished page leaves the navigation without anyone editing the menu, and
+ * a moved page keeps its place because the menu stores a reference rather than a URL. An empty or
+ * missing menu renders no nav at all rather than an empty landmark.
+ *
+ * **Term entries arrive unresolved and this site routes them.** `resolveMenu` took a `termHref`
+ * callback, and a function cannot cross an HTTP boundary — so the delivery API returns the term
+ * itself and `applyTermHrefs` applies the same policy here that used to be passed in. Which
+ * taxonomies deserve public pages is a fact about the routes this site serves, so it belongs on
+ * this side of the wire; see `taproot.ts`.
  */
-const taproot = getTaproot(Astro.locals);
-const nav = await resolveMenu(taproot.db.db, 'main', {
-  // This site's answer to "which terms have a public page". Taproot has no opinion — see site.ts.
-  termHref: (term) =>
-    PUBLIC_TERM_TAXONOMIES.has(term.taxonomyApiId)
-      ? termArchivePath(term.taxonomyApiId, term.slug)
-      : null,
-});
+const nav = applyTermHrefs(await taproot.menu('main'), termHref);
 
 const path = Astro.url.pathname;
-const isCurrent = (href: string | null) => href !== null && path === href;
+const isCurrent = (href: string) => path === href;
 ---
 
 <html lang="en">
@@ -209,7 +207,7 @@ const isCurrent = (href: string | null) => href !== null && path === href;
                 {nav.map((entry) => (
                   <li>
                     <a
-                      href={entry.href!}
+                      href={entry.href}
                       aria-current={isCurrent(entry.href) ? 'page' : undefined}
                       {...(entry.openInNewTab ? { target: '_blank', rel: 'noopener' } : {})}
                     >
@@ -228,7 +226,7 @@ const isCurrent = (href: string | null) => href !== null && path === href;
                         {entry.children.map((child) => (
                           <li>
                             <a
-                              href={child.href!}
+                              href={child.href}
                               aria-current={isCurrent(child.href) ? 'page' : undefined}
                             >
                               {child.label}
@@ -269,7 +267,7 @@ const isCurrent = (href: string | null) => href !== null && path === href;
 
     <footer class="site">
       <div class="wrap">
-        Demo site for Taproot · <a href="/admin">Admin</a>
+        Demo site for Taproot — a reference consumer reading content over HTTP
       </div>
     </footer>
   </body>

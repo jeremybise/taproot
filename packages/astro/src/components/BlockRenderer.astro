@@ -10,7 +10,7 @@
  * So this takes a map from block `api_id` to an Astro component:
  *
  * ```astro
- * import { BlockRenderer } from '@taproot/studio/components';
+ * import { BlockRenderer } from '@taproot/astro/components';
  * import Hero from '../blocks/Hero.astro';
  * import CallToAction from '../blocks/CallToAction.astro';
  *
@@ -24,7 +24,15 @@
  * unmapped block must not take down the page around it — and shows a visible note in development,
  * because a silent gap while building is how a block goes missing from a live page unnoticed.
  */
-import type { BlockInstance } from '@taproot/core';
+import type { DeliveryMedia } from '@taproot/core/pure';
+
+/** The stored shape of one block. `data` always holds the fields; `ref` means the library owns them. */
+interface BlockInstance {
+  id: string;
+  type: string;
+  data: Record<string, unknown>;
+  ref?: string;
+}
 
 interface Props {
   blocks?: BlockInstance[] | unknown;
@@ -32,9 +40,17 @@ interface Props {
   components?: Record<string, any>;
   /** Wrapper element for each block. `null` renders the component bare. */
   as?: string | null;
+  /**
+   * The delivery response's `media` map, forwarded to every block.
+   *
+   * A block holding an image stores an id, and the asset it names is already in the response —
+   * so passing the map down is what keeps a block template from needing a request of its own.
+   * Before the split these templates queried the database directly, which a consumer cannot do.
+   */
+  media?: Record<string, DeliveryMedia>;
 }
 
-const { blocks, components = {}, as = null } = Astro.props;
+const { blocks, components = {}, as = null, media = {} } = Astro.props;
 
 /**
  * Tolerate a value that is not a block list.
@@ -69,7 +85,7 @@ const Wrapper = as;
       ) : null;
     }
 
-    const rendered = <Component {...block.data} block={block} />;
+    const rendered = <Component {...block.data} block={block} media={media} />;
 
     return Wrapper ? (
       <Wrapper data-taproot-block={block.type}>{rendered}</Wrapper>

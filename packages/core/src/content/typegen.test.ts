@@ -140,7 +140,16 @@ describe('field types', () => {
 });
 
 describe('blocks', () => {
-  it('emits a union with both shapes a block instance can arrive in', () => {
+  /**
+   * The fields live under `data`, always.
+   *
+   * An earlier version emitted two members per block type — inline with fields at the top level,
+   * referencing with them under `data`. Plausible and wrong: `BlockInstance` always has `data`, and
+   * `ref` only says the library owns the content. Templates written against the guessed shape would
+   * have compiled and read `undefined` from every field, which is the worst way for a generated
+   * type to be wrong.
+   */
+  it('puts a block’s fields under data, with ref optional', () => {
     const out = generateTypes(
       schema({
         blockTypes: [
@@ -156,12 +165,9 @@ describe('blocks', () => {
       }),
     );
 
-    // Inline: fields at the top level. Referenced: `{ ref }` with the content filled in at read
-    // time. Collapsing them would type-check code that crashes on the other shape.
-    expect(out).toContain('| ({ id: string; type: "hero"; reusable?: false } & HeroData)');
-    expect(out).toContain(
-      '| { id: string; type: "hero"; reusable: true; ref: string; data: HeroData }',
-    );
+    expect(out).toContain('| { id: string; type: "hero"; data: HeroData; ref?: string }');
+    // The shape that was guessed and is wrong — asserted absent so it cannot come back.
+    expect(out).not.toContain('reusable?: false');
   });
 });
 

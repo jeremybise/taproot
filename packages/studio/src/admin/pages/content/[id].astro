@@ -164,17 +164,18 @@ const flash = error
     {
       /*
         Singletons have no routable path of their own, so there is nothing to preview.
-        `?preview=1` renders unpublished content, but only for a signed-in editor — the public
-        route checks the session, not the parameter.
+        The site is a separate deployment now, so its origin never sees this session. This mints a
+        short-lived token instead and redirects to the site carrying it — the same mechanism whether
+        the target is a draft or a release's staged version, because two of them would drift.
       */
       contentType.kind !== 'singleton' && (
         <a
-          href={`${item.path}?preview=1`}
+          href={`/api/taproot/preview?item=${item.id}${releaseMode ? `&release=${releaseMode.id}` : ''}`}
           target="_blank"
           rel="noopener"
           class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
         >
-          Preview page
+          {releaseMode ? 'Preview staged version' : 'Preview page'}
           <span class="sr-only-focusable"> (opens in a new tab)</span>
         </a>
       )

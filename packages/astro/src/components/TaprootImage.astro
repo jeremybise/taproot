@@ -1,0 +1,96 @@
+---
+import { cropFrame, resolveCrop, type DeliveryMedia } from '@taproot/core/pure';
+
+/**
+ * An image rendered at a target aspect ratio, honouring its stored focal point and crop.
+ *
+ * The delivery half of the hotspot editor. For two phases the editor stored a focal point that
+ * nothing read, because the demo templates centre-cropped — an editor could place a face carefully
+ * and watch the site cut it out.
+ *
+ * **This takes a delivered asset, not a database row.** The version that lived in the studio reached
+ * for `Astro.locals.taproot` to turn a storage key into a URL, which a consumer on another origin
+ * has no access to — and never should, since that is the database handle. The delivery API resolves
+ * it to an absolute URL instead, which is what `DeliveryMedia.url` is.
+ *
+ * The maths is core's, unchanged and already tested across every combination of source orientation,
+ * target ratio, and hotspot position. Sharing it rather than reimplementing it here is what keeps a
+ * consumer's rendering identical to the admin's preview frames — a preview that disagreed with the
+ * page is exactly the failure this component exists to prevent.
+ */
+interface Props {
+  /**
+   * An asset from a delivery response's `media` map.
+   *
+   * Passed in rather than fetched by id because the response already contains it: the map is keyed
+   * by the id sitting in the field's value, so a gallery costs one lookup per image and no requests.
+   */
+  asset: DeliveryMedia;
+  /** Width ÷ height. `16 / 9`, `1`, `1200 / 630`. */
+  ratio: number;
+  /**
+   * Overrides the asset's own alt text.
+   *
+   * An empty string is meaningful and passed through: it marks the image decorative, which is
+   * correct when an adjacent heading already carries the meaning. That is why this is not defaulted
+   * with `??` on the way in.
+   */
+  alt?: string;
+  loading?: 'lazy' | 'eager';
+  class?: string;
+}
+
+const { asset, ratio, alt, loading = 'lazy', class: className } = Astro.props;
+
+/**
+ * `resolveCrop` wants the stored column names; the delivered shape nests them.
+ *
+ * Adapted here rather than changing the core function, which the admin's preview calls with rows
+ * straight out of the database. One of the two has to bend, and it should be the newer shape.
+ */
+const frame = cropFrame(
+  resolveCrop(
+    {
+      width: asset.width,
+      height: asset.height,
+      hotspot_x: asset.hotspot?.x ?? null,
+      hotspot_y: asset.hotspot?.y ?? null,
+      crop_top: asset.crop?.top ?? null,
+      crop_right: asset.crop?.right ?? null,
+      crop_bottom: asset.crop?.bottom ?? null,
+      crop_left: asset.crop?.left ?? null,
+    },
+    ratio,
+  ),
+);
+
+/**
+ * Alt text comes from the library, where it is authored once and reused everywhere the asset
+ * appears — unless the call site overrides it. `null` alt text is an asset nobody has described
+ * yet, and an empty string is the least-wrong rendering: a filename read aloud is worse than
+ * silence.
+ */
+const altText = alt ?? asset.alt ?? '';
+---
+
+<div class:list={['taproot-image', className]} style={`--taproot-image-ratio:${ratio}`}>
+  <img src={asset.url} alt={altText} loading={loading} decoding="async" style={frame} />
+</div>
+
+<style>
+  .taproot-image {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: var(--taproot-image-ratio);
+  }
+
+  /*
+    Positioned and sized entirely by the inline style above, which is the resolved rectangle.
+    `max-width: none` because a site-wide `img { max-width: 100% }` — which nearly every stylesheet
+    has — would otherwise clamp the scaled-up image back to the container and undo the crop.
+  */
+  .taproot-image img {
+    position: absolute;
+    max-width: none;
+  }
+</style>

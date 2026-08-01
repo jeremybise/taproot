@@ -1,6 +1,6 @@
 ---
-import { getTaproot } from '@taproot/studio/runtime/guards';
-import { TaprootImage } from '@taproot/studio/components';
+import { TaprootImage } from '@taproot/astro/components';
+import type { DeliveryMedia } from '@taproot/astro';
 
 /**
  * A block template.
@@ -12,39 +12,22 @@ import { TaprootImage } from '@taproot/studio/components';
 interface Props {
   heading: string;
   lead?: string | null;
-  /** A media id, resolved to a row here because the storage adapter only exists on the server. */
+  /** A media id. The asset itself arrives in the delivery response's `media` map. */
   image?: string | null;
+  media?: Record<string, DeliveryMedia>;
 }
 
-const { heading, lead, image } = Astro.props;
-const taproot = getTaproot(Astro.locals);
+const { heading, lead, image, media = {} } = Astro.props;
 
 /**
- * The crop columns come back too, not just the storage key.
+ * Looked up, not queried.
  *
- * This used to select only `storage_key` and `alt_text` and render a plain `<img>` under
- * `object-fit: cover`, which centre-crops — so the focal point an editor had set was discarded at
- * exactly the shape it was set for. `TaprootImage` needs the dimensions and the hotspot to resolve
- * the rectangle.
+ * This used to reach into the database for the storage key and the crop columns, which a site on
+ * another origin cannot do and should never be able to. The delivery API resolves every asset the
+ * page references — including the ones inside blocks — into one map, so this is a lookup with no
+ * request behind it.
  */
-const asset = image
-  ? await taproot.db.db
-      .selectFrom('media')
-      .select([
-        'storage_key',
-        'alt_text',
-        'width',
-        'height',
-        'hotspot_x',
-        'hotspot_y',
-        'crop_top',
-        'crop_right',
-        'crop_bottom',
-        'crop_left',
-      ])
-      .where('id', '=', image)
-      .executeTakeFirst()
-  : undefined;
+const asset = image ? media[image] : undefined;
 ---
 
 <section class="hero">
@@ -72,9 +55,9 @@ const asset = image
     background: color-mix(in oklch, var(--accent) 12%, transparent);
   }
   /*
-    The height comes from the aspect ratio now rather than a fixed 14rem. A fixed height plus a
-    resolved crop would fight each other: the crop is computed for a shape, so the box has to be
-    that shape or the image is letterboxed inside its own frame.
+    The height comes from the aspect ratio rather than a fixed one. A fixed height plus a resolved
+    crop would fight each other: the crop is computed for a shape, so the box has to be that shape
+    or the image is letterboxed inside its own frame.
   */
   .hero :global(.hero-image) {
     display: block;

@@ -181,6 +181,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
            * callers: those routes edit one thing at a time for a signed-in person, these answer a
            * whole page for a machine holding a scoped key.
            */
+          ['/preview', 'preview'],
           ['/delivery/resolve', 'delivery/resolve'],
           ['/delivery/items', 'delivery/items'],
           ['/delivery/menu/[apiId]', 'delivery/menu/[apiId]'],

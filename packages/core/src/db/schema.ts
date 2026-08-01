@@ -125,6 +125,24 @@ export interface TotpRecoveryCodesTable {
 }
 
 /**
+ * A short-lived link that shows unpublished content on a site of another origin.
+ *
+ * A row rather than a signed token, following `login_challenges`: revocable, short-lived, and not
+ * carrying its own validity however the account changes underneath it. `release_id` set means the
+ * staged version inside that release rather than the item's own content — one mechanism for both,
+ * because two nearly-identical ones drift until one stops checking something.
+ */
+export interface PreviewTokensTable {
+  /** SHA-256 of the token. The raw value exists only in the link. */
+  id: string;
+  content_item_id: string;
+  release_id: string | null;
+  created_by: string | null;
+  expires_at: Timestamp;
+  created_at: Timestamp;
+}
+
+/**
  * What an API key is allowed to do.
  *
  * One scope today, and that is not a placeholder — it is everything the delivery API needs. A write
@@ -588,6 +606,7 @@ export interface MenuItemsTable {
 export interface Database {
   users: UsersTable;
   api_keys: ApiKeysTable;
+  preview_tokens: PreviewTokensTable;
   audit_log: AuditLogTable;
   login_attempts: LoginAttemptsTable;
   login_challenges: LoginChallengesTable;

@@ -1,0 +1,26 @@
+{
+  "name": "@taproot/astro",
+  "version": "0.0.0",
+  "description": "The Taproot client for Astro: read content from a Taproot server over HTTP",
+  "license": "MIT",
+  "type": "module",
+  "//": "The CONSUMER half. A site installs this and nothing else; it holds an API key and talks to a Taproot server over HTTP. It deliberately does not depend on @taproot/core's main entry — that barrel pulls Kysely and the dialect loaders, none of which a site can use and all of which it would ship. Runtime imports go to @taproot/core/pure, which compiles to a re-export of the crop arithmetic and nothing else; everything else is `import type`, erased at build. The server is @taproot/studio and is not installed here.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./components": "./src/components/index.ts",
+    "./components/*": "./src/components/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@taproot/core": "*"
+  },
+  "peerDependencies": {
+    "astro": "^7.0.0"
+  }
+}

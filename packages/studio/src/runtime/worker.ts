@@ -2,6 +2,7 @@ import {
   publishDueItems,
   publishDueReleases,
   purgeExpiredAttempts,
+  purgeExpiredPreviewTokens,
   purgeExpiredSessions,
   purgeStaleResetTokens,
 } from '@taproot/core';
@@ -87,6 +88,9 @@ export async function runScheduledTasks(): Promise<ScheduledRunResult> {
   const purgedSessions = await purgeExpiredSessions(db);
   const purgedResetTokens = await purgeStaleResetTokens(db);
   const purgedLoginAttempts = await purgeExpiredAttempts(db);
+  // Preview tokens expire in thirty minutes and are never read again after that; without a
+  // sweep the table grows by one row per click on a preview link, forever.
+  await purgeExpiredPreviewTokens(db);
 
   return {
     published,

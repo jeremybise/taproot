@@ -9,9 +9,6 @@
     ".": "./src/index.ts",
     "./runtime": "./src/runtime/index.ts",
     "./runtime/*": "./src/runtime/*.ts",
-    "./client": "./src/client/index.ts",
-    "./components": "./src/components/index.ts",
-    "./components/*": "./src/components/*",
     "./admin/*": "./src/admin/*",
     "./api/*": "./src/api/*",
     "./package.json": "./package.json"

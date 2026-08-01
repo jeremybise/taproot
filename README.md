@@ -3,7 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 3.5 complete.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 3.75 complete.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL. Then move it through a review workflow, schedule it,
@@ -19,13 +19,16 @@ administering a site, and running the server.
 
 ```bash
 npm install
-cp .env.example apps/web/.env
+cp .env.example apps/studio/.env
+cp apps/web/.env.example apps/web/.env
 npm run db:seed
 npm run dev
 ```
 
-Then open <http://localhost:4321> — or <http://localhost:4321/admin> and sign in with
-**admin@example.com** / **taproot**.
+That starts **two** servers, which is the architecture rather than an inconvenience: the CMS at
+<http://localhost:4321> (sign in at `/admin` with **admin@example.com** / **taproot**) and the site
+that reads from it at <http://localhost:4323>. The site holds an API key and talks to the CMS over
+HTTP; it has no database and no admin panel.
 
 On a database with no accounts — a fresh deployment rather than a seeded clone — `/admin` sends you
 to a setup screen that creates the first administrator instead.
@@ -128,7 +131,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
 | `npm run docs` | The handbook at :4322 — Starlight, no database, builds on its own |
-| `npm test` | Unit tests (949 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, releases, the delivery API and type generation, taxonomies, menus, redirects, SEO, blocks, the field builder) |
+| `npm test` | Unit tests (960 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, releases, the delivery API and type generation, taxonomies, menus, redirects, SEO, blocks, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/studio` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |

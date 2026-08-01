@@ -3,27 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Demo campus site running the Taproot CMS",
+  "description": "Reference consumer: a campus site reading content from a Taproot server over HTTP",
   "scripts": {
-    "dev": "astro dev",
+    "dev": "astro dev --port 4323",
     "build": "astro build",
-    "preview": "astro build && wrangler dev",
+    "preview": "astro preview",
     "astro": "astro",
-    "db:migrate": "node --experimental-strip-types ./scripts/migrate.ts",
-    "db:migrate:remote": "node --experimental-strip-types ./scripts/migrate.ts --remote",
-    "db:seed": "node --experimental-strip-types ./scripts/seed.ts",
-    "db:reset": "node --experimental-strip-types ./scripts/reset.ts",
-    "taproot:types": "node --experimental-strip-types ./scripts/types.ts",
-    "deploy": "astro build && wrangler deploy"
+    "taproot:types": "node --experimental-strip-types ./scripts/types.ts"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^14.1.5",
     "@astrojs/node": "^11.0.3",
-    "@taproot/studio": "*",
-    "@taproot/core": "*",
+    "@taproot/astro": "*",
     "astro": "^7.1.4"
-  },
-  "devDependencies": {
-    "wrangler": "^4.114.0"
   }
 }

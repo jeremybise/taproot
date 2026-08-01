@@ -21,37 +21,45 @@ a Cloudflare cron trigger for the publishing sweep.
 
 **Phase 3.5 — Content Releases — is complete.**
 
-**Phase 3.75a is complete**: API keys, principals, the delivery API, ETags, and type generation.
-`apps/web` is deliberately **unchanged** and still reads the database directly — both paths work,
-which is what makes the equivalence tests in `delivery.test.ts` possible. **3.75b is next**: rename
-`packages/studio` → `packages/studio`, create a thin consumer `@taproot/studio`, rewrite `apps/web`
-against HTTP, add cross-origin preview (covering both drafts *and* a release's staged version), then
-delete the embedded path. That comparison stops being available the moment 3.75b lands, so do not
-remove those tests without replacing what they prove.
+**Phase 3.75 is complete.** Taproot is now a CMS server plus a thin Astro client, which is what
+SCOPE always described and what Phases 0–2 built the opposite of. Phase 4 — the accessibility
+checker — is next.
+
+The equivalence tests in `delivery.test.ts` compare the delivery layer against the *methods* the
+embedded route used (`getItemByPath`, `getChildren`, `ancestorPaths`, `resolveSeo`, `resolveMenu`)
+rather than against a second implementation, which is why they survived the embedded path being
+deleted. They are the closest thing to a spec for the delivery contract — do not remove them without
+replacing what they prove.
 
 **[apps/docs](apps/docs) is the handbook** — Astro + Starlight, `npm run docs`, port 4322. It is
 end-user documentation (editors, site admins, operators), not developer docs, and it is a separate
 app so the demo site stays a demo. It declares **no `sharp`** and configures the passthrough image
 service, because the default image service is a native dependency; `sharp` still arrives
 transitively through Astro and wrangler, which is not something this repo controls, but nothing here
-declares it. Phase 3.75 will invalidate parts of the operator section — the split changes install
-and deployment — so update it in that phase rather than leaving it describing the old shape.
+declares it.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
+| `npm run dev` | Both servers: studio on :4321, site on :4323. Astro 7 daemonises each — stop with `astro dev stop --root apps/studio` (or `apps/web`) |
+| `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 949 tests |
+| `npm test` | Vitest, 960 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
 
-First run on a fresh clone: `npm install && cp .env.example apps/web/.env && npm run db:seed`.
-Sign in at `/admin` with **admin@example.com** / **taproot**.
+First run on a fresh clone:
+`npm install && cp .env.example apps/studio/.env && cp apps/web/.env.example apps/web/.env && npm run db:seed`.
+Sign in at `localhost:4321/admin` with **admin@example.com** / **taproot**; the site is on :4323.
+
+The seed creates a **fixed development API key** that `apps/web/.env.example` already carries, so the
+consumer works from a fresh clone. Same status as the seeded password: development data, public
+knowledge, and never created by anything but the seed — a real deployment makes its own under
+Settings → API keys, where the token is random and shown once.
 
 `npm run typecheck` delegates to each workspace rather than running a root `tsc --build`. There is
 no root `tsconfig.json`, and the Astro projects can't be tsc project references because apps/web's
@@ -91,15 +99,29 @@ must still render every admin screen without erroring.
 ## Layout
 
 ```
-packages/core     @taproot/core   — data layer, auth, content services, storage. No framework.
-packages/studio    @taproot/studio  — the Astro integration: admin panel, REST API, typed client
-apps/web          the demo campus site
+packages/core     @taproot/core    data layer, auth, content services, storage. No framework
+packages/studio   @taproot/studio  the SERVER: admin panel, REST API, delivery API. 80+ routes
+packages/astro    @taproot/astro   the CLIENT a site installs. No database; ~460K built
+apps/studio       the CMS deployment — owns the database, runs the scheduler
+apps/web          the reference consumer — holds an API key, reads over HTTP
+apps/docs         the handbook
 ```
 
-Routes are not files-on-disk in apps/web — `@taproot/studio`'s integration entry
+**The names are the architecture.** `@taproot/astro` is what a *site* installs, matching Wolly's
+`@wollycms/astro`; the server is `@taproot/studio` and a site never installs it. Having those the
+wrong way round was the Phase 0 misreading, and the 3.75b rename is what corrected it.
+
+Routes are not files-on-disk in apps/studio — `@taproot/studio`'s integration entry
 ([index.ts](packages/studio/src/index.ts)) injects every admin and API route via `injectRoute`.
 **Adding a screen or endpoint means adding it to the route table there**, not just creating the
 file.
+
+**The consumer must never pull the data layer into its bundle.** `@taproot/astro` imports
+`@taproot/core/pure` at runtime — which compiles to a re-export of the crop arithmetic and nothing
+else — and everything else as `import type`, erased at build. Importing core's main entry would drag
+Kysely and the dialect loaders into a site that cannot use them. The check is concrete: the built
+consumer is ~460K against the studio's 12M, and contains no `kysely`. Nothing with a `Kysely` import
+may be added to `pure.ts`.
 
 ## Constraints that are easy to violate
 
@@ -187,6 +209,19 @@ may declare but not implement, so a generated helper function in one is a syntax
 convenience. A repeater's sub-fields are read in the stored `FieldRow` shape (`api_id`), never the
 delivery shape: reading them as `DeliveryField` silently emitted properties literally named
 `undefined`, which type-checks and is nonsense.
+
+**Cross-origin preview is a token, and the token is the capability.** `?preview=1` worked only
+because the site and the CMS shared an origin, so the session cookie came along and the route checked
+the *session* rather than the parameter — that distinction was the whole security property, and it
+disappears with the split. `preview_tokens` replaces it: a row, following `login_challenges`, because
+it must be short-lived and revocable and a self-contained signed value stays valid however the
+account changes. A row also avoids inventing a signing secret, which would need a working default for
+`npm run dev` — and a default signing secret is not a secret. `resolvePreviewToken` answers
+`undefined` for absent, malformed, unknown, and expired alike, so it cannot be probed; it is
+deliberately **not** single-use, because a link that dies on first read breaks reload and the back
+button, and the short expiry is the bound instead. **One mechanism covers a draft and a release's
+staged version** — Phase 3.5 added the second thing worth previewing, and a separate token for it is
+how two nearly-identical paths drift until one stops checking something.
 
 **The workflow is a graph in core, not a status column.** `content/workflow.ts` holds every legal
 transition and the role each needs, and `canChangeStatus` asks it two questions in order: is this

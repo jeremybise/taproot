@@ -1,22 +1,8 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
-import {
-  ancestorPaths,
-  canonicalUrl,
-  getContentType,
-  getItemByPath,
-  getRedirect,
-  getChildren,
-  getTaxonomyByApiId,
-  itemIdsInTermBranch,
-  listItems,
-  normalizePath,
-  resolveItemBlocks,
-  resolveSeo,
-} from '@taproot/core';
-import { getTaproot, canEditContent } from '@taproot/studio/runtime/guards';
-import { BlockRenderer } from '@taproot/studio/components';
-import { PUBLIC_TERM_TAXONOMIES } from '../site.ts';
+import { BlockRenderer, TaprootImage } from '@taproot/astro/components';
+import { PREVIEW_PARAM } from '@taproot/astro';
+import { taproot, PUBLIC_TERM_TAXONOMIES } from '../taproot.ts';
 import { BLOCK_COMPONENTS } from '../blocks/index.ts';
 
 export const prerender = false;
@@ -24,192 +10,153 @@ export const prerender = false;
 /**
  * The public catch-all route.
  *
- * Resolution order matters:
- *   1. One indexed lookup on `content_items.path`.
- *   2. A term archive at `/{taxonomy}/{term}` — see `termArchivePath` in core, which is what menu
- *      links to terms are built from.
- *   3. If nothing matches, check the redirect table — this is what makes moved pages keep working.
- *   4. Otherwise 404.
+ * **One HTTP request.** This used to make twelve-plus database queries per page — the item, its
+ * type, its children, one lookup per ancestor for breadcrumbs, the blocks, an og:image row, the
+ * redirect fallback — which was fine against a local database and would have been indefensible as
+ * twelve round trips to another origin. `resolve` answers all of it at once.
  *
- * A term archive beats a redirect deliberately. A redirect exists because content moved *away*
- * from a path; a live page now occupying it should win, which is the same rule that makes a
- * cascading move delete redirects leaving from a path it has just filled.
- *
- * Because content is served from the database rather than a static build, publishing takes effect
- * on the next request; there is no rebuild step between an editor saving and a visitor seeing it.
+ * Resolution order is the CMS's, not this site's: an item wins over a redirect, because a redirect
+ * exists to say content moved *away* from a path and a live page now occupying it should be served.
+ * What remains this site's decision is the term archive below, and only because Taproot has no
+ * opinion about whether a taxonomy's terms have public pages.
  */
-const taproot = getTaproot(Astro.locals);
-const path = normalizePath(`/${Astro.params.path ?? ''}`);
+const path = `/${Astro.params.path ?? ''}`.replace(/\/{2,}/g, '/').replace(/(.)\/$/, '$1');
 
 /**
- * Preview mode.
+ * A preview token, forwarded to the CMS untouched.
  *
- * `?preview=1` renders unpublished content, but only for a signed-in user who could edit it
- * anyway — the check is on the session, not on the query parameter, so the URL is not a way for
- * anyone else to read drafts. Anonymous visitors get the published item or a 404 as usual.
+ * This site cannot judge it — it has no session and no database — so it hands it back and lets the
+ * CMS decide. That is the whole shape of cross-origin preview: the capability lives in the token,
+ * and the token is only ever issued by the admin to somebody already allowed to see the content.
  */
-const previewRequested = Astro.url.searchParams.get('preview') === '1';
-const isPreview = previewRequested && canEditContent(taproot.user);
+const previewToken = Astro.url.searchParams.get(PREVIEW_PARAM);
 
-const item = await getItemByPath(taproot.db.db, path, { publishedOnly: !isPreview });
+const result = await taproot.resolve(path, { previewToken });
 
 /**
- * Term archive: everything filed under a term, including its descendants.
+ * A redirect arrives as data rather than as a 30x, and is reissued here.
  *
- * This site's choice, not Taproot's — only the taxonomies in `PUBLIC_TERM_TAXONOMIES` get pages,
- * and the menu resolver in SiteLayout reads the same set so a link can never point somewhere this
- * route declines to serve.
- *
- * Only attempted when no content item claims the path, so a real page always wins — which is what
- * keeps this from being a reserved prefix nobody may use.
+ * The CMS cannot redirect this site's visitor — it is answering a server-side fetch, and a real 30x
+ * would have been followed by that fetch and returned the wrong page's content under the requested
+ * URL. So the status travels in the payload and the redirect happens on this origin.
  */
-let archive: { title: string; description: string | null; items: { title: string; path: string }[] } | null =
-  null;
+if (result.kind === 'redirect') {
+  return Astro.redirect(result.to, result.status === 302 ? 302 : 301);
+}
 
-if (!item) {
+/**
+ * Term archives: everything filed under a term, including its descendants.
+ *
+ * This site's feature, not Taproot's. Only taxonomies in `PUBLIC_TERM_TAXONOMIES` get pages, and
+ * the menu resolver reads the same set, so a link can never point somewhere this route declines to
+ * serve. Attempted only when no content item claims the path, so a real page always wins — which is
+ * what keeps this from being a reserved prefix nobody may use.
+ */
+let archive: { title: string; items: { title: string; path: string }[] } | null = null;
+
+if (result.kind === 'not_found') {
   const segments = path.split('/').filter(Boolean);
   if (segments.length === 2 && PUBLIC_TERM_TAXONOMIES.has(segments[0]!)) {
-    const taxonomy = await getTaxonomyByApiId(taproot.db.db, segments[0]!);
-    if (taxonomy) {
-      const term = await taproot.db.db
-        .selectFrom('terms')
-        .selectAll()
-        .where('taxonomy_id', '=', taxonomy.id)
-        .where('slug', '=', segments[1]!)
-        .executeTakeFirst();
+    /**
+     * The slug from the URL, resolved by the CMS along with the listing.
+     *
+     * `taxonomy` is what lets `term` be a slug rather than an id — a URL carries the former and the
+     * database keys on the latter, and translating it here would cost a second round trip on the
+     * endpoint that exists to avoid them. The response carries the term's real name back, so the
+     * heading is "Student Services" rather than an un-slugified "student services".
+     *
+     * The filter expands to the whole branch server-side, so filing something under "Biology" finds
+     * it when a visitor browses "Sciences".
+     */
+    const found = await taproot
+      .items({ taxonomy: segments[0]!, term: segments[1]!, limit: 200 })
+      .catch(() => null);
 
-      if (term) {
-        const taggedIds = new Set(await itemIdsInTermBranch(taproot.db.db, term.id));
-        // Filtered rather than queried by id so status and ordering stay the service's business.
-        const { items: published } = await listItems(taproot.db.db, {
-          status: 'published',
-          limit: 200,
-        });
-
-        archive = {
-          title: term.name,
-          description: term.description,
-          items: published
-            .filter((candidate) => taggedIds.has(candidate.id))
-            .map((candidate) => ({ title: candidate.title, path: candidate.path })),
-        };
-      }
+    // An empty archive is still a page: the term exists, nothing is filed under it yet, and saying
+    // so is more useful than a 404 that suggests the URL is wrong.
+    if (found?.term) {
+      archive = {
+        title: found.term.name,
+        items: found.items.map((entry) => ({ title: entry.title, path: entry.path })),
+      };
     }
   }
+
+  if (!archive) return new Response('Not found', { status: 404 });
 }
 
-if (!item && !archive) {
-  const redirect = await getRedirect(taproot.db.db, path);
-  if (redirect) {
-    return Astro.redirect(redirect.to, redirect.status === 302 ? 302 : 301);
-  }
-  return new Response('Not found', { status: 404 });
-}
+const item = result.kind === 'item' ? result.item : null;
+const media = result.kind === 'item' ? result.media : {};
+const breadcrumbTrail = result.kind === 'item' ? result.breadcrumbs : [];
+const children = result.kind === 'item' ? result.children : [];
 
-// Drafts must never be cached or indexed, even briefly.
-if (isPreview) {
-  Astro.response.headers.set('cache-control', 'no-store');
-  Astro.response.headers.set('x-robots-tag', 'noindex, nofollow');
-}
-
-// Everything below is item-specific. An archive request has no content item, so the reads are
-// skipped rather than guarded one by one further down.
-const contentType = item ? await getContentType(taproot.db.db, item.content_type_id) : undefined;
-const children = item ? await getChildren(taproot.db.db, item.id) : [];
-const publishedChildren = children.filter((child) => child.status === 'published');
-
-// Build breadcrumbs from the materialised path — no extra tree walk needed.
-const crumbs = item
-  ? await Promise.all(
-      ancestorPaths(item.path).map(async (ancestorPath) => {
-        const ancestor = await getItemByPath(taproot.db.db, ancestorPath);
-        return ancestor ? { label: ancestor.title, href: ancestor.path } : null;
-      }),
-    )
-  : [];
-
-const breadcrumbs = [{ label: 'Home', href: '/' }, ...crumbs.filter((c) => c !== null)];
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  ...breadcrumbTrail.map((crumb) => ({ label: crumb.title, href: crumb.path })),
+];
 
 // Render fields in the order the content type defines them, so the page follows the schema rather
 // than JSON key order.
-const renderable = (contentType?.fields ?? [])
+const renderable = (item?.fields ?? [])
   .filter((field) => ['text', 'richtext', 'number', 'date', 'select', 'boolean'].includes(field.type))
-  .map((field) => ({ field, value: item?.data[field.api_id] }))
+  .map((field) => ({ field, value: item?.data[field.apiId] }))
   .filter((entry) => entry.value !== undefined && entry.value !== null && entry.value !== '');
 
-/**
- * Block fields, rendered through the site's own templates.
- *
- * The map is the whole contract between Taproot and this site: the CMS stores a block's type and
- * its validated field values, and the site decides what each type looks like. A block type with no
- * entry here renders nothing in production and a visible note in development.
- */
-const blockFields = (contentType?.fields ?? []).filter((field) => field.type === 'block');
+const blockFields = (item?.fields ?? []).filter((field) => field.type === 'block');
 
 /**
- * Reusable blocks are resolved here, not stored on the page.
+ * The social image, already absolute.
  *
- * A page that references a library entry stores only the reference, so its content has to be
- * fetched at render. Doing it in core rather than in this template means the admin editor resolves
- * the same way — a preview showing different shared content from the live page would be a preview
- * of something that does not exist.
+ * A relative URL is ignored by every crawler, and this site no longer knows where the CMS keeps its
+ * files — so the delivery API resolves it. `ogImageId` is looked up in the media map rather than
+ * inlined into the payload, which is what stops an image used twice being serialised twice.
  */
-const blockData = item
-  ? await resolveItemBlocks(taproot.db.db, contentType?.fields ?? [], item.data)
-  : {};
+const ogAsset = item?.seo.ogImageId ? media[item.seo.ogImageId] : undefined;
 
-if (!isPreview) {
+/**
+ * A preview is never canonical.
+ *
+ * Without this, a preview would emit a canonical pointing at the live URL of content that is not
+ * live — telling a crawler that a draft is the authoritative version of the page.
+ */
+const canonical = item && !previewToken ? new URL(item.path, Astro.url.origin).toString() : null;
+
+/**
+ * A preview is never cached and never indexed.
+ *
+ * The CMS already says so on its own response, but this is a different origin serving a different
+ * document — a shared cache in front of *this* site would otherwise hold a draft and serve it to
+ * somebody with no token at all.
+ */
+if (previewToken) {
+  Astro.response.headers.set('cache-control', 'no-store');
+  Astro.response.headers.set('x-robots-tag', 'noindex, nofollow');
+} else {
   Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
 }
-
-/**
- * SEO, resolved through the same core function the admin's preview calls.
- *
- * That shared call is the whole point: a preview that resolved its own fallbacks would be a
- * preview of a page that does not exist, and the mismatch would only surface weeks later in
- * someone's shared link.
- */
-const seo = item ? resolveSeo(item, contentType) : null;
-
-// The social image needs an absolute URL — a relative one is ignored by every crawler — and the
-// storage adapter is the only thing that knows how to build one.
-const ogAsset = seo?.ogImageId
-  ? await taproot.db.db
-      .selectFrom('media')
-      .select(['storage_key', 'alt_text'])
-      .where('id', '=', seo.ogImageId)
-      .executeTakeFirst()
-  : undefined;
-
-const ogImage = ogAsset
-  ? new URL(taproot.storage.publicUrl(ogAsset.storage_key), Astro.url.origin).toString()
-  : null;
-
-/**
- * A preview is never canonical and never indexed.
- *
- * Without this, `?preview=1` would emit a canonical pointing at the live URL of content that is
- * not live — telling a crawler that a draft is the authoritative version of a page.
- */
-const canonical = isPreview ? null : canonicalUrl(Astro.url.origin, item ? item.path : path);
-const noIndex = isPreview || seo?.noIndex === true;
 ---
 
 <SiteLayout
-  title={seo ? seo.title : archive!.title}
-  description={seo ? seo.description : archive!.description}
+  title={item ? item.seo.title : archive!.title}
+  description={item?.seo.description ?? null}
   breadcrumbs={breadcrumbs}
-  ogImage={ogImage}
-  ogImageAlt={ogAsset?.alt_text ?? null}
+  ogImage={ogAsset?.url ?? null}
+  ogImageAlt={ogAsset?.alt ?? null}
   canonical={canonical}
-  noIndex={noIndex}
+  noIndex={Boolean(previewToken) || item?.seo.noIndex === true}
 >
+  {
+    previewToken && item && item.status !== 'published' && (
+      <p class="preview-note" role="status">
+        <strong>Preview.</strong> This {item.status.replace('_', ' ')} content is not visible to
+        visitors.
+      </p>
+    )
+  }
   {
     archive && (
       <article>
         <h1>{archive.title}</h1>
-        {archive.description && <p>{archive.description}</p>}
-
         {archive.items.length === 0 ? (
           <p>Nothing is filed under this yet.</p>
         ) : (
@@ -226,61 +173,57 @@ const noIndex = isPreview || seo?.noIndex === true;
   }
 
   {
-    item && isPreview && item.status !== 'published' && (
-      <p
-        style="border:1px solid var(--accent);background:color-mix(in oklch, var(--accent) 12%, transparent);padding:0.75rem 1rem;border-radius:0.375rem;margin:1.5rem 0 0"
-        role="status"
-      >
-        <strong>Preview.</strong> This {item.status.replace('_', ' ')} content is not visible to
-        visitors.
-      </p>
+    item && (
+      <article>
+        <h1>{item.title}</h1>
+
+        {renderable.map(({ field, value }) => (
+          <section>
+            {field.type === 'richtext' ? (
+              <div set:html={String(value)} />
+            ) : field.type === 'boolean' ? (
+              <p>
+                <strong>{field.label}:</strong> {value ? 'Yes' : 'No'}
+              </p>
+            ) : field.type === 'text' && field.apiId === 'body' ? (
+              <p style="white-space:pre-wrap">{String(value)}</p>
+            ) : (
+              <p>
+                <strong>{field.label}:</strong> {String(value)}
+              </p>
+            )}
+          </section>
+        ))}
+
+        {/*
+          Blocks arrive already dereferenced — a reusable block's content is filled in by the CMS at
+          read time, so this site never makes a second request for it.
+
+          The component map is the whole contract between Taproot and this site: the CMS stores a
+          block's type and its validated values, and the site decides what each looks like. `media`
+          is passed down so a block holding an image can resolve it from the same map.
+        */}
+        {blockFields.map((field) => (
+          <BlockRenderer
+            blocks={item.data[field.apiId]}
+            components={BLOCK_COMPONENTS}
+            media={media}
+          />
+        ))}
+
+        {children.length > 0 && (
+          <nav aria-labelledby="subpages">
+            <h2 id="subpages">In this section</h2>
+            <ul>
+              {children.map((child) => (
+                <li>
+                  <a href={child.path}>{child.title}</a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+      </article>
     )
   }
-
-  {item && (
-  <article>
-    <h1>{item.title}</h1>
-
-    {
-      renderable.map(({ field, value }) => (
-        <section>
-          {field.type === 'richtext' ? (
-            <div set:html={String(value)} />
-          ) : field.type === 'boolean' ? (
-            <p>
-              <strong>{field.label}:</strong> {value ? 'Yes' : 'No'}
-            </p>
-          ) : field.type === 'text' && field.api_id === 'body' ? (
-            <p style="white-space:pre-wrap">{String(value)}</p>
-          ) : (
-            <p>
-              <strong>{field.label}:</strong> {String(value)}
-            </p>
-          )}
-        </section>
-      ))
-    }
-
-    {
-      blockFields.map((field) => (
-        <BlockRenderer blocks={blockData[field.api_id]} components={BLOCK_COMPONENTS} />
-      ))
-    }
-
-    {
-      publishedChildren.length > 0 && (
-        <nav aria-labelledby="subpages">
-          <h2 id="subpages">In this section</h2>
-          <ul>
-            {publishedChildren.map((child) => (
-              <li>
-                <a href={child.path}>{child.title}</a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )
-    }
-  </article>
-  )}
 </SiteLayout>
