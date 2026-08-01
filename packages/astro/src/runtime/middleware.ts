@@ -1,11 +1,15 @@
 import { defineMiddleware } from 'astro:middleware';
 import {
   SESSION_COOKIE_NAME,
+  bearerToken,
   buildSessionCookie,
+  touchApiKey,
   validateSession,
+  verifyApiKey,
 } from '@taproot/core';
 
 import { createContext, readRuntimeEnv } from './context.js';
+import { apiKeyPrincipal, userPrincipal } from './guards.js';
 
 /**
  * Builds the Taproot context for every request and resolves the session.
@@ -30,12 +34,35 @@ export const onRequest = defineMiddleware(async (context, next) => {
     const session = await validateSession(taproot.db.db, token);
     if (session) {
       taproot.user = session.user;
+      taproot.principal = userPrincipal(session.user);
       taproot.sessionToken = token;
 
       if (session.refreshed) {
         refreshedCookie = buildSessionCookie(token, session.expiresAt, {
           secure: taproot.auth.secureCookies,
         });
+      }
+    }
+  }
+
+  /**
+   * An API key, only when no session resolved.
+   *
+   * Session first, and never both. A request carrying a valid cookie *and* a bearer token is
+   * somebody's browser hitting an API route while signed in, and the person is the more specific
+   * answer to "who is asking" — letting the key win would attribute their action to a machine in
+   * the audit log. `taproot.user` stays undefined for a key, which is what makes every existing
+   * role guard fail closed without knowing keys exist.
+   */
+  if (!taproot.principal) {
+    const presented = bearerToken(context.request.headers.get('authorization'));
+    if (presented) {
+      const key = await verifyApiKey(taproot.db.db, presented);
+      if (key) {
+        taproot.principal = apiKeyPrincipal(key);
+        // Not awaited into the critical path any more than it has to be; `touchApiKey` writes at
+        // most once a minute and never throws.
+        await touchApiKey(taproot.db.db, key);
       }
     }
   }

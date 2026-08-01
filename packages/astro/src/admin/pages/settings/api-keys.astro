@@ -1,0 +1,294 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import { API_KEY_SCOPES, listApiKeys } from '@taproot/core';
+import { getTaproot, loginRedirect, canManageUsers } from '../../../runtime/guards.js';
+import {
+  API_KEY_REVEAL_COOKIE,
+  clearRevealCookie,
+  readRevealedKey,
+} from '../../../api/api-keys/revealCookie.js';
+
+/**
+ * API keys — how another deployment reads content over HTTP.
+ *
+ * Admin-only in both directions: creating one hands out read access to every published item, and
+ * the list itself is an inventory of which integrations exist.
+ *
+ * There is no token on this screen except in the moments after one is created. `id` is the hash of
+ * the token, so there is nowhere to read one back from — losing it means creating another, which is
+ * the property that makes a database dump worthless rather than a set of live credentials.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageUsers(user)) return Astro.redirect('/admin/settings');
+
+const keys = await listApiKeys(taproot.db.db);
+
+/**
+ * Read the freshly created token, then clear it in this same response.
+ *
+ * One render, and only the one immediately after creation. A cookie that survived would keep a live
+ * credential in the browser for whoever opened the screen next.
+ */
+const revealed = readRevealedKey(Astro.cookies.get(API_KEY_REVEAL_COOKIE)?.value);
+if (revealed) {
+  Astro.response.headers.append(
+    'set-cookie',
+    clearRevealCookie({ secure: taproot.auth.secureCookies }),
+  );
+  // A page showing a credential must not be stored by anything between here and the browser.
+  Astro.response.headers.set('cache-control', 'no-store');
+}
+
+const params = Astro.url.searchParams;
+const error = params.get('error');
+const revoked = params.get('revoked');
+
+const flash = error
+  ? error
+  : revoked
+    ? `Revoked “${revoked}”. Anything using it stops working immediately.`
+    : null;
+
+const live = keys.filter((key) => !key.revoked_at);
+const dead = keys.filter((key) => key.revoked_at);
+
+const expired = (key: (typeof keys)[number]) =>
+  key.expires_at !== null && Date.now() >= new Date(key.expires_at).getTime();
+---
+
+<AdminLayout
+  title="API keys"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'API keys' }]}
+  flash={flash}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">API keys</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      A key lets another deployment read this site's published content over HTTP. It is not a
+      person: it has no role, cannot edit anything, and never appears as the author of a change.
+    </p>
+  </header>
+
+  {
+    /*
+      The one moment the token exists outside the request that made it. Shown once, at the top,
+      before anything else on the screen — because the next page load will not have it.
+    */
+    revealed && (
+      <section
+        aria-labelledby="revealed-heading"
+        class="mb-8 rounded-lg border border-accent bg-accent-subtle px-4 py-4"
+      >
+        <h2 id="revealed-heading" class="text-sm font-semibold">
+          Copy “{revealed.label}” now
+        </h2>
+        <p class="mt-1 max-w-prose text-sm">
+          This is the only time Taproot can show you this key. It is stored hashed, so there is
+          nothing to look it up from — if you lose it, revoke this one and create another.
+        </p>
+
+        <label for="revealed-token" class="mt-3 block text-sm font-medium">
+          The key
+        </label>
+        <input
+          id="revealed-token"
+          readonly
+          value={revealed.token}
+          onfocus="this.select()"
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+        />
+        <p class="mt-1.5 text-xs text-content-muted">
+          Store it wherever the consuming deployment keeps its secrets. Do not commit it.
+        </p>
+      </section>
+    )
+  }
+
+  <form
+    method="post"
+    action="/api/taproot/api-keys"
+    class="mb-8 rounded-lg border border-border bg-surface-raised p-4"
+  >
+    <h2 class="text-sm font-semibold">Create a key</h2>
+
+    <div class="mt-3 flex flex-wrap items-end gap-3">
+      <div class="min-w-56 flex-1">
+        <label for="label" class="block text-sm font-medium">Label</label>
+        <input
+          id="label"
+          name="label"
+          required
+          maxlength="200"
+          placeholder="Campus website"
+          aria-describedby="label-hint"
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+        <p id="label-hint" class="mt-1.5 text-xs text-content-subtle">
+          Name the thing that will hold it, so you know what breaks if you revoke it.
+        </p>
+      </div>
+
+      <div>
+        <label for="expiresAt" class="block text-sm font-medium">
+          Expires <span class="font-normal text-content-subtle">(optional)</span>
+        </label>
+        <input
+          id="expiresAt"
+          name="expiresAt"
+          type="datetime-local"
+          aria-describedby="expires-hint"
+          class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+        <p id="expires-hint" class="mt-1.5 max-w-xs text-xs text-content-subtle">
+          Leave blank and it never expires — which is the safer default, since a key that lapses on
+          its own takes a website down at a moment nobody chose.
+        </p>
+      </div>
+    </div>
+
+    {/*
+      A fieldset with a legend, not a label pointing at the group. `<label for>` must target a
+      labelable element, and a `div` of checkboxes is not one — the audit checks exactly this.
+    */}
+    <fieldset class="mt-4 border-0 p-0">
+      <legend class="text-sm font-medium">What it may do</legend>
+      <ul class="mt-1.5 space-y-1.5">
+        {
+          API_KEY_SCOPES.map((scope) => (
+            <li class="flex items-start gap-2">
+              <input
+                id={`scope-${scope}`}
+                type="checkbox"
+                name="scopes"
+                value={scope}
+                checked
+                class="mt-1"
+              />
+              <label for={`scope-${scope}`} class="text-sm">
+                <code class="font-mono text-xs">{scope}</code>
+                <span class="block text-xs text-content-subtle">
+                  Read published content through the delivery API. Drafts are never included.
+                </span>
+              </label>
+            </li>
+          ))
+        }
+      </ul>
+    </fieldset>
+
+    <button
+      type="submit"
+      class="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+    >
+      Create key
+    </button>
+  </form>
+
+  <section aria-labelledby="live-heading">
+    <h2 id="live-heading" class="text-base font-semibold">Active</h2>
+
+    {
+      live.length === 0 ? (
+        <p class="mt-2 rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-content-muted">
+          No keys yet. Nothing can read this site's content over HTTP.
+        </p>
+      ) : (
+        <ul class="mt-3 space-y-2">
+          {live.map((key) => (
+            <li class="rounded-lg border border-border bg-surface-raised px-4 py-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-medium">{key.label}</span>
+                <code class="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-xs">
+                  {key.token_prefix}…
+                </code>
+                {expired(key) && (
+                  <span class="rounded-full border border-danger bg-danger-subtle px-2 py-0.5 text-xs font-medium">
+                    Expired
+                  </span>
+                )}
+              </div>
+
+              <p class="mt-1 text-xs text-content-subtle">
+                {key.scopes.join(', ')} · created <Timestamp value={key.created_at} />
+                {' · '}
+                {/*
+                  The question this screen is actually opened to answer, before revoking something.
+                  Written at minute resolution, so "never" after a while genuinely means unused.
+                */}
+                {key.last_used_at ? (
+                  <>
+                    last used <Timestamp value={key.last_used_at} />
+                  </>
+                ) : (
+                  'never used'
+                )}
+                {key.expires_at && (
+                  <>
+                    {' · '}
+                    {expired(key) ? 'expired ' : 'expires '}
+                    <Timestamp value={key.expires_at} />
+                  </>
+                )}
+              </p>
+
+              <form
+                method="post"
+                action={`/api/taproot/api-keys/${key.id}`}
+                class="mt-2 flex flex-wrap items-end gap-2"
+              >
+                <input type="hidden" name="_method" value="revoke" />
+                <div>
+                  <label for={`confirm-${key.id}`} class="block text-xs font-medium">
+                    Type <code class="font-mono">{key.token_prefix}</code> to revoke
+                  </label>
+                  <input
+                    id={`confirm-${key.id}`}
+                    name="confirm"
+                    required
+                    autocomplete="off"
+                    spellcheck="false"
+                    class="mt-1 rounded-md border border-border-strong bg-surface px-2 py-1 font-mono text-xs"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  class="rounded-md px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-surface-sunken"
+                >
+                  Revoke
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </section>
+
+  {
+    dead.length > 0 && (
+      <section aria-labelledby="revoked-heading" class="mt-8">
+        <h2 id="revoked-heading" class="text-base font-semibold">
+          Revoked
+        </h2>
+        <p class="mt-1 max-w-prose text-sm text-content-muted">
+          Kept rather than deleted, so audit entries naming a key still resolve to what it was.
+        </p>
+        <ul class="mt-3 space-y-2">
+          {dead.map((key) => (
+            <li class="flex flex-wrap items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm">
+              <span class="font-medium text-content-muted">{key.label}</span>
+              <code class="font-mono text-xs text-content-subtle">{key.token_prefix}…</code>
+              <span class="text-xs text-content-subtle">
+                revoked <Timestamp value={key.revoked_at} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+</AdminLayout>

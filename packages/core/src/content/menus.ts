@@ -391,6 +391,17 @@ export interface ResolvedMenuItem {
    *   internal classification, and whether a term has a public URL is the site's decision.
    */
   brokenReason: 'deleted' | 'unpublished' | 'no_route' | null;
+  /**
+   * The term this entry points at, for a `term` entry whose target still exists.
+   *
+   * Carried alongside the href rather than being consumed by `termHref` and discarded, because a
+   * function cannot cross an HTTP boundary. The delivery API returns *unresolved* term targets and
+   * the consumer applies its own `termHref` on the other side — which is the only way to keep
+   * "Taproot has no opinion about term URLs" true once the site is a separate deployment. Without
+   * this field the delivered menu would either have to carry the CMS's guess at a URL or drop term
+   * entries entirely.
+   */
+  term: TermLinkTarget | null;
   children: ResolvedMenuItem[];
 }
 
@@ -474,6 +485,7 @@ export async function resolveMenu(
     let href: string | null = null;
     let title: string | null = null;
     let brokenReason: ResolvedMenuItem['brokenReason'] = null;
+    let term: TermLinkTarget | null = null;
 
     switch (entry.target_type) {
       case 'item': {
@@ -498,15 +510,15 @@ export async function resolveMenu(
           brokenReason = 'deleted';
         } else {
           title = target.name;
+          term = {
+            id: target.id,
+            name: target.name,
+            slug: target.slug,
+            taxonomyApiId: target.taxonomy_api_id,
+          };
           // No resolver, or one that declines this term, means the site publishes no page for it.
           // Distinct from `deleted`: nothing is wrong, there is simply nowhere to link to.
-          href =
-            options.termHref?.({
-              id: target.id,
-              name: target.name,
-              slug: target.slug,
-              taxonomyApiId: target.taxonomy_api_id,
-            }) ?? null;
+          href = options.termHref?.(term) ?? null;
           if (href === null) brokenReason = 'no_route';
         }
         break;
@@ -528,6 +540,7 @@ export async function resolveMenu(
         openInNewTab: toBool(entry.open_in_new_tab),
         targetType: entry.target_type,
         brokenReason,
+        term,
         children: [] as ResolvedMenuItem[],
       } satisfies ResolvedMenuItem,
     };

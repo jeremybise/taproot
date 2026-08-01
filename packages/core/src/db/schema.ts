@@ -125,6 +125,44 @@ export interface TotpRecoveryCodesTable {
 }
 
 /**
+ * What an API key is allowed to do.
+ *
+ * One scope today, and that is not a placeholder — it is everything the delivery API needs. A write
+ * scope invented before anything writes would be a permission nobody has checked, which is worse
+ * than an absent one because it reads as enforced.
+ */
+export type ApiKeyScope = 'content:read';
+
+/**
+ * A non-human principal.
+ *
+ * `id` **is** the SHA-256 of the token, as with `sessions` and `password_reset_tokens` — so
+ * verification is one indexed lookup and a database dump holds no usable credentials. The raw value
+ * exists once, in the response that created it.
+ *
+ * Deliberately not a row in `users`. A key cannot own content, cannot author a revision, and must
+ * never satisfy a check written as "an editor did this"; giving it a user row would make all three
+ * true by accident.
+ */
+export interface ApiKeysTable {
+  id: string;
+  label: string;
+  /** The first characters of the raw token, in the clear, so a key is recognisable in a list. */
+  token_prefix: string;
+  /** JSON array of `ApiKeyScope`. */
+  scopes: JsonText;
+  /** Null means it never expires — the safe default, since silent expiry takes a site down. */
+  expires_at: string | null;
+  /** Revoked rather than deleted, so audit entries naming this key still resolve. */
+  revoked_at: string | null;
+  /** Written coarsely; see `touchApiKey` for why it is not exact. */
+  last_used_at: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
  * One entry in the append-only audit log.
  *
  * `actor_email` and `subject_label` are copied in at write time rather than joined at read time,
@@ -549,6 +587,7 @@ export interface MenuItemsTable {
  */
 export interface Database {
   users: UsersTable;
+  api_keys: ApiKeysTable;
   audit_log: AuditLogTable;
   login_attempts: LoginAttemptsTable;
   login_challenges: LoginChallengesTable;
@@ -575,6 +614,7 @@ export interface Database {
 }
 
 export type User = Selectable<UsersTable>;
+export type ApiKeyRow = Selectable<ApiKeysTable>;
 export type AuditLogRow = Selectable<AuditLogTable>;
 export type PasswordResetTokenRow = Selectable<PasswordResetTokensTable>;
 export type NewUser = Insertable<UsersTable>;

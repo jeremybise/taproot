@@ -1,4 +1,11 @@
-import { transitionRole, type ContentStatus, type User } from '@taproot/core';
+import {
+  apiKeyHasScope,
+  transitionRole,
+  type ApiKey,
+  type ApiKeyScope,
+  type ContentStatus,
+  type User,
+} from '@taproot/core';
 
 import type { TaprootContext } from './context.js';
 
@@ -15,6 +22,66 @@ import type { TaprootContext } from './context.js';
  */
 
 export type Role = User['role'];
+
+/**
+ * Who is asking.
+ *
+ * Until the delivery API there was one answer — a `users` row — and every guard took one. SCOPE
+ * recorded taking a principal instead as a Phase 3 constraint, on the grounds that it is nearly
+ * free while the role model is being designed and expensive afterwards. It was not done then, so
+ * this is that debt being paid; the shape is unchanged from what was described.
+ *
+ * The two kinds are genuinely different and must not be collapsed. A user has a role and can be
+ * asked "are you at least an editor"; a key has scopes and cannot be asked that at all. Modelling a
+ * key as a user with a role would make every `hasRole` check in the codebase silently answer for it.
+ */
+export type Principal =
+  | { kind: 'user'; user: User }
+  | { kind: 'api_key'; key: ApiKey };
+
+export function userPrincipal(user: User): Principal {
+  return { kind: 'user', user };
+}
+
+export function apiKeyPrincipal(key: ApiKey): Principal {
+  return { kind: 'api_key', key };
+}
+
+/** The user behind a principal, or `undefined` for a key. */
+export function principalUser(principal: Principal | undefined): User | undefined {
+  return principal?.kind === 'user' ? principal.user : undefined;
+}
+
+/**
+ * Whether a principal carries a scope.
+ *
+ * A **user principal is deliberately never granted one.** It is tempting to say an admin implicitly
+ * holds every scope, and it would be wrong: scopes exist to narrow what a machine credential may
+ * do, and a route gated on a scope is one meant for machines. A signed-in admin reaching such a
+ * route should be refused and sent to a route built for people, rather than quietly succeeding
+ * through a path nobody tested.
+ */
+export function hasScope(principal: Principal | undefined, scope: ApiKeyScope): boolean {
+  return principal?.kind === 'api_key' ? apiKeyHasScope(principal.key, scope) : false;
+}
+
+/**
+ * The role guards below still take `User | undefined`, and that is the design rather than the debt.
+ *
+ * The obvious reading of "guards take a principal" is that every one of them changes signature. It
+ * was tried and it is worse: `canPublishContent(principal)` has to answer for a key, and the only
+ * correct answer is false — so every guard grows a branch that exists solely to say "not this kind
+ * of thing", and forty call sites across the admin screens change to carry a wrapper they never
+ * inspect.
+ *
+ * Converting at the boundary gets the same guarantee from the type system instead. `principalUser`
+ * returns `undefined` for a key, `hasRole(undefined, …)` is already false, and there is no value of
+ * type `User` that a key can produce — so a key cannot satisfy a role check, and the compiler
+ * enforces it rather than a branch inside each guard.
+ *
+ * What genuinely had to change is the *auth layer*: the context carries a principal, and `handle()`
+ * decides which kinds a route accepts. That is where the Phase 3 constraint actually bit.
+ */
 
 const ROLE_RANK: Record<Role, number> = {
   viewer: 0,

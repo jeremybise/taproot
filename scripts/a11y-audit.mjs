@@ -57,6 +57,14 @@ const ROUTES = [
   '/admin/settings/blocks',
   '/admin/settings/blocks/new',
   '/admin/settings/users',
+  /**
+   * Audited with at least one key present, which the block below creates if there is none.
+   *
+   * An empty API-keys screen is a create form and an empty state; the interesting markup — the
+   * per-key revoke form with its own labelled confirmation input, repeated per row — only exists
+   * once a key does. Auditing the empty version would pass and check nothing.
+   */
+  '/admin/settings/api-keys',
   '/admin/settings/audit',
   '/admin/account',
   '/admin/settings/system',
@@ -175,6 +183,25 @@ if (menus?.[0]) ROUTES.push(`/admin/menus/${menus[0].id}`);
  * buttons and the schedule field are replaced by the staged-version panel, and none of that markup
  * is reachable from `/admin/content/{id}` on its own.
  */
+/**
+ * Ensure the API-keys screen has a key on it.
+ *
+ * The audit runs against the seeded database, which has none — and the per-key revoke form is the
+ * part of that screen worth checking, since it repeats a labelled input per row and is exactly
+ * where a duplicated accessible name would appear.
+ */
+const existingKeys = await (
+  await fetch(`${base}/api/taproot/api-keys`, { headers: { cookie } })
+).json();
+
+if ((existingKeys.apiKeys ?? []).length === 0) {
+  await fetch(`${base}/api/taproot/api-keys`, {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json', origin: base },
+    body: JSON.stringify({ label: 'Accessibility audit', scopes: ['content:read'] }),
+  });
+}
+
 const releasesResponse = await fetch(`${base}/api/taproot/releases`, { headers: { cookie } });
 const { releases } = await releasesResponse.json();
 const fullestRelease = (releases ?? [])

@@ -13,6 +13,8 @@ import {
   type User,
 } from '@taproot/core';
 
+import type { Principal } from './guards.js';
+
 /**
  * Per-request Taproot context, attached to `Astro.locals.taproot`.
  *
@@ -27,6 +29,15 @@ export interface TaprootContext {
   mail: Mailer;
   /** The signed-in user, if any. Populated by the middleware. */
   user?: User;
+  /**
+   * Who is asking, which since the delivery API is no longer always a person.
+   *
+   * `user` is kept alongside rather than derived at every call site, because it is what every admin
+   * screen and role guard actually wants, and it is `undefined` for an API key — so a screen that
+   * reads it gets the safe answer without knowing principals exist. The two cannot disagree: the
+   * middleware sets both from the same resolution.
+   */
+  principal?: Principal;
   /** Raw session token, needed to invalidate on sign-out. */
   sessionToken?: string;
 }

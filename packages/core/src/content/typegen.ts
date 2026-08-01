@@ -1,0 +1,258 @@
+import type { DeliveryField, DeliverySchema, DeliveryTypeSchema } from './delivery.js';
+
+/** How a repeater's sub-fields are stored: the `FieldRow` shape, not the delivery one. */
+interface RepeaterSubFieldShape {
+  api_id: string;
+  label?: string;
+  type: DeliveryField['type'];
+  required?: boolean;
+  help_text?: string | null;
+  config?: Record<string, unknown>;
+}
+
+/**
+ * Turn a live content model into TypeScript.
+ *
+ * SCOPE calls this "the point of the split rather than a nicety", and the reason is worth stating
+ * plainly: today's client is typed over *table rows*. `ContentItem` carries
+ * `data: Record<string, unknown>`, which is a true description of every Taproot site and a useful
+ * description of none. A site with an `event` type wants `Event`, with the fields it declared, so
+ * that renaming a field breaks the build rather than the page.
+ *
+ * Emitted as source a consumer checks in, not generated at runtime. That is what makes a schema
+ * change show up as a reviewable diff in a pull request — the moment somebody deletes a field, the
+ * consumer's repository shows exactly which templates stop compiling.
+ *
+ * **Types only, no runtime.** The output is a `.d.ts`, which may declare but not implement — a
+ * generated helper function in one is a syntax error rather than a convenience. Anything with a
+ * body belongs in the consumer package, where it can be imported and tested.
+ *
+ * Pure string building on purpose: no filesystem, no network, no formatter. The CLI that writes the
+ * file is a dozen lines around this, and this is testable without either.
+ */
+
+/** What a field's value looks like once it has been through the delivery API. */
+function fieldType(field: DeliveryField, blockTypeNames: Map<string, string>): string {
+  const multiple = isMultiple(field);
+  const single = singleType(field, blockTypeNames);
+  return multiple ? `${single}[]` : single;
+}
+
+/**
+ * Whether a field stores an array.
+ *
+ * `media` and `relation` follow their own config — a bare id when single, an ordered array when
+ * multiple — which is the stored shape and therefore the delivered one. Getting this wrong is the
+ * mistake the generated types exist to prevent, so it reads the same config key the editor does.
+ */
+function isMultiple(field: DeliveryField): boolean {
+  switch (field.type) {
+    case 'media':
+    case 'relation':
+      return field.config.multiple === true;
+    case 'taxonomy':
+      return field.config.multiple !== false;
+    case 'block':
+    case 'repeater':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function singleType(field: DeliveryField, blockTypeNames: Map<string, string>): string {
+  switch (field.type) {
+    case 'text':
+    // Richtext is a string of sanitised HTML. Typing it as a distinct branded type was tempting and
+    // would be a lie: it is a string, and the sanitising happened on write.
+    case 'richtext':
+    case 'date':
+      return 'string';
+    case 'number':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'select': {
+      const options = Array.isArray(field.config.options) ? field.config.options : [];
+      const literals = options
+        .map((option) =>
+          typeof option === 'object' && option !== null && 'value' in option
+            ? (option as { value: unknown }).value
+            : option,
+        )
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => JSON.stringify(value));
+
+      // A union of what the type actually offers, so a typo in a template is a compile error.
+      // Falls back to `string` when the options are absent or not literals — a wrong narrow type
+      // would be worse than a wide one.
+      return literals.length > 0 ? literals.join(' | ') : 'string';
+    }
+    /**
+     * Ids, not objects.
+     *
+     * The delivery API returns references in lookup maps rather than inlining them, so `data` keeps
+     * the stored shape. Typing these as the resolved object would describe a payload Taproot does
+     * not send.
+     */
+    case 'media':
+      return 'MediaId';
+    case 'relation':
+      return 'ContentItemId';
+    case 'taxonomy':
+      return 'TermId';
+    case 'block':
+      return blockTypeNames.size > 0
+        ? `TaprootBlock`
+        : 'Record<string, unknown>';
+    case 'repeater': {
+      /**
+       * A repeater's sub-fields live in its own config, in the stored `FieldRow` shape.
+       *
+       * `api_id` and `help_text`, not `apiId` and `helpText` — they were never rows in the `fields`
+       * table, so nothing ever mapped them into the delivery shape. Reading them as `DeliveryField`
+       * silently produced a row of properties literally named `undefined`, which is the kind of
+       * bug that type-checks and generates nonsense.
+       */
+      const sub = Array.isArray(field.config.fields)
+        ? (field.config.fields as RepeaterSubFieldShape[])
+        : [];
+      if (sub.length === 0) return 'Record<string, unknown>';
+
+      const members = sub
+        .filter((child) => typeof child?.api_id === 'string')
+        .map((child) => {
+          const asDelivery: DeliveryField = {
+            apiId: child.api_id,
+            label: child.label ?? child.api_id,
+            type: child.type,
+            required: child.required === true,
+            helpText: child.help_text ?? null,
+            position: 0,
+            config: child.config ?? {},
+          };
+          return `    ${propertyName(child.api_id)}${asDelivery.required ? '' : '?'}: ${fieldType(asDelivery, blockTypeNames)};`;
+        })
+        .join('\n');
+
+      return members ? `{\n${members}\n  }` : 'Record<string, unknown>';
+    }
+    default:
+      return 'unknown';
+  }
+}
+
+/** `api_id` → a valid TypeScript property, quoted only when it has to be. */
+function propertyName(apiId: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(apiId) ? apiId : JSON.stringify(apiId);
+}
+
+/** `staff_profile` → `StaffProfile`. */
+export function typeName(apiId: string): string {
+  return apiId
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
+}
+
+function renderType(type: DeliveryTypeSchema, blockTypeNames: Map<string, string>): string {
+  const name = typeName(type.apiId);
+  const lines = [`/** ${type.name} — \`${type.apiId}\` (${type.kind}). */`, `export interface ${name}Data {`];
+
+  if (type.fields.length === 0) {
+    lines.push('  // This type has no fields yet.');
+  }
+
+  for (const field of type.fields) {
+    if (field.helpText) lines.push(`  /** ${field.helpText.replace(/\*\//g, '*\\/')} */`);
+    // Optional unless required. A required field is guaranteed present by validation on write, so
+    // making it non-optional is a promise the CMS actually keeps.
+    lines.push(
+      `  ${propertyName(field.apiId)}${field.required ? '' : '?'}: ${fieldType(field, blockTypeNames)};`,
+    );
+  }
+
+  lines.push('}');
+  return lines.join('\n');
+}
+
+export interface GenerateOptions {
+  /** Written into the banner so the file says where it came from. */
+  source?: string;
+}
+
+export function generateTypes(schema: DeliverySchema, options: GenerateOptions = {}): string {
+  const blockTypeNames = new Map(
+    schema.blockTypes.map((type) => [type.apiId, `${typeName(type.apiId)}Data`]),
+  );
+
+  const parts: string[] = [
+    '// Generated by Taproot. Do not edit by hand.',
+    '//',
+    '// Run `npm run taproot:types` to regenerate after changing the content model. This file is',
+    '// checked in on purpose: a schema change should show up as a reviewable diff, and the moment',
+    '// a field is renamed the templates that used it stop compiling.',
+    options.source ? `//\n// Source: ${options.source}` : '',
+    '',
+    '/** An id referring to a media asset. Look it up in a delivery response’s `media` map. */',
+    'export type MediaId = string;',
+    '/** An id referring to another content item. Look it up in `references`. */',
+    'export type ContentItemId = string;',
+    '/** An id referring to a taxonomy term. Look it up in `terms`. */',
+    'export type TermId = string;',
+    '',
+  ];
+
+  if (schema.blockTypes.length > 0) {
+    for (const type of schema.blockTypes) {
+      parts.push(renderType(type, blockTypeNames), '');
+    }
+
+    /**
+     * A discriminated union over `type`, which is how a block instance names its own schema.
+     *
+     * Narrowing on `block.type` in a renderer is the ergonomics a site wants, and it is also what
+     * makes an unhandled block type a compile error rather than a blank space on a page.
+     *
+     * Two members per block type, because a block placed inline and one referencing the library
+     * genuinely have different shapes: an inline block carries its fields at the top level, while a
+     * reusable one stores `{ ref }` and the delivery API fills in `data` at read time. Collapsing
+     * them into one optional-everything type would type-check code that crashes on the other shape.
+     */
+    parts.push(
+      '/** Any block instance, discriminated by `type`. */',
+      'export type TaprootBlock =',
+      ...schema.blockTypes.flatMap((type) => {
+        const literal = JSON.stringify(type.apiId);
+        const data = `${typeName(type.apiId)}Data`;
+        return [
+          `  | ({ id: string; type: ${literal}; reusable?: false } & ${data})`,
+          `  | { id: string; type: ${literal}; reusable: true; ref: string; data: ${data} }`,
+        ];
+      }),
+      '',
+    );
+  }
+
+  for (const type of schema.contentTypes) {
+    parts.push(renderType(type, blockTypeNames), '');
+  }
+
+  /** A lookup from `api_id` to its data type, so a generic client can be typed by api id. */
+  if (schema.contentTypes.length > 0) {
+    parts.push(
+      '/** Every content type, keyed by `api_id`. */',
+      'export interface TaprootContentTypes {',
+      ...schema.contentTypes.map(
+        (type) => `  ${propertyName(type.apiId)}: ${typeName(type.apiId)}Data;`,
+      ),
+      '}',
+      '',
+      'export type TaprootContentTypeId = keyof TaprootContentTypes;',
+      '',
+    );
+  }
+
+  return parts.filter((part) => part !== '').join('\n') + '\n';
+}

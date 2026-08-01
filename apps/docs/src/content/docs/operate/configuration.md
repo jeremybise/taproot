@@ -65,6 +65,24 @@ faster and is the recommended production setup — but it is an optimisation, no
 See [Email](/operate/email/). With none set, Taproot writes messages to the log and hides the
 features that would promise delivery.
 
+## Reading content from another deployment
+
+| | |
+|---|---|
+| `TAPROOT_API_URL` | Base URL of the Taproot server, for the type generator |
+| `TAPROOT_API_KEY` | An API key with the `content:read` scope |
+
+The delivery API (`/api/taproot/delivery/*`) is how a separate site reads this one's published
+content. It needs a key — see [API keys](/admin/api-keys/).
+
+These two variables are read by `npm run taproot:types`, which generates TypeScript for the site's
+content model by reading the **live** schema over HTTP rather than out of the database. That is
+deliberate: the generator exercises the same contract a consumer uses, so the types describe what a
+site actually receives.
+
+Neither is needed against a local dev server — a signed-in session reaches the delivery endpoints
+too, which is what makes debugging an integration in a browser possible.
+
 ## Scheduler
 
 | | |

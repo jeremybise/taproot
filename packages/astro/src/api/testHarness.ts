@@ -4,6 +4,7 @@ import {
   createUser,
   migrateToLatest,
   resolveAuthConfig,
+  type ApiKey,
   type AuthConfig,
   type MailMessage,
   type Mailer,
@@ -35,6 +36,14 @@ export interface Harness {
   db: TaprootDb;
   /** Sign subsequent requests as this user. `undefined` is an anonymous request. */
   as(user: User | undefined): void;
+  /**
+   * Present subsequent requests as this API key.
+   *
+   * Separate from `as` rather than overloading it, because the two produce different contexts and
+   * the difference is the thing under test: a key sets `principal` and leaves `user` undefined,
+   * which is what makes every session-only route refuse it.
+   */
+  asKey(key: ApiKey | undefined): void;
   user(role: User['role'], email?: string): Promise<User>;
   /** Storage writes land here rather than on disk, so a test can assert on them. */
   storage: FakeStorage;
@@ -77,6 +86,7 @@ export async function createHarness(): Promise<Harness> {
   const auth = resolveAuthConfig({ NODE_ENV: 'development' });
 
   let current: User | undefined;
+  let currentKey: ApiKey | undefined;
 
   return {
     db,
@@ -85,6 +95,13 @@ export async function createHarness(): Promise<Harness> {
     auth,
     as(user) {
       current = user;
+      // Never both. The middleware resolves a session first and only falls through to a key, so a
+      // harness that let the two coexist would test a state the runtime cannot produce.
+      currentKey = undefined;
+    },
+    asKey(key) {
+      currentKey = key;
+      current = undefined;
     },
     async user(role, email = `${role}@example.com`) {
       return createUser(db.db, { email, name: role, role });
@@ -109,7 +126,18 @@ export async function createHarness(): Promise<Harness> {
       const method = init.method ?? (body ? 'POST' : 'GET');
       const request = new Request(url, { method, headers, body });
 
-      const taproot: TaprootContext = { db, storage, auth, mail, user: current };
+      const taproot: TaprootContext = {
+        db,
+        storage,
+        auth,
+        mail,
+        user: current,
+        principal: current
+          ? { kind: 'user', user: current }
+          : currentKey
+            ? { kind: 'api_key', key: currentKey }
+            : undefined,
+      };
 
       return {
         request,

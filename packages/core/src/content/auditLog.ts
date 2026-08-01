@@ -24,7 +24,8 @@ export type AuditSubjectType =
   | 'taxonomy'
   | 'reusable_block'
   | 'redirect'
-  | 'release';
+  | 'release'
+  | 'api_key';
 
 export interface AuditEntryInput {
   /** Dotted verb: `item.published`, `user.two_factor_cleared`. Past tense — it already happened. */

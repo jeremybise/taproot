@@ -88,6 +88,7 @@ export default defineConfig({
             { label: 'Block types', slug: 'admin/block-types' },
             { label: 'Menus', slug: 'admin/menus' },
             { label: 'People and access', slug: 'admin/users' },
+            { label: 'API keys', slug: 'admin/api-keys' },
             { label: 'Two-factor authentication', slug: 'admin/two-factor' },
             { label: 'The audit log', slug: 'admin/audit-log' },
           ],

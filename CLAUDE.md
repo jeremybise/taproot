@@ -19,9 +19,15 @@ no department-scoped role. Roles are flat and site-wide. User management, workfl
 role gates, the scheduler, and the audit log all shipped, along with self-service password reset and
 a Cloudflare cron trigger for the publishing sweep.
 
-**Phase 3.5 — Content Releases — is complete.** Phase 3.75, the standalone server and delivery API,
-is next; read the Phase 3.75 entry and the Roles & permissions section of SCOPE.md before starting,
-and note that a release changes what "published" means, which is the reason the split waited for it.
+**Phase 3.5 — Content Releases — is complete.**
+
+**Phase 3.75a is complete**: API keys, principals, the delivery API, ETags, and type generation.
+`apps/web` is deliberately **unchanged** and still reads the database directly — both paths work,
+which is what makes the equivalence tests in `delivery.test.ts` possible. **3.75b is next**: rename
+`packages/astro` → `packages/studio`, create a thin consumer `@taproot/astro`, rewrite `apps/web`
+against HTTP, add cross-origin preview (covering both drafts *and* a release's staged version), then
+delete the embedded path. That comparison stops being available the moment 3.75b lands, so do not
+remove those tests without replacing what they prove.
 
 **[apps/docs](apps/docs) is the handbook** — Astro + Starlight, `npm run docs`, port 4322. It is
 end-user documentation (editors, site admins, operators), not developer docs, and it is a separate
@@ -38,7 +44,7 @@ and deployment — so update it in that phase rather than leaving it describing 
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 908 tests |
+| `npm test` | Vitest, 949 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
@@ -136,6 +142,51 @@ something. Things that follow, none of them optional now that this is the front 
   same counters as the password step, because six digits is a million possibilities. Turning it off
   or reissuing recovery codes needs the password; cancelling an *unconfirmed* enrolment does not,
   because an unconfirmed secret protects nothing.
+
+**An API key is a principal, not a user, and the two must never merge.** `Principal` in `guards.ts`
+is `{ kind: 'user' }` or `{ kind: 'api_key' }`. A key has scopes and no role; `hasScope` is false
+for a user principal *deliberately* — scopes narrow what a machine may do, so a route gated on one
+is meant for machines, and an admin reaching it should be refused rather than quietly succeeding
+through a path nobody tested. Things that follow:
+- **The role guards still take `User | undefined`, and that is the design.** Making all of them take
+  a principal means every guard grows a branch that only ever says "not this kind of thing", and
+  forty admin call sites carry a wrapper they never inspect. Converting at the boundary gets the
+  guarantee from the type system instead: `principalUser` returns `undefined` for a key, and there
+  is no value of type `User` a key can produce.
+- **`handle()` is session-only; `handleScoped()` is the opt-in.** A route that says nothing about
+  keys does not accept one. That default is what keeps a `content:read` key out of the admin REST
+  API — `handle` requires `taproot.user`, which is undefined for a key.
+- **The middleware resolves a session first and never both.** A browser hitting an API route while
+  signed in is a person, and letting the key win would credit a machine in the audit log.
+- **`id` is the SHA-256 of the token**, as with sessions and reset links, so verification is one
+  indexed lookup and a database dump holds nothing usable. The raw value exists once, returned
+  through a short-lived cookie rather than a query string. Keys are **revoked, never deleted** —
+  audit entries name them by id.
+
+**The delivery API is the read contract, and it must answer a page in one round trip.**
+`resolveDelivery` in `content/delivery.ts` returns the item, its type and fields, breadcrumbs (one
+`in` query, not one per ancestor), visible children, blocks already dereferenced, resolved SEO, and
+lookup maps for media, relations, and terms. It lives in core, not the route, for the same reason
+`resolveSeo` does — the studio's own reads and the delivery API must not drift. Two rules:
+- **References are lookup maps, never inlined into `data`.** Inlining would break the match between
+  `data` and the field types the CMS validates against (and therefore the generated types),
+  serialise a twice-used image twice, and make the payload unusable for a write.
+- **A redirect is a 200 carrying `{ kind: 'redirect' }`, not a 30x.** The consumer must redirect its
+  *own* visitor; a real 30x would redirect the server-side fetch and serve the wrong page's content
+  under the requested URL.
+
+**`resolveMenu`'s `termHref` callback cannot cross HTTP, and the answer is unresolved targets.**
+`deliverMenu` returns `{ type: 'term', taxonomyApiId, slug, name }` and the consumer applies
+`applyTermHrefs` with exactly the resolver it would have passed. The alternative — a server-side
+setting for which taxonomies get pages — was rejected because which ones deserve URLs depends on the
+routes a site serves, and moving it here would make Taproot assert something it cannot know. This is
+the question SCOPE flagged to decide rather than discover; it is decided.
+
+**Generated types are a `.d.ts` and carry no runtime.** `typegen.ts` emits types only — a `.d.ts`
+may declare but not implement, so a generated helper function in one is a syntax error rather than a
+convenience. A repeater's sub-fields are read in the stored `FieldRow` shape (`api_id`), never the
+delivery shape: reading them as `DeliveryField` silently emitted properties literally named
+`undefined`, which type-checks and is nonsense.
 
 **The workflow is a graph in core, not a status column.** `content/workflow.ts` holds every legal
 transition and the role each needs, and `canChangeStatus` asks it two questions in order: is this
@@ -301,7 +352,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-31 routes, 0 violations, all 36 token pairs passing in both themes.
+32 routes, 0 violations, all 36 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive

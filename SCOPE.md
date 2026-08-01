@@ -164,8 +164,18 @@ Two things worth carrying forward. An item may sit in several unpublished releas
 
 `blocked` is the one status that needs justifying: a scheduled release whose pre-flight fails at 3am has nobody to tell, and leaving it `scheduled` would sweep the same broken content every minute forever. A release refused while somebody is *looking* at the screen just shows them the reasons and stays put.
 
-**Phase 3.75 — Standalone server & delivery API**
-Split the one package into a deployable CMS and a thin Astro client, correcting the Phase 0 misreading recorded under Core architecture decisions. The shape is settled:
+**Phase 3.75 — Standalone server & delivery API** *(3.75a complete; 3.75b next)*
+Split the one package into a deployable CMS and a thin Astro client, correcting the Phase 0 misreading recorded under Core architecture decisions.
+
+Sequenced in two halves so there is a working site and a green suite at every commit. **3.75a is done**: API keys, principals, the delivery API, ETags, and type generation — with `apps/web` deliberately untouched and still reading the database directly. That is what makes `delivery.test.ts` able to assert the two paths agree, using the embedded route's own methods (`getItemByPath`, `getChildren`, `ancestorPaths`, `resolveSeo`, `resolveMenu`) as the expectation. **3.75b** is the rename, the consumer package, the `apps/web` rewrite, cross-origin preview, and deleting the embedded path — at which point that comparison stops being possible, so it is written now.
+
+Three things 3.75a settled that this section had left open:
+
+- **The `termHref` question below is answered: unresolved targets.** `deliverMenu` returns `{ type: 'term', taxonomyApiId, slug, name }` and the consumer applies `applyTermHrefs` with exactly the resolver it would have passed to `resolveMenu`. Moving the decision server-side was the alternative and would have been wrong — which taxonomies deserve public pages depends on the routes a site actually serves, so the CMS cannot know it. "Taproot has no opinion about term URLs" survives the split intact.
+- **The Phase 3 constraint about guards taking a principal had not been done**, and cost more to add later exactly as predicted. What landed is narrower than the wording implied and better for it: the *auth layer* takes a principal, and the role guards still take `User | undefined`. Making every guard take a principal means each grows a branch that only ever says "not this kind of thing", and forty admin call sites carry a wrapper they never inspect; converting at the boundary gets the same guarantee from the type system, since `principalUser` returns `undefined` for a key and no key can produce a `User`. The two constraints that *were* honoured — one visibility function, publish-at where a scheduler can find it — are why the rest was tractable.
+- **`handle()` stays session-only and `handleScoped()` is the opt-in.** A route that says nothing about keys does not accept one, which is what keeps a `content:read` key out of the admin REST API.
+
+The shape is settled:
 
 - **API-only.** The HTTP delivery API is the contract for reading content. `Astro.locals.taproot` and direct database access stop being a public affordance — the server keeps them for its own admin screens, where there is no second implementation to drift from.
 - **`npm create taproot` scaffolds the server**, an Astro app the user owns and deploys to Workers + D1, which keeps the v1 hosting decision intact. A Docker image is a later convenience rather than part of this phase; zero native dependencies means it will be a genuinely small one when it comes — Wolly needs a specific Node version to compile `better-sqlite3`, and `node:sqlite` needs nothing.

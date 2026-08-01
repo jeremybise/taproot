@@ -5,6 +5,7 @@ import type { TaprootDb } from '../db/client.js';
 import type {
   ContentItemRow,
   ContentStatus,
+  ContentTypeKind,
   ContentTypeRow,
   Database,
   FieldRow,
@@ -105,6 +106,26 @@ export interface ItemFilters {
    * because it silently turns "filter by a term with no members" into "show everything".
    */
   termIds?: string[];
+  /**
+   * Narrow to what a visitor may see, through the one shared predicate.
+   *
+   * Distinct from `status: 'published'`, which is the trap this exists to avoid: "visible" is two
+   * conditions, because a `scheduled` item whose moment has passed is live whether or not a sweep
+   * has run. The delivery API needs exactly this, and needed it in SQL rather than as a filter over
+   * the results — otherwise `total` counts rows the caller then discards, and paging is wrong by
+   * however many drafts happened to fall in the page.
+   */
+  visibleOnly?: boolean;
+  /**
+   * Narrow to items whose content type is one of these kinds.
+   *
+   * The delivery listing is the caller: a singleton's `path` is the synthetic
+   * `/__singleton/{api_id}`, which is not a URL anybody can link to, so offering one to a consumer
+   * building an index hands them a broken link. Expressed as kinds rather than "exclude singletons"
+   * because `page` and `collection` are exactly the kinds that *have* public URLs, which is the
+   * property the caller actually wants.
+   */
+  contentTypeKinds?: ContentTypeKind[];
 }
 
 type ItemQuery = SelectQueryBuilder<Database, 'content_items', {}>;
@@ -121,6 +142,22 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
 
   if (filters.contentTypeId) q = q.where('content_type_id', '=', filters.contentTypeId);
   if (filters.status) q = q.where('status', '=', filters.status);
+  if (filters.visibleOnly) q = q.where(visibleToPublic);
+
+  if (filters.contentTypeKinds && filters.contentTypeKinds.length > 0) {
+    const kinds = filters.contentTypeKinds;
+    // EXISTS rather than a join, so an item is counted once and the shape of the query the status
+    // facets share is unchanged.
+    q = q.where((eb) =>
+      eb.exists(
+        eb
+          .selectFrom('content_types')
+          .select('content_types.id')
+          .whereRef('content_types.id', '=', 'content_items.content_type_id')
+          .where('content_types.kind', 'in', kinds),
+      ),
+    );
+  }
   if (filters.parentId !== undefined) {
     q =
       filters.parentId === null

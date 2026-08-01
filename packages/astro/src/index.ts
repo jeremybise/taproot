@@ -113,6 +113,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/settings/blocks/[id]', 'settings/blocks/[id]'],
           ['/settings/redirects', 'settings/redirects'],
           ['/settings/users', 'settings/users'],
+          ['/settings/api-keys', 'settings/api-keys'],
           ['/settings/audit', 'settings/audit'],
           ['/settings/system', 'settings/system'],
         ];
@@ -153,6 +154,8 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/releases/[id]/publish', 'releases/[id]/publish'],
           ['/users', 'users/index'],
           ['/users/[id]', 'users/[id]'],
+          ['/api-keys', 'api-keys/index'],
+          ['/api-keys/[id]', 'api-keys/[id]'],
           ['/redirects', 'redirects/index'],
           ['/redirects/[id]', 'redirects/[id]'],
           ['/reusable-blocks', 'reusable-blocks/index'],
@@ -171,6 +174,17 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/menus/[id]/items', 'menus/[id]/items'],
           ['/menus/[id]/reorder', 'menus/[id]/reorder'],
           ['/menu-items/[itemId]', 'menu-items/[itemId]'],
+          /**
+           * The delivery API — the read contract for a site on another origin.
+           *
+           * Namespaced away from the admin REST API above because the two are shaped for different
+           * callers: those routes edit one thing at a time for a signed-in person, these answer a
+           * whole page for a machine holding a scoped key.
+           */
+          ['/delivery/resolve', 'delivery/resolve'],
+          ['/delivery/items', 'delivery/items'],
+          ['/delivery/menu/[apiId]', 'delivery/menu/[apiId]'],
+          ['/delivery/schema', 'delivery/schema'],
           ['/scheduler/run', 'scheduler/run'],
           ['/theme', 'theme'],
         ];

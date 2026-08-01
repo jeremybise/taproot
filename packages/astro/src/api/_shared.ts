@@ -1,6 +1,7 @@
 import type { APIContext } from 'astro';
-import type { User } from '@taproot/core';
+import type { ApiKey, ApiKeyScope, User } from '@taproot/core';
 import {
+  ApiKeyError,
   ContentItemError,
   ContentTypeError,
   MenuError,
@@ -11,7 +12,7 @@ import {
 } from '@taproot/core';
 import { z } from 'zod';
 
-import { getTaproot, type Role, hasRole } from '../runtime/guards.js';
+import { getTaproot, type Role, hasRole, hasScope } from '../runtime/guards.js';
 import type { TaprootContext } from '../runtime/context.js';
 
 /**
@@ -58,6 +59,11 @@ export interface HandleOptions {
 /**
  * Wrap an API handler with authentication, authorization, and error mapping.
  *
+ * **Sessions only.** A route wrapped in this cannot be reached with an API key, and that default is
+ * the point: a key is a machine credential with a narrow scope, and every route here was written
+ * for a person with a role. Routes meant for keys use `handleScoped` below and say which scope they
+ * need, so accepting one is always a decision somebody wrote down.
+ *
  * Unexpected errors are logged server-side and reported as a generic 500 — an exception's message
  * can carry SQL fragments or file paths, which should not reach an HTTP client.
  */
@@ -84,6 +90,69 @@ export function handle(
 
     try {
       return await handler({ context, taproot, user: taproot.user });
+    } catch (error) {
+      return mapError(error);
+    }
+  };
+}
+
+export interface ScopedHandlerArgs {
+  context: APIContext;
+  taproot: TaprootContext;
+  /** The key, when one was presented. Absent for a signed-in person on the same route. */
+  key?: ApiKey;
+}
+
+/**
+ * Wrap a handler that an API key may reach, given a scope.
+ *
+ * Separate from `handle` rather than an option on it, because the two have different shapes: this
+ * one cannot promise a `user`, and every existing route body reads that field. A flag would have
+ * made `user` optional everywhere to serve four delivery routes.
+ *
+ * **A signed-in person is also allowed**, and deliberately so — the alternative is that an editor
+ * cannot open a delivery URL in their own browser to see what a consumer receives, which is the
+ * first thing anyone debugging an integration tries. `hasScope` is false for a user principal (see
+ * `guards.ts`), so the two are checked as alternatives rather than one falling through the other.
+ */
+export function handleScoped(
+  handler: (args: ScopedHandlerArgs) => Promise<Response>,
+  options: { scope: ApiKeyScope },
+) {
+  return async (context: APIContext): Promise<Response> => {
+    let taproot: TaprootContext;
+    try {
+      taproot = getTaproot(context.locals);
+    } catch (error) {
+      console.error('[taproot] context unavailable', error);
+      return apiError(500, 'Taproot is not configured correctly.');
+    }
+
+    const principal = taproot.principal;
+    const viaKey = hasScope(principal, options.scope);
+    const viaSession = principal?.kind === 'user';
+
+    if (!viaKey && !viaSession) {
+      /**
+       * 401 rather than 403, and the message names both ways in.
+       *
+       * The overwhelmingly likely caller is a deployment whose key is missing, wrong, or revoked —
+       * and `verifyApiKey` cannot tell those apart on purpose, so neither can this. Saying which of
+       * their guesses was once real is exactly what it declines to do.
+       */
+      return apiError(
+        401,
+        'This endpoint needs an API key with the ' +
+          `${options.scope} scope, presented as \`authorization: Bearer …\`, or a signed-in session.`,
+      );
+    }
+
+    try {
+      return await handler({
+        context,
+        taproot,
+        key: principal?.kind === 'api_key' ? principal.key : undefined,
+      });
     } catch (error) {
       return mapError(error);
     }
@@ -160,6 +229,19 @@ export function mapError(error: unknown): Response {
         return apiError(409, error.message);
       case 'validation_failed':
         return apiError(422, error.message, error.fieldErrors);
+      default:
+        return apiError(400, error.message);
+    }
+  }
+
+  if (error instanceof ApiKeyError) {
+    switch (error.code) {
+      case 'not_found':
+        return apiError(404, error.message);
+      case 'invalid_scope':
+        return apiError(422, error.message);
+      case 'revoked':
+        return apiError(409, error.message);
       default:
         return apiError(400, error.message);
     }

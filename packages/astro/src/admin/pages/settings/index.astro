@@ -48,6 +48,18 @@ const auditCount = canManageUsers(user)
     )?.n
   : 0;
 
+// Active keys only. A revoked one is a record rather than access, and counting it here would
+// overstate how many things can read the site.
+const apiKeyCount = canManageUsers(user)
+  ? (
+      await taproot.db.db
+        .selectFrom('api_keys')
+        .select((eb) => eb.fn.countAll<number>().as('n'))
+        .where('revoked_at', 'is', null)
+        .executeTakeFirst()
+    )?.n
+  : 0;
+
 const sections = [
   ...(canManageSchema(user)
     ? [
@@ -81,6 +93,13 @@ const sections = [
           title: 'Users & access',
           description: 'Who can sign in, and what each of them may do.',
           meta: `${Number(userCount ?? 0)} ${Number(userCount ?? 0) === 1 ? 'user' : 'users'}`,
+        },
+        {
+          href: '/admin/settings/api-keys',
+          title: 'API keys',
+          description:
+            'How another deployment reads this site’s published content over HTTP. Not people — keys have scopes, not roles.',
+          meta: `${Number(apiKeyCount ?? 0)} active`,
         },
         {
           href: '/admin/settings/audit',
