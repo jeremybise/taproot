@@ -13,7 +13,7 @@
     "apps/*"
   ],
   "scripts": {
-    "//build:core": "Unlike @taproot/astro, which ships source and is compiled by the host's Vite pipeline, @taproot/core is consumed as compiled `dist/` — its exports map points there, and the seed/migrate scripts import it under plain node. Nothing but `npm install` (via prepare) and `npm run build` ever ran tsc, so editing core and running dev served the *previous* compile: the missing symbol surfaces as `@taproot/core does not provide an export named X`, which reads like the export was never written rather than never rebuilt. Hence the pre-hooks below on every entry point that loads core. Incremental `tsc --build` is ~0.2s when up to date.",
+    "//build:core": "Unlike @taproot/studio, which ships source and is compiled by the host's Vite pipeline, @taproot/core is consumed as compiled `dist/` — its exports map points there, and the seed/migrate scripts import it under plain node. Nothing but `npm install` (via prepare) and `npm run build` ever ran tsc, so editing core and running dev served the *previous* compile: the missing symbol surfaces as `@taproot/core does not provide an export named X`, which reads like the export was never written rather than never rebuilt. Hence the pre-hooks below on every entry point that loads core. Incremental `tsc --build` is ~0.2s when up to date.",
     "build:core": "npm run build --workspace=@taproot/core",
     "predev": "npm run build:core",
     "dev": "npm run dev --workspace=@taproot/web",
@@ -33,7 +33,7 @@
     "pretest:watch": "npm run build:core",
     "test:watch": "vitest",
     "//typecheck": "Per-workspace rather than a root `tsc --build`: there is no root tsconfig, and the two Astro-facing projects cannot be tsc project references — apps/web's sources are .astro, which tsc has no resolver for. apps/web is type-checked by `npm run build` instead.",
-    "typecheck": "npm run typecheck --workspace=@taproot/core && npm run typecheck --workspace=@taproot/astro",
+    "typecheck": "npm run typecheck --workspace=@taproot/core && npm run typecheck --workspace=@taproot/studio",
     "//taproot:types": "Generates apps/web/src/content.d.ts from the live content model, read over the delivery API rather than out of the database — so the types describe what a consumer actually receives. Needs a running server; set TAPROOT_API_URL and TAPROOT_API_KEY for anything but local dev.",
     "pretaproot:types": "npm run build:core",
     "taproot:types": "npm run taproot:types --workspace=@taproot/web",

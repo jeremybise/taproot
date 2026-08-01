@@ -19,7 +19,7 @@
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.5",
     "@astrojs/node": "^11.0.3",
-    "@taproot/astro": "*",
+    "@taproot/studio": "*",
     "@taproot/core": "*",
     "astro": "^7.1.4"
   },

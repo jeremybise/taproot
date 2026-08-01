@@ -248,7 +248,7 @@ export function getTaproot(locals: unknown): TaprootContext {
   const context = (locals as { taproot?: TaprootContext }).taproot;
   if (!context) {
     throw new Error(
-      'Taproot context is missing. The @taproot/astro integration registers middleware that ' +
+      'Taproot context is missing. The @taproot/studio integration registers middleware that ' +
         'creates it — check that `taproot()` is present in the `integrations` array of ' +
         'astro.config.mjs.',
     );

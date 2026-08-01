@@ -1,10 +1,10 @@
 {
-  "name": "@taproot/astro",
+  "name": "@taproot/studio",
   "version": "0.0.0",
-  "description": "Astro integration for Taproot: admin panel, REST API, typed client, and BlockRenderer",
+  "description": "The Taproot CMS server as an Astro integration: admin panel, REST API, and delivery API",
   "license": "MIT",
   "type": "module",
-  "//": "This package intentionally ships TypeScript/Astro SOURCE rather than a build. Astro's injectRoute compiles .astro entrypoints out of node_modules through the host's Vite pipeline, which is how Starlight ships its routes. Publishing to npm will need a build step for the integration entry only; see README.",
+  "//": "This package intentionally ships TypeScript/Astro SOURCE rather than a build. Astro's injectRoute compiles .astro entrypoints out of node_modules through the host's Vite pipeline, which is how Starlight ships its routes. It is the *server* half of Taproot \u2014 a site reads content through @taproot/astro over HTTP and never installs this.",
   "exports": {
     ".": "./src/index.ts",
     "./runtime": "./src/runtime/index.ts",

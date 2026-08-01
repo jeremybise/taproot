@@ -178,7 +178,7 @@ trigger, and `apps/web/src/worker.ts` is the Worker entry that handles it:
 
 ```ts
 import { handle } from '@astrojs/cloudflare/handler';
-import { scheduled } from '@taproot/astro/runtime/worker';
+import { scheduled } from '@taproot/studio/runtime/worker';
 
 export default { fetch: handle, scheduled };
 ```

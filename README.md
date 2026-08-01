@@ -129,7 +129,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
 | `npm run docs` | The handbook at :4322 — Starlight, no database, builds on its own |
 | `npm test` | Unit tests (949 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, releases, the delivery API and type generation, taxonomies, menus, redirects, SEO, blocks, the field builder) |
-| `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
+| `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/studio` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
 | `npm run deploy` | Build and `wrangler deploy` (see [DEPLOYMENT.md](DEPLOYMENT.md)) |
@@ -140,11 +140,11 @@ toolchain — Taproot has zero native dependencies.
 
 ```
 packages/core     @taproot/core   — data layer, auth, content services, storage. No framework.
-packages/astro    @taproot/astro  — the Astro integration: admin panel, REST API, client
+packages/studio    @taproot/studio  — the Astro integration: admin panel, REST API, client
 apps/web          the demo campus site
 ```
 
-`@taproot/astro` ships TypeScript and `.astro` **source** rather than a build. Astro's
+`@taproot/studio` ships TypeScript and `.astro` **source** rather than a build. Astro's
 `injectRoute` compiles `.astro` entrypoints out of `node_modules` through the host's Vite pipeline
 — the same approach Starlight uses. Publishing to npm will need a build step for the integration
 entry only.

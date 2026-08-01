@@ -24,7 +24,7 @@ a Cloudflare cron trigger for the publishing sweep.
 **Phase 3.75a is complete**: API keys, principals, the delivery API, ETags, and type generation.
 `apps/web` is deliberately **unchanged** and still reads the database directly — both paths work,
 which is what makes the equivalence tests in `delivery.test.ts` possible. **3.75b is next**: rename
-`packages/astro` → `packages/studio`, create a thin consumer `@taproot/astro`, rewrite `apps/web`
+`packages/studio` → `packages/studio`, create a thin consumer `@taproot/studio`, rewrite `apps/web`
 against HTTP, add cross-origin preview (covering both drafts *and* a release's staged version), then
 delete the embedded path. That comparison stops being available the moment 3.75b lands, so do not
 remove those tests without replacing what they prove.
@@ -72,9 +72,9 @@ Content types, Redirects, Users & access, and System — configuration that shap
 than its content.
 
 Content lists share three pieces of presentation, each in one place so the screens cannot drift:
-[status.ts](packages/astro/src/admin/status.ts) (labels, badge classes, which statuses the editor
-offers), [StatusBadge.astro](packages/astro/src/admin/components/StatusBadge.astro), and
-[Timestamp.astro](packages/astro/src/admin/components/Timestamp.astro). **Status colour is always
+[status.ts](packages/studio/src/admin/status.ts) (labels, badge classes, which statuses the editor
+offers), [StatusBadge.astro](packages/studio/src/admin/components/StatusBadge.astro), and
+[Timestamp.astro](packages/studio/src/admin/components/Timestamp.astro). **Status colour is always
 redundant with a text label** — that is what keeps the badges clear of WCAG 1.4.1, so a badge must
 never become a bare colour swatch. Badge classes are written out as literal strings because
 Tailwind 4 finds classes by scanning source text; `bg-status-${status}-subtle` would never be
@@ -92,12 +92,12 @@ must still render every admin screen without erroring.
 
 ```
 packages/core     @taproot/core   — data layer, auth, content services, storage. No framework.
-packages/astro    @taproot/astro  — the Astro integration: admin panel, REST API, typed client
+packages/studio    @taproot/studio  — the Astro integration: admin panel, REST API, typed client
 apps/web          the demo campus site
 ```
 
-Routes are not files-on-disk in apps/web — `@taproot/astro`'s integration entry
-([index.ts](packages/astro/src/index.ts)) injects every admin and API route via `injectRoute`.
+Routes are not files-on-disk in apps/web — `@taproot/studio`'s integration entry
+([index.ts](packages/studio/src/index.ts)) injects every admin and API route via `injectRoute`.
 **Adding a screen or endpoint means adding it to the route table there**, not just creating the
 file.
 
@@ -342,10 +342,10 @@ check runs before any HTML is sent. React appears only where interaction genuine
 needs hand-built focus management and route announcements to meet WCAG AA. Don't introduce
 client-side routing.
 
-**`@taproot/astro` ships source, not a build.** Astro's `injectRoute` compiles `.astro` entrypoints
+**`@taproot/studio` ships source, not a build.** Astro's `injectRoute` compiles `.astro` entrypoints
 out of `node_modules` through the host's Vite pipeline, the same way Starlight does. `.astro`
 imports resolve for tsc only via the ambient shim in
-[astro-modules.d.ts](packages/astro/src/astro-modules.d.ts); that shim makes the import resolve so
+[astro-modules.d.ts](packages/studio/src/astro-modules.d.ts); that shim makes the import resolve so
 surrounding TypeScript gets checked, and does **not** check the `.astro` file's own contents.
 
 ## Accessibility is an acceptance criterion, not a review step
@@ -381,7 +381,7 @@ select, textarea. Anything else is silently inert: the control is still named th
 `aria-labelledby` or a `<legend>`, so a screen reader sounds correct, axe passes, and only
 click-to-focus is missing. That is why the audit checks it directly; axe's `label` rule asks
 whether a control has a name, not whether a label has a target. **A custom control gets a `<span
-id>` and `aria-labelledby`, not a `<label for>`** — [FieldControl](packages/astro/src/admin/islands/fields/FieldControl.tsx)'s
+id>` and `aria-labelledby`, not a `<label for>`** — [FieldControl](packages/studio/src/admin/islands/fields/FieldControl.tsx)'s
 `labelsAControl()` is the worked example, and it is the audit rather than review that keeps it in
 step with the branches it mirrors.
 
@@ -402,8 +402,8 @@ Where a widget only exists after hydration — the richtext toolbar, since Prose
 DOM and the server renders an empty placeholder; the media picker, which is a dialog that has to be
 opened — the audit cannot see it at all. Those get a jsdom test that runs axe on the hydrated tree
 plus its keyboard contract
-([RichTextEditor.test.tsx](packages/astro/src/admin/islands/fields/RichTextEditor.test.tsx),
-[MediaPicker.test.tsx](packages/astro/src/admin/islands/media/MediaPicker.test.tsx)).
+([RichTextEditor.test.tsx](packages/studio/src/admin/islands/fields/RichTextEditor.test.tsx),
+[MediaPicker.test.tsx](packages/studio/src/admin/islands/media/MediaPicker.test.tsx)).
 Scope axe to the render container, not `document`: in isolation there is no landmark around the
 component, and the resulting `region` violation is an artifact of the test. **Radix dialogs are the
 exception** — they portal to `document.body`, so the render container is empty and axe must be

@@ -2,7 +2,7 @@
 import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 import cloudflare from '@astrojs/cloudflare';
-import taproot from '@taproot/astro';
+import taproot from '@taproot/studio';
 
 /**
  * Adapter split: Node for `astro dev`, Cloudflare for builds and deploys.
@@ -29,6 +29,6 @@ export default defineConfig({
   vite: {
     // Kysely and the core package are workspace source; pre-bundling them adds nothing and makes
     // edits require a dev-server restart.
-    optimizeDeps: { exclude: ['@taproot/core', '@taproot/astro'] },
+    optimizeDeps: { exclude: ['@taproot/core', '@taproot/studio'] },
   },
 });
