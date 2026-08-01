@@ -6,6 +6,11 @@ description: What Taproot is, who each part of this handbook is for, and where t
 Taproot is a content management system. It holds the pages of your website in a database, gives
 you a place to write and edit them, and publishes them when you say so.
 
+It runs as **two pieces**: the CMS, where you write, and the website, which reads from it. You will
+almost never think about that as an editor — except that the admin is at its own address, not at
+`/admin` on the public site. If you run the server, the split matters more, and
+[Deploying](/operate/deploying/) starts there.
+
 This handbook covers three jobs, and you probably only need one of them.
 
 ## If you write content

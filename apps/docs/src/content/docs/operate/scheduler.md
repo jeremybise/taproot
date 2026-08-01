@@ -3,11 +3,13 @@ title: The scheduler
 description: What the periodic sweep does, why scheduled pages work without it, and why releases do not.
 ---
 
-Taproot has one periodic job. It:
+The **CMS** has one periodic job — the site has none, and nothing about scheduling depends on the
+site being up. It:
 
 - Publishes **scheduled content items** whose time has come.
 - Publishes **scheduled releases** whose time has come.
-- Clears expired sessions, spent password-reset tokens, and aged-out sign-in attempts.
+- Clears expired sessions, spent password-reset tokens, aged-out sign-in attempts, and expired
+  preview links.
 
 ## What needs it and what does not
 
@@ -29,9 +31,9 @@ relies on a timed launch.
 
 ## On Cloudflare
 
-Nothing to set up. The sweep is a cron trigger on the same Worker that serves the site — the
-`triggers.crons` entry in `apps/web/wrangler.jsonc`, reaching the `scheduled` export in
-`apps/web/src/worker.ts`.
+Nothing to set up. The sweep is a cron trigger on the same Worker that serves the CMS — the
+`triggers.crons` entry in `apps/studio/wrangler.jsonc`, reaching the `scheduled` export in
+`apps/studio/src/worker.ts`.
 
 No second Worker, no shared secret, nothing crossing the network.
 

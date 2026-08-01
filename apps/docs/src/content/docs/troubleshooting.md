@@ -94,4 +94,18 @@ do, so a missing button is a permission, not a broken screen.
 
 ## A database command says the file is in use
 
-Stop the dev server first — `astro dev stop`. It holds the SQLite file open.
+Stop the CMS dev server first — `astro dev stop --root apps/studio`. It holds the SQLite file open.
+The site's server does not touch the database and can stay up.
+
+## "The site shows an error but the admin works"
+
+The site could not reach the CMS, or its key was refused. Check that the CMS is running, that
+`TAPROOT_API_URL` points at it, and that `TAPROOT_API_KEY` names a key that has not been revoked —
+**Settings → API keys** lists them and shows when each was last used.
+
+The two are separate deployments, so one being healthy says nothing about the other.
+
+## "Preview says Taproot does not know where to send me"
+
+`TAPROOT_SITE_URL` is not set on the CMS. Preview links are built from it — see
+[Settings and environment](/operate/configuration/).

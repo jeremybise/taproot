@@ -349,12 +349,13 @@ workerd has no `node:sqlite`, which would make `npm run db:seed` impossible with
 server. `node:sqlite` is reached through a variable specifier and marked SSR-external so bundlers
 can't resolve it statically. Use `npm run preview` to exercise the real Workers runtime.
 
-**The Worker entry is `apps/web/src/worker.ts`, not the adapter's.** `@astrojs/cloudflare` fills in
+**The Worker entry is `apps/studio/src/worker.ts`, not the adapter's.** `@astrojs/cloudflare` fills in
 `main` only when the wrangler config does not (`main: config.main ?? '@astrojs/cloudflare/entrypoints/server'`),
 and the entry it would supply is exactly `{ fetch: handle }`. Naming our own therefore costs the
 adapter's behaviour nothing and buys a `scheduled` export, which is the only way a Cloudflare cron
 trigger can reach the publishing sweep — the alternative was a second Worker existing solely to make
-one authenticated HTTP request into the first. `main` must point at **source**, never at anything
+one authenticated HTTP request into the first. This belongs to the *studio*: the consumer has no
+scheduler, no database, and no cron. `main` must point at **source**, never at anything
 under `dist/`: that file does not exist until after a build, and naming it makes `astro dev` fail
 before it starts. `POST /api/taproot/scheduler/run` and `TAPROOT_CRON_SECRET` remain for platforms
 with no cron of their own; nothing on Cloudflare needs either.

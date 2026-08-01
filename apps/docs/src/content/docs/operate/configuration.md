@@ -3,11 +3,24 @@ title: Settings and environment
 description: Every environment variable Taproot reads, and what happens when each is unset.
 ---
 
-Configuration is environment variables. In development they come from `apps/web/.env`; in production
+Configuration is environment variables. In development they come from a `.env` file; in production
 from your platform's secrets. Real environment variables always win over the file.
 
-**Settings → System** in the admin shows what the running deployment actually resolved, which is
-usually faster than reading a config file over somebody's shoulder.
+**There are two deployments and two files**, and almost everything belongs to the first:
+
+| | File | What it configures |
+|---|---|---|
+| **The CMS** (`apps/studio`) | `apps/studio/.env` | Database, storage, sign-in, mail, the scheduler |
+| **The site** (`apps/web`) | `apps/web/.env` | Two variables: where the CMS is, and a key |
+
+If a variable is not in the site's short list at the bottom of this page, it belongs to the CMS.
+
+**Settings → System** in the admin shows what the CMS actually resolved, which is usually faster
+than reading a config file over somebody's shoulder.
+
+---
+
+# The CMS
 
 ## Sign-in
 
@@ -34,7 +47,7 @@ silently dropping it would leave you believing you had scoped something.
 
 | | |
 |---|---|
-| `TAPROOT_SQLITE_PATH` | Local SQLite file, relative to `apps/web`. Created automatically |
+| `TAPROOT_SQLITE_PATH` | Local SQLite file, relative to `apps/studio`. Created automatically |
 | `DATABASE_URL` | Switches to Postgres. Requires `npm install pg` |
 
 On Cloudflare, the D1 binding takes over and neither is read.
@@ -65,23 +78,18 @@ faster and is the recommended production setup — but it is an optimisation, no
 See [Email](/operate/email/). With none set, Taproot writes messages to the log and hides the
 features that would promise delivery.
 
-## Reading content from another deployment
+## Where the site is
 
 | | |
 |---|---|
-| `TAPROOT_API_URL` | Base URL of the Taproot server, for the type generator |
-| `TAPROOT_API_KEY` | An API key with the `content:read` scope |
+| `TAPROOT_SITE_URL` | Origin of the site that reads this content |
 
-The delivery API (`/api/taproot/delivery/*`) is how a separate site reads this one's published
-content. It needs a key — see [API keys](/admin/api-keys/).
+Used for preview links: the admin's **Preview page** button mints a short-lived token and redirects
+to this origin carrying it.
 
-These two variables are read by `npm run taproot:types`, which generates TypeScript for the site's
-content model by reading the **live** schema over HTTP rather than out of the database. That is
-deliberate: the generator exercises the same contract a consumer uses, so the types describe what a
-site actually receives.
-
-Neither is needed against a local dev server — a signed-in session reaches the delivery endpoints
-too, which is what makes debugging an integration in a browser possible.
+Unset, an editor pressing that button is told the CMS does not know where to send them — which is a
+clearer failure than a redirect to a 404 on the CMS's own origin, and the reason it is checked rather
+than guessed.
 
 ## Scheduler
 
@@ -99,3 +107,34 @@ Only for `npm run db:migrate:remote`:
 `TAPROOT_CF_ACCOUNT_ID`, `TAPROOT_CF_D1_ID`, `TAPROOT_CF_API_TOKEN`.
 
 Keep the API token out of version control.
+
+---
+
+# The site
+
+Two variables, and that is genuinely all of it. The site holds no database credentials, because it
+has no database.
+
+| | |
+|---|---|
+| `TAPROOT_API_URL` | Origin of the CMS: `https://cms.example.edu` |
+| `TAPROOT_API_KEY` | An API key with the `content:read` scope |
+
+Create the key in the CMS under **Settings → API keys**; it is shown exactly once. See
+[API keys](/admin/api-keys/).
+
+`TAPROOT_API_KEY` is **optional against a local CMS**, where a signed-in session reaches the
+delivery endpoints too — which is what makes opening a delivery URL in a browser to see exactly what
+the site receives possible while debugging. A deployed site needs a real key.
+
+The same two variables are read by `npm run taproot:types`, which generates TypeScript for your
+content model by reading the **live** schema over HTTP rather than out of the database. That is
+deliberate: the generator exercises the same contract the site uses, so the types describe what the
+site actually receives.
+
+## Why the split is this lopsided
+
+Everything that can leak, expire, or be misconfigured — database credentials, OAuth secrets, a mail
+webhook, storage bindings — belongs to the CMS. A site is a front end holding one scoped read
+credential, so a compromised site cannot edit content, and redeploying or replacing it touches none
+of the configuration above.

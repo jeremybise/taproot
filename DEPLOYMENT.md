@@ -1,9 +1,25 @@
 # Deploying Taproot
 
-Target: **Cloudflare Workers + D1 + R2**.
+Target for the CMS: **Cloudflare Workers + D1 + R2**.
 
 Written alongside the code rather than reconstructed afterwards. If a step here is wrong, that is a
 bug — fix the doc in the same change as the code.
+
+## Two deployments
+
+Taproot is a CMS server and a site that reads from it over HTTP. They deploy separately and the
+order matters, because the site needs a key the CMS issues.
+
+| | Directory | Holds | Needs |
+|---|---|---|---|
+| **CMS** | `apps/studio` | The database, uploads, the admin, the scheduler | D1, R2, a cron trigger |
+| **Site** | `apps/web` | Nothing | `TAPROOT_API_URL` and `TAPROOT_API_KEY` |
+
+**Steps 1–5 below are the CMS.** The site is step 6 and is three lines of configuration, because it
+has no database and no secrets beyond one scoped read key. Everything that can leak or expire lives
+on the CMS side, which is much of the point of the split.
+
+Several sites can read one CMS — each just needs its own key.
 
 ---
 
@@ -38,7 +54,7 @@ database_name = "taproot"
 database_id = "a1b2c3d4-...."
 ```
 
-Copy the `database_id` into `apps/web/wrangler.jsonc`, replacing
+Copy the `database_id` into `apps/studio/wrangler.jsonc`, replacing
 `REPLACE_WITH_YOUR_D1_DATABASE_ID`.
 
 **Do not rename the binding.** `DB` is what `dbConfigFromEnv()` in `@taproot/core` looks for; a
@@ -75,7 +91,7 @@ map in `migrations/index.ts`. The same migrations run locally and remotely — t
 set of `.sql` files to drift out of sync.
 
 Remote migration goes over Cloudflare's D1 REST API, which needs three values in
-`apps/web/.env`:
+`apps/studio/.env`:
 
 | Variable | Where to find it |
 |---|---|
@@ -127,7 +143,7 @@ https://your-domain/api/taproot/auth/callback/<provider>
 
 ### Plain variables
 
-Add to the `vars` block in `apps/web/wrangler.jsonc`:
+Add to the `vars` block in `apps/studio/wrangler.jsonc`:
 
 ```jsonc
 "vars": {
@@ -169,7 +185,7 @@ public can already see, and offers a button to reconcile it by hand.
 > sweep reached and refused.
 
 **On Cloudflare this is already wired and needs no configuration.** `wrangler.jsonc` carries a cron
-trigger, and `apps/web/src/worker.ts` is the Worker entry that handles it:
+trigger, and `apps/studio/src/worker.ts` is the Worker entry that handles it:
 
 ```jsonc
 "main": "./src/worker.ts",
@@ -232,7 +248,7 @@ That runs `astro build` (Cloudflare adapter) then `wrangler deploy`.
 To check the bundle without deploying:
 
 ```bash
-cd apps/web && npx astro build && npx wrangler deploy --dry-run
+cd apps/studio && npx astro build && npx wrangler deploy --dry-run
 ```
 
 The dry run lists every binding it resolved. If `DB` or `MEDIA` is missing there, the Worker will
@@ -321,6 +337,41 @@ Requests are rate-limited to 5 per address and per IP per 15 minutes, counted se
 sign-in attempts — otherwise anyone could lock a colleague out of signing in by repeatedly asking
 to reset their password.
 
+## 6c. Deploy the site
+
+The site is an ordinary Astro app. It needs two variables and nothing else:
+
+```
+TAPROOT_API_URL=https://your-cms-domain
+TAPROOT_API_KEY=tpr_...
+```
+
+Create the key in the admin under **Settings → API keys**, with the `content:read` scope. It is
+shown exactly once — `id` is its hash, so there is nothing to read it back from.
+
+Then, on the **CMS**, set `TAPROOT_SITE_URL` to the site's origin. That is what preview links are
+built from; without it an editor pressing **Preview page** is told the CMS does not know where to
+send them.
+
+```bash
+npm run build --workspace=@taproot/web
+```
+
+Deploy the result wherever you already deploy Astro — Node, Workers, a container. It holds no
+database credentials, so a compromised site cannot edit content.
+
+Optionally generate types for it:
+
+```bash
+TAPROOT_API_URL=https://your-cms-domain TAPROOT_API_KEY=tpr_... npm run taproot:types
+```
+
+That reads the live content model over the delivery API and writes `apps/web/src/content.d.ts`,
+which is checked in — so a schema change shows as a reviewable diff and anything renamed stops
+compiling.
+
+---
+
 ## Verifying against real Workers locally
 
 `npm run dev` uses Node and a local SQLite file — fast, zero-setup, and what you want most of the
@@ -340,13 +391,13 @@ or anything reaching for a Node built-in.
 supported way to migrate or seed it.** `npm run db:migrate` targets the local SQLite file, and
 `db:migrate:remote` goes over the D1 REST API to a deployed database; neither can reach Miniflare's
 emulated D1, whose file lives at an internal path the scripts cannot reliably write to. That is the
-same constraint recorded in `apps/web/astro.config.mjs` — it is why dev runs on Node in the first
+same constraint recorded in `apps/studio/astro.config.mjs` — it is why dev runs on Node in the first
 place.
 
 So `npm run preview` is for exercising the **runtime** — crypto, streams, anything reaching for a
 Node built-in — not for clicking around a populated admin. Point it at a real remote D1 for that,
 or apply migrations by hand with `wrangler d1 execute --local --file`. Local D1 state lives in
-`apps/web/.wrangler/state/` and can be deleted to start over.
+`apps/studio/.wrangler/state/` and can be deleted to start over.
 
 There is likewise **no production seeding path**: `npm run db:seed` writes to the local SQLite file
 and the local upload directory. A fresh deployment therefore has no content types at all, and the

@@ -3,9 +3,13 @@ title: Backups and recovery
 description: What to back up, and how to get back in when something has gone wrong.
 ---
 
-## What holds your data
+## Only the CMS holds anything
 
-Two things, and they are separate:
+The site holds no data at all — no database, no uploads, one read-only API key. Losing it entirely
+costs you a redeploy. **Everything worth backing up is in the CMS deployment**, which is much of the
+point of the two being separate.
+
+Two things there, and they are separate:
 
 - **The database** — all content, revisions, users, releases, menus, taxonomies, the audit log.
   Everything except the files themselves.
@@ -19,8 +23,8 @@ both.
 **D1**: use Cloudflare's export. `wrangler d1 export <name> --remote --output backup.sql` produces
 a file you can restore from.
 
-**Local SQLite**: copy the file at `TAPROOT_SQLITE_PATH`. Stop the dev server first, or you may copy
-it mid-write.
+**Local SQLite**: copy the file at `TAPROOT_SQLITE_PATH`, under `apps/studio`. Stop the CMS dev
+server first, or you may copy it mid-write.
 
 **Postgres**: `pg_dump`, as usual.
 

@@ -3,8 +3,14 @@ title: Signing in
 description: Getting into the admin, resetting a forgotten password, and what to do when a code is asked for.
 ---
 
-The admin lives at `/admin` on your site. If your site is `example.edu`, that is
-`https://example.edu/admin`.
+The admin lives at `/admin` on your **CMS**, which is a different address from the website itself.
+
+Taproot is two deployments: the CMS, where content is written, and the site visitors read. If your
+site is `example.edu`, the CMS is usually something like `cms.example.edu` — ask whoever set it up,
+or look for the address in a bookmark you were sent.
+
+That separation is why editing a page never takes the site down, and why the site can be redesigned
+without touching anything you have written.
 
 ## Signing in
 
