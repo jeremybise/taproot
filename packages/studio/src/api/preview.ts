@@ -1,4 +1,4 @@
-import { PREVIEW_PARAM, createPreviewToken, getItem, getRelease } from '@taproot/core';
+import { PREVIEW_PARAM, createPreviewToken, getItem, getRelease } from '@taprootcms/core';
 
 import { apiError, handle } from './_shared.js';
 

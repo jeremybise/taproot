@@ -1,6 +1,6 @@
 import type { Kysely } from 'kysely';
-import type { Database } from '@taproot/core';
-import { blockTypeRegistry, listReusableBlocks } from '@taproot/core';
+import type { Database } from '@taprootcms/core';
+import { blockTypeRegistry, listReusableBlocks } from '@taprootcms/core';
 
 import type {
   BlockTypeOption,

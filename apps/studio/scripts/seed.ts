@@ -30,7 +30,7 @@ import {
   type TaprootDb,
   type TaxonomyRow,
   type TermRow,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { openDb } from './_db.ts';
 import { loadEnv } from './_env.ts';

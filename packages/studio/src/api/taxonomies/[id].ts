@@ -1,4 +1,4 @@
-import { deleteTaxonomy, getTaxonomy, listTerms, updateTaxonomy } from '@taproot/core';
+import { deleteTaxonomy, getTaxonomy, listTerms, updateTaxonomy } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent, readJson } from '../_shared.js';

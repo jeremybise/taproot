@@ -1,6 +1,8 @@
 # Taproot — Scoping Doc v0.1
 
-**Project name: Taproot.** No known collision with any existing CMS or web-dev tool. Heads up for context: there's an unrelated, older Bitcoin protocol upgrade also called Taproot (crowds npm/GitHub search results with cryptocurrency libraries, but no product competition), and a real 501(c)(3) nonprofit called the Taproot Foundation (skills-based volunteering, unrelated field). Neither is a legal blocker. npm packages should be published under an `@taproot` org scope (a free namespace, not a company) — see below.
+**Project name: Taproot.** No known collision with any existing CMS or web-dev tool. Heads up for context: there's an unrelated, older Bitcoin protocol upgrade also called Taproot (crowds npm/GitHub search results with cryptocurrency libraries, but no product competition), and a real 501(c)(3) nonprofit called the Taproot Foundation (skills-based volunteering, unrelated field). Neither is a legal blocker.
+
+**npm naming, decided:** packages publish under **`@taprootcms`** — `@taprootcms/core`, `@taprootcms/studio`, `@taprootcms/astro` — plus the **unscoped `create-taproot`**, which is what makes `npm create taproot` work (npm resolves that command to `create-<name>`; the scoped form would be the uglier `npm create @taprootcms`). This doc originally said `@taproot`, and the reason it changed is in the paragraph above: the Bitcoin upgrade crowds npm and GitHub search with `taproot-*` cryptocurrency libraries, so `@taprootcms/core` is unmistakably this project where `@taproot/core` is a guess until you look. A scope disambiguates only once you can see the `@`, and search results, a talk, and word of mouth do not carry it. The unscoped `taproot` was never available regardless — it has been a tree-manipulation library since 2012 — while `create-taproot` was free and is the name that actually matters, because it is the first thing anyone types.
 
 ## What this is
 

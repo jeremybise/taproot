@@ -1,5 +1,5 @@
 ﻿import { useState } from 'react';
-import type { FieldRow } from '@taproot/core';
+import type { FieldRow } from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import AccessibilityPanel from './AccessibilityPanel.js';

@@ -10,7 +10,7 @@
  * So this takes a map from block `api_id` to an Astro component:
  *
  * ```astro
- * import { BlockRenderer } from '@taproot/astro/components';
+ * import { BlockRenderer } from '@taprootcms/astro/components';
  * import Hero from '../blocks/Hero.astro';
  * import CallToAction from '../blocks/CallToAction.astro';
  *
@@ -24,7 +24,7 @@
  * unmapped block must not take down the page around it — and shows a visible note in development,
  * because a silent gap while building is how a block goes missing from a live page unnoticed.
  */
-import type { DeliveryMedia } from '@taproot/core/pure';
+import type { DeliveryMedia } from '@taprootcms/core/pure';
 
 /** The stored shape of one block. `data` always holds the fields; `ref` means the library owns them. */
 interface BlockInstance {

@@ -104,25 +104,44 @@ must still render every admin screen without erroring.
 ## Layout
 
 ```
-packages/core     @taproot/core    data layer, auth, content services, storage. No framework
-packages/studio   @taproot/studio  the SERVER: admin panel, REST API, delivery API. 80+ routes
-packages/astro    @taproot/astro   the CLIENT a site installs. No database; ~460K built
+packages/core     @taprootcms/core    data layer, auth, content services, storage. No framework
+packages/studio   @taprootcms/studio  the SERVER: admin panel, REST API, delivery API. 80+ routes
+packages/astro    @taprootcms/astro   the CLIENT a site installs. No database; ~460K built
 apps/studio       the CMS deployment — owns the database, runs the scheduler
 apps/web          the reference consumer — holds an API key, reads over HTTP
 apps/docs         the handbook
 ```
 
-**The names are the architecture.** `@taproot/astro` is what a *site* installs, matching Wolly's
-`@wollycms/astro`; the server is `@taproot/studio` and a site never installs it. Having those the
+**The names are the architecture.** `@taprootcms/astro` is what a *site* installs, matching Wolly's
+`@wollycms/astro`; the server is `@taprootcms/studio` and a site never installs it. Having those the
 wrong way round was the Phase 0 misreading, and the 3.75b rename is what corrected it.
 
-Routes are not files-on-disk in apps/studio — `@taproot/studio`'s integration entry
+**The npm scope is `@taprootcms`, and the scaffolder is unscoped `create-taproot`.** Not `@taproot`:
+the Bitcoin protocol upgrade of the same name crowds npm and GitHub search with `taproot-*`
+cryptocurrency libraries, so `@taprootcms/core` is unmistakably this project where `@taproot/core`
+is a guess until you look — and a scope only disambiguates once you can see the `@`, which search
+results and word of mouth do not carry. The unscoped `taproot` was never available anyway (a
+tree-manipulation library has held it since 2012). `create-taproot` is deliberately **unscoped**,
+because `npm create taproot` resolves to `create-<name>`; scoping it would make the documented
+command `npm create @taprootcms`. All three published packages share one version and release
+together — `@taprootcms/studio` imports core's internals, so a mismatched pair is a broken install
+rather than a supported combination.
+
+**`files` in each published package is an allowlist with exceptions, and the exceptions are
+load-bearing.** `@taprootcms/studio` and `@taprootcms/astro` ship *source*, so `!src/**/*.test.ts`
+is what stops 22 test files reaching consumers with imports (`vitest`, `@testing-library/*`) that
+are devDependencies nobody installs — an unresolvable import sitting in `node_modules` waiting for a
+bundler that walks everything. `@taprootcms/core` excludes `*.map` and `*.tsbuildinfo`: the maps
+point at a `src/` it does not ship, and the buildinfo embeds absolute paths from whichever machine
+built it. Check with `npm pack --dry-run` after touching any of this.
+
+Routes are not files-on-disk in apps/studio — `@taprootcms/studio`'s integration entry
 ([index.ts](packages/studio/src/index.ts)) injects every admin and API route via `injectRoute`.
 **Adding a screen or endpoint means adding it to the route table there**, not just creating the
 file.
 
-**The consumer must never pull the data layer into its bundle.** `@taproot/astro` imports
-`@taproot/core/pure` at runtime — which compiles to a re-export of the crop arithmetic and nothing
+**The consumer must never pull the data layer into its bundle.** `@taprootcms/astro` imports
+`@taprootcms/core/pure` at runtime — which compiles to a re-export of the crop arithmetic and nothing
 else — and everything else as `import type`, erased at build. Importing core's main entry would drag
 Kysely and the dialect loaders into a site that cannot use them. The check is concrete: the built
 consumer is ~460K against the studio's 12M, and contains no `kysely`. Nothing with a `Kysely` import
@@ -430,7 +449,7 @@ check runs before any HTML is sent. React appears only where interaction genuine
 needs hand-built focus management and route announcements to meet WCAG AA. Don't introduce
 client-side routing.
 
-**`@taproot/studio` ships source, not a build.** Astro's `injectRoute` compiles `.astro` entrypoints
+**`@taprootcms/studio` ships source, not a build.** Astro's `injectRoute` compiles `.astro` entrypoints
 out of `node_modules` through the host's Vite pipeline, the same way Starlight does. `.astro`
 imports resolve for tsc only via the ambient shim in
 [astro-modules.d.ts](packages/studio/src/astro-modules.d.ts); that shim makes the import resolve so

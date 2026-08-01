@@ -4,7 +4,7 @@ import {
   listTerms,
   type FieldRow,
   type TermNode,
-} from '@taproot/core';
+} from '@taprootcms/core';
 import type { Kysely } from 'kysely';
 
 import type { TermOption } from './islands/fields/FieldControl.js';

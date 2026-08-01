@@ -6,7 +6,7 @@ import {
   touchApiKey,
   validateSession,
   verifyApiKey,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { createContext, readRuntimeEnv } from './context.js';
 import { apiKeyPrincipal, userPrincipal } from './guards.js';

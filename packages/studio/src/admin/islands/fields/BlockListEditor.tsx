@@ -20,7 +20,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { ChevronDown, ChevronUp, GripVertical, Library, Link2Off, Trash2 } from 'lucide-react';
 
 import type { MediaOption } from '../../mediaOptions.js';
-import { newId, type BlockInstance, type ContentTypeRow, type FieldRow } from '@taproot/core';
+import { newId, type BlockInstance, type ContentTypeRow, type FieldRow } from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './FieldControl.js';
 import type { RelationTarget } from '../../relationOptions.js';

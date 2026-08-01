@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import axe from 'axe-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FieldRow } from '@taproot/core';
+import type { FieldRow } from '@taprootcms/core';
 
 import AccessibilityPanel from './AccessibilityPanel.js';
 import type { MediaOption } from '../mediaOptions.js';

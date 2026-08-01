@@ -1,4 +1,4 @@
-import { getRelease, publishRelease } from '@taproot/core';
+import { getRelease, publishRelease } from '@taprootcms/core';
 
 import { apiError, handle, json } from '../../_shared.js';
 

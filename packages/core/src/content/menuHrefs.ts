@@ -10,7 +10,7 @@ import type { DeliveryMenuItem } from './delivery.js';
  * for which taxonomies get pages would have made the CMS assert something only the site knows.
  *
  * In its own module rather than in `delivery.ts` because it has to be reachable from
- * `@taproot/core/pure`: a consumer runs this, and `delivery.ts` imports Kysely. Nothing here does —
+ * `@taprootcms/core/pure`: a consumer runs this, and `delivery.ts` imports Kysely. Nothing here does —
  * the only import is a type, which is erased at build.
  */
 

@@ -1,7 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import Timestamp from '../../components/Timestamp.astro';
-import { getConfiguredProviders, schedulerStatus, twoFactorStatus } from '@taproot/core';
+import { getConfiguredProviders, schedulerStatus, twoFactorStatus } from '@taprootcms/core';
 import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);

@@ -1,4 +1,4 @@
-import { deliverySchema } from '@taproot/core';
+import { deliverySchema } from '@taprootcms/core';
 
 import { handleScoped, json } from '../_shared.js';
 

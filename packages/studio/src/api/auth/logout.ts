@@ -1,5 +1,5 @@
 import type { APIContext } from 'astro';
-import { buildSessionClearCookie, invalidateSession } from '@taproot/core';
+import { buildSessionClearCookie, invalidateSession } from '@taprootcms/core';
 
 import { mapError } from '../_shared.js';
 import { getTaproot } from '../../runtime/guards.js';

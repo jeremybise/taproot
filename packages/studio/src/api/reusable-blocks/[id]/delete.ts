@@ -1,4 +1,4 @@
-import { deleteReusableBlock, getReusableBlock, ReusableBlockError } from '@taproot/core';
+import { deleteReusableBlock, getReusableBlock, ReusableBlockError } from '@taprootcms/core';
 
 import { apiError, handle } from '../../_shared.js';
 

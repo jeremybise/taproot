@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ContentStatus } from '@taproot/core';
+import type { ContentStatus } from '@taprootcms/core';
 
 import { STATUS_META, STATUS_ORDER, parseStatusFilter, statusFilterOptions, statusMeta } from './status.js';
 

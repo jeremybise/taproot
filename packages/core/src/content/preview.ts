@@ -31,7 +31,7 @@ export const PREVIEW_TOKEN_TTL_MS = 30 * 60 * 1000;
  * Re-exported from `pure.ts`, which is where it is declared.
  *
  * That file is the only entry a consumer can import — this one needs Kysely — so the constant lives
- * there and is surfaced here so `@taproot/core` still exposes it to the server. One string, two
+ * there and is surfaced here so `@taprootcms/core` still exposes it to the server. One string, two
  * doors.
  */
 export { PREVIEW_PARAM } from '../pure.js';

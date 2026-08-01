@@ -1,4 +1,4 @@
-import { getContentType, getItem, getRevision, restoreRevision } from '@taproot/core';
+import { getContentType, getItem, getRevision, restoreRevision } from '@taprootcms/core';
 
 import { apiError, handle, json } from '../../../../_shared.js';
 import { canChangeStatus } from '../../../../../runtime/guards.js';

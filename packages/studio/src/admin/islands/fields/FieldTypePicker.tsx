@@ -4,7 +4,7 @@ import {
   FIELD_TYPE_META,
   fieldTypeIsDeferred,
   type FieldType,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 /**
  * Choose a field type.

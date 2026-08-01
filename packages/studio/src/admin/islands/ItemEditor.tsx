@@ -6,7 +6,7 @@ import {
   type ContentStatus,
   type FieldRow,
   type SeoData,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';

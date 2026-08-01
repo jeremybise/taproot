@@ -8,7 +8,7 @@ import {
   setUserActive,
   setUserRole,
   type UserRole,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { apiError, handle, json } from '../_shared.js';
 import { setupLinkCookie } from './linkCookie.js';

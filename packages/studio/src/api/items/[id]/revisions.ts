@@ -1,4 +1,4 @@
-import { getContentType, getItem, listRevisions, revisionChanges } from '@taproot/core';
+import { getContentType, getItem, listRevisions, revisionChanges } from '@taprootcms/core';
 
 import { apiError, handle, json } from '../../_shared.js';
 

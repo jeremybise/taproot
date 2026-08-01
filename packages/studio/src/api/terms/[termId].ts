@@ -1,4 +1,4 @@
-import { deleteTerm, getTerm, listTerms, reorderTerms, updateTerm } from '@taproot/core';
+import { deleteTerm, getTerm, listTerms, reorderTerms, updateTerm } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent } from '../_shared.js';

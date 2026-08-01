@@ -11,7 +11,7 @@ import {
   type StorageAdapter,
   type TaprootDb,
   type User,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import type { Principal } from './guards.js';
 

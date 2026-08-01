@@ -21,7 +21,7 @@ This section is for whoever builds that site. If you write content, you want
 ```bash
 npm create astro@latest my-site
 cd my-site
-npm install @taproot/astro
+npm install @taprootcms/astro
 ```
 
 Astro must render on the server, because content is resolved per request:
@@ -60,7 +60,7 @@ Put the client in one place rather than constructing it per route:
 
 ```ts
 // src/taproot.ts
-import { createTaprootClient } from '@taproot/astro';
+import { createTaprootClient } from '@taprootcms/astro';
 
 export const taproot = createTaprootClient({
   url: import.meta.env.TAPROOT_API_URL,

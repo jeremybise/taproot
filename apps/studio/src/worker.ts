@@ -1,5 +1,5 @@
 import { handle } from '@astrojs/cloudflare/handler';
-import { scheduled } from '@taproot/studio/runtime/worker';
+import { scheduled } from '@taprootcms/studio/runtime/worker';
 
 /**
  * The deployed Worker.

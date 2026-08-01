@@ -1,4 +1,4 @@
-import { deleteMenuItem, getMenuItem, updateMenuItem, type MenuTargetType } from '@taproot/core';
+import { deleteMenuItem, getMenuItem, updateMenuItem, type MenuTargetType } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent } from '../_shared.js';

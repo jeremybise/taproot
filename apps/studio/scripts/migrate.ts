@@ -1,4 +1,4 @@
-import { migrateToLatest } from '@taproot/core';
+import { migrateToLatest } from '@taprootcms/core';
 
 import { openDb } from './_db.ts';
 

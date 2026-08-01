@@ -8,7 +8,7 @@ import {
   checkThrottle,
   setPassword,
   verifyCredentials,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { createHarness, body, location, type Harness } from './testHarness.js';
 import { POST as forgotPassword } from './auth/forgot-password.js';

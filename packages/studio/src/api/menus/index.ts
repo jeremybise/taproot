@@ -1,4 +1,4 @@
-import { createMenu, listMenus } from '@taproot/core';
+import { createMenu, listMenus } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json } from '../_shared.js';

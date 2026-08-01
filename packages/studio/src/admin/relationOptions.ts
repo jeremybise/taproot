@@ -1,4 +1,4 @@
-import { getContentType, listItems, type FieldRow } from '@taproot/core';
+import { getContentType, listItems, type FieldRow } from '@taprootcms/core';
 import type { Kysely } from 'kysely';
 
 /**

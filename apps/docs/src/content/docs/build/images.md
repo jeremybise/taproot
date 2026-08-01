@@ -32,7 +32,7 @@ domain, or served by the CMS Worker — and it does not need to.
 
 ```astro
 ---
-import { TaprootImage } from '@taproot/astro/components';
+import { TaprootImage } from '@taprootcms/astro/components';
 
 const asset = media[item.data.hero_image];
 ---
@@ -93,8 +93,8 @@ Forward the map through `BlockRenderer` and look up the same way:
 ```astro
 ---
 // src/blocks/Hero.astro
-import { TaprootImage } from '@taproot/astro/components';
-import type { DeliveryMedia } from '@taproot/astro';
+import { TaprootImage } from '@taprootcms/astro/components';
+import type { DeliveryMedia } from '@taprootcms/astro';
 
 interface Props {
   heading: string;
@@ -129,7 +129,7 @@ If you need the rectangle without the component — for an image CDN, or a canva
 are exported:
 
 ```ts
-import { resolveCrop, cropFrame } from '@taproot/astro';
+import { resolveCrop, cropFrame } from '@taprootcms/astro';
 ```
 
 These are the functions the admin's hotspot editor previews with, shared rather than reimplemented,

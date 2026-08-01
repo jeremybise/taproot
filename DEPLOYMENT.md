@@ -57,7 +57,7 @@ database_id = "a1b2c3d4-...."
 Copy the `database_id` into `apps/studio/wrangler.jsonc`, replacing
 `REPLACE_WITH_YOUR_D1_DATABASE_ID`.
 
-**Do not rename the binding.** `DB` is what `dbConfigFromEnv()` in `@taproot/core` looks for; a
+**Do not rename the binding.** `DB` is what `dbConfigFromEnv()` in `@taprootcms/core` looks for; a
 different name silently falls back to local SQLite, which in a Worker means no database at all.
 
 ---
@@ -194,7 +194,7 @@ trigger, and `apps/studio/src/worker.ts` is the Worker entry that handles it:
 
 ```ts
 import { handle } from '@astrojs/cloudflare/handler';
-import { scheduled } from '@taproot/studio/runtime/worker';
+import { scheduled } from '@taprootcms/studio/runtime/worker';
 
 export default { fetch: handle, scheduled };
 ```
@@ -359,7 +359,7 @@ built from; without it an editor pressing **Preview page** is told the CMS does 
 send them.
 
 ```bash
-npm run build --workspace=@taproot/web
+npm run build --workspace=@taprootcms/web
 ```
 
 Deploy the result wherever you already deploy Astro — Node, Workers, a container. It holds no

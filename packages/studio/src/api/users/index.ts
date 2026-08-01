@@ -5,7 +5,7 @@ import {
   listUsers,
   recordAuditEntry,
   type UserRole,
-} from '@taproot/core';
+} from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json } from '../_shared.js';

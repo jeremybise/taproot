@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createUser, listTerms, createTaxonomy, createTerm, type User } from '@taproot/core';
+import { createUser, listTerms, createTaxonomy, createTerm, type User } from '@taprootcms/core';
 
 import { createHarness, location, type Harness } from './testHarness.js';
 import { GET as serveFile } from './media/file/[...key].js';

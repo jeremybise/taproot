@@ -1,5 +1,5 @@
 import type { APIContext } from 'astro';
-import type { ApiKey, ApiKeyScope, User } from '@taproot/core';
+import type { ApiKey, ApiKeyScope, User } from '@taprootcms/core';
 import {
   ApiKeyError,
   ContentItemError,
@@ -9,7 +9,7 @@ import {
   ReusableBlockError,
   RevisionError,
   TaxonomyError,
-} from '@taproot/core';
+} from '@taprootcms/core';
 import { z } from 'zod';
 
 import { getTaproot, type Role, hasRole, hasScope } from '../runtime/guards.js';

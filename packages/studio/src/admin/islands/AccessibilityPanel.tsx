@@ -6,7 +6,7 @@ import {
   type A11yIssue,
   type A11yMediaInfo,
   type FieldRow,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
 import type { MediaOption } from '../mediaOptions.js';

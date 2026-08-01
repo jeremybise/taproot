@@ -35,7 +35,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
   const apiPath = '/api/taproot';
 
   return {
-    name: '@taproot/studio',
+    name: '@taprootcms/studio',
     hooks: {
       'astro:config:setup': ({ injectRoute, addMiddleware, updateConfig, logger, config, command }) => {
         if (config.output !== 'server') {
@@ -85,7 +85,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           updateConfig({ integrations: [react()] });
         }
 
-        addMiddleware({ entrypoint: '@taproot/studio/runtime/middleware', order: 'pre' });
+        addMiddleware({ entrypoint: '@taprootcms/studio/runtime/middleware', order: 'pre' });
 
         // --- Admin ---------------------------------------------------------
         /**
@@ -138,7 +138,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
         for (const [suffix, file] of adminRoutes) {
           injectRoute({
             pattern: `${adminPath}${suffix}`,
-            entrypoint: `@taproot/studio/admin/pages/${file}.astro`,
+            entrypoint: `@taprootcms/studio/admin/pages/${file}.astro`,
             prerender: false,
           });
         }
@@ -210,7 +210,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
         for (const [suffix, file] of apiRoutes) {
           injectRoute({
             pattern: `${apiPath}${suffix}`,
-            entrypoint: `@taproot/studio/api/${file}.ts`,
+            entrypoint: `@taprootcms/studio/api/${file}.ts`,
             prerender: false,
           });
         }
@@ -223,7 +223,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           every field as a heading and a paragraph, with no block resolution, no reusable-block
           dereferencing, and `item.seo` read raw so none of `resolveSeo`'s fallbacks applied. That
           is the second read path SCOPE rules out under "one contract, one set of docs, nothing to
-          drift", and it had already drifted. A site renders content through `@taproot/astro` and
+          drift", and it had already drifted. A site renders content through `@taprootcms/astro` and
           the delivery API; `apps/web` is the worked example.
         */
 

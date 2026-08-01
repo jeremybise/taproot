@@ -10,7 +10,7 @@ import {
   recordFailedAttempt,
   resolveLoginChallenge,
   verifyTwoFactor,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { apiError, json, mapError } from '../_shared.js';
 import { getTaproot } from '../../runtime/guards.js';

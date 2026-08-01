@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLegalTransition, type ContentStatus, type User } from '@taproot/core';
+import { isLegalTransition, type ContentStatus, type User } from '@taprootcms/core';
 
 import {
   canChangeStatus,

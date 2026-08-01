@@ -5,7 +5,7 @@ description: Rendering navigation, and deciding which taxonomy terms get pages o
 
 ```astro
 ---
-import { applyTermHrefs } from '@taproot/astro';
+import { applyTermHrefs } from '@taprootcms/astro';
 import { taproot, termHref } from '../taproot.ts';
 
 const nav = applyTermHrefs(await taproot.menu('main'), termHref);

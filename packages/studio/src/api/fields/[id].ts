@@ -1,4 +1,4 @@
-import { deleteField, updateField } from '@taproot/core';
+import { deleteField, updateField } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { handle, json, noContent, readJson } from '../_shared.js';

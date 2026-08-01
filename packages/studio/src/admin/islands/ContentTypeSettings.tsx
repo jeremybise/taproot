@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ContentTypeRow, FieldRow } from '@taproot/core';
+import type { ContentTypeRow, FieldRow } from '@taprootcms/core';
 
 import type { MediaOption } from '../mediaOptions.js';
 import { MediaField } from './media/MediaField.js';

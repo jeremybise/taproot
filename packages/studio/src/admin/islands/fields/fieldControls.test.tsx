@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FIELD_TYPES, DEFERRED_FIELD_TYPES, type FieldRow, type FieldType } from '@taproot/core';
+import { FIELD_TYPES, DEFERRED_FIELD_TYPES, type FieldRow, type FieldType } from '@taprootcms/core';
 
 import { FieldControl } from './FieldControl.js';
 

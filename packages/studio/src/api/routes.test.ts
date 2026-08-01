@@ -9,7 +9,7 @@ import {
   type ContentTypeRow,
   type FieldRow,
   type User,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { createHarness, body, location, type Harness } from './testHarness.js';
 

@@ -1,4 +1,4 @@
-import { deliverMenu } from '@taproot/core';
+import { deliverMenu } from '@taprootcms/core';
 
 import { handleScoped, json } from '../../_shared.js';
 

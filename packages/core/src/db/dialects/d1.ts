@@ -18,7 +18,7 @@ import { toSqlParameters } from '../values.js';
 /**
  * Structural types for the D1 Workers binding.
  *
- * Declared locally rather than imported from `@cloudflare/workers-types` so `@taproot/core` can be
+ * Declared locally rather than imported from `@cloudflare/workers-types` so `@taprootcms/core` can be
  * consumed without that package installed, and so the exact surface we rely on is documented.
  */
 export interface D1PreparedStatement {
@@ -109,7 +109,7 @@ class D1Driver implements Driver {
   async beginTransaction(): Promise<never> {
     throw new Error(
       'D1 does not support interactive transactions (BEGIN/COMMIT). Use the portable ' +
-        '`batchWrite()` helper from @taproot/core/db, which maps to D1\'s atomic batch() and to a ' +
+        '`batchWrite()` helper from @taprootcms/core/db, which maps to D1\'s atomic batch() and to a ' +
         'real transaction on SQLite and Postgres.',
     );
   }

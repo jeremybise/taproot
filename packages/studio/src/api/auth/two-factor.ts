@@ -6,7 +6,7 @@ import {
   regenerateRecoveryCodes,
   twoFactorStatus,
   verifyCredentials,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { apiError, handle } from '../_shared.js';
 import { buildRecoveryCookie } from './recoveryCookie.js';

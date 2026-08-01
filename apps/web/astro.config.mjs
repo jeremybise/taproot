@@ -19,8 +19,8 @@ export default defineConfig({
   adapter: node({ mode: 'standalone' }),
   devToolbar: { enabled: false },
   vite: {
-    // @taproot/astro is workspace source; pre-bundling it adds nothing and makes edits require a
+    // @taprootcms/astro is workspace source; pre-bundling it adds nothing and makes edits require a
     // dev-server restart.
-    optimizeDeps: { exclude: ['@taproot/astro'] },
+    optimizeDeps: { exclude: ['@taprootcms/astro'] },
   },
 });

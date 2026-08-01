@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     // `bundler` because this package ships source and is compiled by the host's Vite pipeline,
-    // exactly as @taproot/studio is — and because `.astro` imports resolve only through the shim.
+    // exactly as @taprootcms/studio is — and because `.astro` imports resolve only through the shim.
     "moduleResolution": "bundler",
     "module": "esnext",
     "noEmit": true,

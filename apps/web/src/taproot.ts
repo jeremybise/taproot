@@ -1,4 +1,4 @@
-import { createTaprootClient } from '@taproot/astro';
+import { createTaprootClient } from '@taprootcms/astro';
 
 /**
  * This site's connection to its CMS.

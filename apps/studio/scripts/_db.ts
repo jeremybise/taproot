@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { createDb, D1HttpDatabase, type TaprootDb } from '@taproot/core';
+import { createDb, D1HttpDatabase, type TaprootDb } from '@taprootcms/core';
 
 import { loadEnv, sqlitePath } from './_env.ts';
 

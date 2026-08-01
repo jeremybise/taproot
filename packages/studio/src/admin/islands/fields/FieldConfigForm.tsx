@@ -5,7 +5,7 @@ import {
   type ContentTypeRow,
   type FieldType,
   type TaxonomyRow,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 /**
  * Per-field-type option forms.

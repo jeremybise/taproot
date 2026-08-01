@@ -13,7 +13,7 @@ Your job is one line: forward it.
 
 ```astro
 ---
-import { PREVIEW_PARAM } from '@taproot/astro';
+import { PREVIEW_PARAM } from '@taprootcms/astro';
 import { taproot } from '../taproot.ts';
 
 const previewToken = Astro.url.searchParams.get(PREVIEW_PARAM);

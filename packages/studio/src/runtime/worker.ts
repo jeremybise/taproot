@@ -5,7 +5,7 @@ import {
   purgeExpiredPreviewTokens,
   purgeExpiredSessions,
   purgeStaleResetTokens,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { createContext, readRuntimeEnv } from './context.js';
 
@@ -32,7 +32,7 @@ import { createContext, readRuntimeEnv } from './context.js';
 /**
  * Duck-typed rather than imported.
  *
- * `@taproot/studio` is adapter-agnostic — `npm run dev` runs it on Node — so it must not depend on
+ * `@taprootcms/studio` is adapter-agnostic — `npm run dev` runs it on Node — so it must not depend on
  * `@cloudflare/workers-types` to describe an argument it never reads. The adapter's own `hono.d.ts`
  * does the same thing for the same reason.
  */

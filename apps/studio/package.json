@@ -1,5 +1,5 @@
 {
-  "name": "@taproot/studio-app",
+  "name": "@taprootcms/studio-app",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -18,8 +18,8 @@
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.5",
     "@astrojs/node": "^11.0.3",
-    "@taproot/core": "*",
-    "@taproot/studio": "*",
+    "@taprootcms/core": "*",
+    "@taprootcms/studio": "*",
     "astro": "^7.1.4"
   },
   "devDependencies": {

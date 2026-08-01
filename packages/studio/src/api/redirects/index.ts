@@ -1,4 +1,4 @@
-import { RedirectError, createRedirect, listRedirects } from '@taproot/core';
+import { RedirectError, createRedirect, listRedirects } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, readJson } from '../_shared.js';

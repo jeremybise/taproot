@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { FieldRow } from '@taproot/core';
+import type { FieldRow } from '@taprootcms/core';
 
 import { RepeaterField } from './RepeaterField.js';
 

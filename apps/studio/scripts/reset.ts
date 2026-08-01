@@ -40,7 +40,7 @@ for (const suffix of ['', '-wal', '-shm', '-journal']) {
         `Cannot delete ${location} — something still has it open.\n\n` +
           'The dev server is the usual culprit. Astro 7 daemonises it, so it can be running even ' +
           'with no terminal attached:\n\n' +
-          '  npm run astro --workspace=@taproot/web -- dev stop\n\n' +
+          '  npm run astro --workspace=@taprootcms/web -- dev stop\n\n' +
           'then run db:reset again.',
       );
       process.exit(1);

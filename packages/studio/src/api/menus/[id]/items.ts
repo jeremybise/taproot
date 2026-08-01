@@ -1,4 +1,4 @@
-import { createMenuItem, getMenu, type MenuTargetType } from '@taproot/core';
+import { createMenuItem, getMenu, type MenuTargetType } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json } from '../../_shared.js';

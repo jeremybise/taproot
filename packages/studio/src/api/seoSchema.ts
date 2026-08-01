@@ -1,4 +1,4 @@
-import type { SeoData } from '@taproot/core';
+import type { SeoData } from '@taprootcms/core';
 import { z } from 'zod';
 
 /**
@@ -11,7 +11,7 @@ import { z } from 'zod';
  * The `max()` bounds are storage sanity, not SEO advice: they sit far above the ~60/~160
  * characters the editor warns at, because search engines truncate by pixel width and a long title
  * is a quality judgement for a human, not something a server should refuse. See SEO_GUIDANCE in
- * @taproot/core.
+ * @taprootcms/core.
  */
 const shape = {
   metaTitle: z.string().max(300).optional(),

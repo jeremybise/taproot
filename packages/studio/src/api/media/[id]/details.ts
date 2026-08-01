@@ -1,4 +1,4 @@
-import { now } from '@taproot/core';
+import { now } from '@taprootcms/core';
 
 import { apiError, formValue, handle } from '../../_shared.js';
 

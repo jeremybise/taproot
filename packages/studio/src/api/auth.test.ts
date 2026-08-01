@@ -13,7 +13,7 @@ import {
   twoFactorStatus,
   verifyCredentials,
   type User,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { createHarness, body, location, type Harness } from './testHarness.js';
 import { POST as login } from './auth/login.js';

@@ -1,4 +1,4 @@
-import { blockTypeRegistry, createReusableBlock, listReusableBlocks } from '@taproot/core';
+import { blockTypeRegistry, createReusableBlock, listReusableBlocks } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, readJson } from '../_shared.js';

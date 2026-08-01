@@ -1,10 +1,24 @@
 {
-  "name": "@taproot/studio",
-  "version": "0.0.0",
+  "name": "@taprootcms/studio",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeremybise/taproot.git",
+    "directory": "packages/studio"
+  },
+  "homepage": "https://github.com/jeremybise/taproot#readme",
+  "bugs": "https://github.com/jeremybise/taproot/issues",
+  "keywords": ["cms", "astro", "astro-integration", "cloudflare", "headless-cms", "admin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "The Taproot CMS server as an Astro integration: admin panel, REST API, and delivery API",
   "license": "MIT",
   "type": "module",
-  "//": "This package intentionally ships TypeScript/Astro SOURCE rather than a build. Astro's injectRoute compiles .astro entrypoints out of node_modules through the host's Vite pipeline, which is how Starlight ships its routes. It is the *server* half of Taproot \u2014 a site reads content through @taproot/astro over HTTP and never installs this.",
+  "//": "This package intentionally ships TypeScript/Astro SOURCE rather than a build. Astro's injectRoute compiles .astro entrypoints out of node_modules through the host's Vite pipeline, which is how Starlight ships its routes. It is the *server* half of Taproot \u2014 a site reads content through @taprootcms/astro over HTTP and never installs this.",
   "exports": {
     ".": "./src/index.ts",
     "./runtime": "./src/runtime/index.ts",
@@ -13,8 +27,11 @@
     "./api/*": "./src/api/*",
     "./package.json": "./package.json"
   },
+  "//files": "This package ships source, so its tests would ship with it — 22 files whose imports (vitest, @testing-library/*) are devDependencies a consumer never installs, which is an unresolvable import sitting inside node_modules waiting for a bundler that walks everything. Negated patterns rather than an .npmignore, so the allowlist and its exceptions are in one place.",
   "files": [
-    "src"
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -30,7 +47,7 @@
     "@radix-ui/react-select": "^2.3.7",
     "@radix-ui/react-slot": "^1.3.3",
     "@tailwindcss/vite": "^4.3.3",
-    "@taproot/core": "*",
+    "@taprootcms/core": "^0.1.0",
     "@tiptap/extension-link": "^3.29.2",
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",

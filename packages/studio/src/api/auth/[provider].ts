@@ -1,5 +1,5 @@
 import type { APIContext } from 'astro';
-import { createOAuthProvider, type OAuthProviderName } from '@taproot/core';
+import { createOAuthProvider, type OAuthProviderName } from '@taprootcms/core';
 
 import { apiError, mapError } from '../_shared.js';
 import { getTaproot } from '../../runtime/guards.js';

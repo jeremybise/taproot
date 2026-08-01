@@ -2,7 +2,7 @@ import {
   contentTypeInputSchema,
   createContentType,
   listContentTypes,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { handle, json, readJson } from '../_shared.js';
 

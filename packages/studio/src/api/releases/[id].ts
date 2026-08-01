@@ -6,7 +6,7 @@ import {
   setReleaseStatus,
   slugify,
   updateRelease,
-} from '@taproot/core';
+} from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent, readJson } from '../_shared.js';

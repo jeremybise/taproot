@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, ImagePlus, Trash2 } from 'lucide-react';
-import { needsAltText } from '@taproot/core';
+import { needsAltText } from '@taprootcms/core';
 
 import type { MediaOption } from '../../mediaOptions.js';
 import { MediaPicker } from './MediaPicker.js';

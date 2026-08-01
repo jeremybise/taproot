@@ -4,7 +4,7 @@ import {
   getContentType,
   recordAuditEntry,
   updateContentType,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { apiError, handle, json, noContent, readJson } from '../_shared.js';
 

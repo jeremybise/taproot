@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { FIELD_TYPE_META, type FieldRow } from '@taproot/core';
+import { FIELD_TYPE_META, type FieldRow } from '@taprootcms/core';
 
 /**
  * The field list, reorderable by dragging **and** by buttons.

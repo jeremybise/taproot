@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Check, Search, Upload, X } from 'lucide-react';
-import { mediaMatchesAccept, needsAltText } from '@taproot/core';
+import { mediaMatchesAccept, needsAltText } from '@taprootcms/core';
 
 import type { MediaOption } from '../../mediaOptions.js';
 

@@ -1,7 +1,7 @@
 /**
  * The parts of core a *consumer* may hold: no database, no storage, no Kysely.
  *
- * `@taproot/astro` is a thin client that talks to a Taproot server over HTTP, and it must not drag
+ * `@taprootcms/astro` is a thin client that talks to a Taproot server over HTTP, and it must not drag
  * the data layer into a site's bundle. Importing from the main entry would: the barrel re-exports
  * `db/index.js`, which pulls Kysely and the dialect loaders, none of which a consumer can use and
  * all of which it would ship.

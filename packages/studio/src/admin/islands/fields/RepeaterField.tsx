@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
-import { newId, repeaterRowFields, type FieldRow, type RepeaterRow } from '@taproot/core';
+import { newId, repeaterRowFields, type FieldRow, type RepeaterRow } from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './FieldControl.js';
 import type { MediaOption } from '../../mediaOptions.js';

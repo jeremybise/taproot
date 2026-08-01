@@ -150,7 +150,7 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
 | `npm run docs` | The handbook at :4322 — Starlight, no database, builds on its own |
 | `npm test` | Unit tests (1015 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, releases, the delivery API and type generation, taxonomies, menus, redirects, SEO, blocks, the field builder, the accessibility checker) |
-| `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/studio` |
+| `npm run typecheck` | TypeScript across `@taprootcms/core` and `@taprootcms/studio` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
 | `npm run deploy` | Build and `wrangler deploy` (see [DEPLOYMENT.md](DEPLOYMENT.md)) |
@@ -160,24 +160,24 @@ toolchain — Taproot has zero native dependencies.
 ## Layout
 
 ```
-packages/core     @taproot/core    data layer, auth, content services, storage. No framework
-packages/studio   @taproot/studio  the SERVER: admin panel, REST API, delivery API
-packages/astro    @taproot/astro   the CLIENT a site installs. No database; ~460K built
+packages/core     @taprootcms/core    data layer, auth, content services, storage. No framework
+packages/studio   @taprootcms/studio  the SERVER: admin panel, REST API, delivery API
+packages/astro    @taprootcms/astro   the CLIENT a site installs. No database; ~460K built
 apps/studio       the CMS deployment — owns the database, runs the scheduler
 apps/web          the reference consumer — holds an API key, reads over HTTP
 apps/docs         the handbook
 ```
 
-The names are the architecture. `@taproot/astro` is what a *site* installs; the server is
-`@taproot/studio` and a site never installs it. Having those the wrong way round was the Phase 0
+The names are the architecture. `@taprootcms/astro` is what a *site* installs; the server is
+`@taprootcms/studio` and a site never installs it. Having those the wrong way round was the Phase 0
 misreading that Phase 3.75 corrected.
 
 The consumer must never pull the data layer into its bundle, and the check is concrete: the built
-consumer is ~460K against the server's 12M, and contains no `kysely`. `@taproot/astro` imports
-`@taproot/core/pure` at runtime — crop arithmetic and nothing else — and everything else as
+consumer is ~460K against the server's 12M, and contains no `kysely`. `@taprootcms/astro` imports
+`@taprootcms/core/pure` at runtime — crop arithmetic and nothing else — and everything else as
 `import type`, erased at build.
 
-`@taproot/studio` ships TypeScript and `.astro` **source** rather than a build. Astro's
+`@taprootcms/studio` ships TypeScript and `.astro` **source** rather than a build. Astro's
 `injectRoute` compiles `.astro` entrypoints out of `node_modules` through the host's Vite pipeline
 — the same approach Starlight uses. Publishing to npm will need a build step for the integration
 entry only.

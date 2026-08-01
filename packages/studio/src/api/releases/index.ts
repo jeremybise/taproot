@@ -1,4 +1,4 @@
-import { createRelease, listReleases, recordAuditEntry } from '@taproot/core';
+import { createRelease, listReleases, recordAuditEntry } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { handle, json, readJson } from '../_shared.js';

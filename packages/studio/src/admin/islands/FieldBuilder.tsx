@@ -5,7 +5,7 @@ import {
   type FieldRow,
   type FieldType,
   type TaxonomyRow,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { FieldConfigForm } from './fields/FieldConfigForm.js';
 import { FieldTypePicker } from './fields/FieldTypePicker.js';

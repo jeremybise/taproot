@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ContentTypeRow, FieldRow } from '@taproot/core';
+import type { ContentTypeRow, FieldRow } from '@taprootcms/core';
 
 import FieldBuilder from './FieldBuilder.js';
 

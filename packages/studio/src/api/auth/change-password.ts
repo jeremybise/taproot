@@ -6,7 +6,7 @@ import {
   invalidateUserSessions,
   setPassword,
   verifyCredentials,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { handle } from '../_shared.js';
 

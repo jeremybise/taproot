@@ -7,7 +7,7 @@ import {
   resolveCrop,
   type Crop,
   type Hotspot,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 /**
  * The hotspot and crop editor.

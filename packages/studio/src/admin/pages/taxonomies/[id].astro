@@ -1,6 +1,6 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { buildTermTree, getTaxonomy, listTerms, type TermNode } from '@taproot/core';
+import { buildTermTree, getTaxonomy, listTerms, type TermNode } from '@taprootcms/core';
 import { getTaproot, loginRedirect, hasRole } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);

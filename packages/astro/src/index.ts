@@ -1,4 +1,4 @@
-import { PREVIEW_PARAM } from '@taproot/core/pure';
+import { PREVIEW_PARAM } from '@taprootcms/core/pure';
 
 import type {
   DeliveryItemRef,
@@ -6,7 +6,7 @@ import type {
   DeliveryResult,
   DeliverySchema,
   DeliveryTermRef,
-} from '@taproot/core/pure';
+} from '@taprootcms/core/pure';
 
 /**
  * The Taproot client for Astro.
@@ -15,8 +15,8 @@ import type {
  * database, and cannot: the delivery API is the whole contract, which is what makes the CMS a
  * deployment somebody else can run and upgrade without touching this site's code.
  *
- * Every type here comes from `@taproot/core/pure` as an `import type`, erased at build. Nothing in
- * this file reaches core at runtime, and `@taproot/core/pure` itself compiles to a re-export of the
+ * Every type here comes from `@taprootcms/core/pure` as an `import type`, erased at build. Nothing in
+ * this file reaches core at runtime, and `@taprootcms/core/pure` itself compiles to a re-export of the
  * crop arithmetic — so a consumer's bundle contains no Kysely, no dialects, and no data layer.
  *
  * ```ts
@@ -182,7 +182,7 @@ export type TaprootClient = ReturnType<typeof createTaprootClient>;
  * own preview and a consumer's rendering cannot disagree — which was the bug `TaprootImage` was
  * written to fix in the first place.
  */
-export { PREVIEW_PARAM, applyTermHrefs, resolveCrop, cropFrame } from '@taproot/core/pure';
+export { PREVIEW_PARAM, applyTermHrefs, resolveCrop, cropFrame } from '@taprootcms/core/pure';
 
 export type {
   DeliveryField,
@@ -195,6 +195,6 @@ export type {
   DeliverySchema,
   DeliveryTermRef,
   MenuLink,
-} from '@taproot/core/pure';
+} from '@taprootcms/core/pure';
 
 export type { DeliveryItemRef as TaprootItemRef };

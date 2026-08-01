@@ -1,4 +1,4 @@
-import type { ContentStatus, ReleaseStatus } from '@taproot/core';
+import type { ContentStatus, ReleaseStatus } from '@taprootcms/core';
 
 /**
  * How each content status presents in the admin.

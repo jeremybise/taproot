@@ -6,7 +6,7 @@ import {
   createFirstAdmin,
   createSession,
   PasswordResetError,
-} from '@taproot/core';
+} from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, json, mapError } from '../_shared.js';

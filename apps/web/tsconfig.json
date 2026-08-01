@@ -1,7 +1,7 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    // `bundler` rather than the base config's default: @taproot/studio ships TypeScript and .astro
+    // `bundler` rather than the base config's default: @taprootcms/studio ships TypeScript and .astro
     // source that Vite compiles, and only bundler resolution follows an exports map to a .ts file.
     "moduleResolution": "bundler",
     "module": "ESNext",

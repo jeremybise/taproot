@@ -10,7 +10,7 @@ import { createReusableBlock } from './reusableBlocks.js';
 import { resolveSeo } from './seo.js';
 import { ancestorPaths } from './paths.js';
 import { deliverMenu, deliverySchema, resolveDelivery } from './delivery.js';
-// Moved out of `delivery.ts` so it is reachable from `@taproot/core/pure` — a consumer runs it,
+// Moved out of `delivery.ts` so it is reachable from `@taprootcms/core/pure` — a consumer runs it,
 // and `delivery.ts` imports Kysely.
 import { applyTermHrefs } from './menuHrefs.js';
 import type { ContentTypeRow, FieldRow } from '../db/schema.js';

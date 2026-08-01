@@ -4,7 +4,7 @@ import {
   listApiKeys,
   recordAuditEntry,
   type ApiKeyScope,
-} from '@taproot/core';
+} from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, readJson } from '../_shared.js';

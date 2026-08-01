@@ -68,7 +68,7 @@ apps/web          the reference consumer — a site reading over HTTP
 apps/docs         this handbook
 ```
 
-The package a *site* installs is `@taproot/astro`. `@taproot/studio` is the server, and a site
+The package a *site* installs is `@taprootcms/astro`. `@taprootcms/studio` is the server, and a site
 never installs it.
 
 ## Where the data goes

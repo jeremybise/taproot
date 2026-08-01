@@ -4,7 +4,7 @@ description: createTaprootClient, the four methods it gives you, and the shape o
 ---
 
 ```ts
-import { createTaprootClient } from '@taproot/astro';
+import { createTaprootClient } from '@taprootcms/astro';
 
 const taproot = createTaprootClient({
   url: 'https://cms.example.edu',
@@ -134,7 +134,7 @@ The whole content model. Read by the type generator; rarely useful at request ti
 A failed request throws `TaprootDeliveryError`, which carries `.status`.
 
 ```ts
-import { TaprootDeliveryError } from '@taproot/astro';
+import { TaprootDeliveryError } from '@taprootcms/astro';
 
 try {
   const result = await taproot.resolve(path);

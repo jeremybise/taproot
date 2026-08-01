@@ -5,7 +5,7 @@ import {
   fieldConfigSchemas,
   parseFieldConfig,
   type FieldType,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { fieldConfigForms } from './FieldConfigForm.js';
 

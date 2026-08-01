@@ -1,5 +1,5 @@
 import type { APIContext } from 'astro';
-import { publishDueItems, publishDueReleases } from '@taproot/core';
+import { publishDueItems, publishDueReleases } from '@taprootcms/core';
 
 import { apiError, json } from '../_shared.js';
 import { getTaproot, hasRole } from '../../runtime/guards.js';

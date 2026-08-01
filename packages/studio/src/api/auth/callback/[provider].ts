@@ -5,7 +5,7 @@ import {
   createSession,
   upsertOAuthUser,
   type OAuthProviderName,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { apiError, mapError } from '../../_shared.js';
 import { getTaproot } from '../../../runtime/guards.js';

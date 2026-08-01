@@ -1,9 +1,24 @@
 {
-  "name": "@taproot/core",
-  "version": "0.0.0",
+  "name": "@taprootcms/core",
+  "version": "0.1.0",
   "description": "Framework-agnostic data layer, auth, and content services for Taproot",
   "license": "MIT",
   "type": "module",
+  "//version": "0.1.0 rather than 1.0.0 because the delivery contract is young and 0.x says so honestly — a consumer reading semver knows a minor bump may move things. The three packages share one version and are released together: @taprootcms/studio imports core's internals, so a mismatched pair is a broken install rather than a supported combination.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeremybise/taproot.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/jeremybise/taproot#readme",
+  "bugs": "https://github.com/jeremybise/taproot/issues",
+  "keywords": ["cms", "astro", "cloudflare", "d1", "kysely", "headless-cms"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,14 +32,17 @@
     "./validation": "./dist/validation/index.js",
     "./package.json": "./package.json"
   },
+  "//files": "`.tsbuildinfo` is a local build cache that also embeds absolute paths from whatever machine built it, and the `.map` files point at `src/`, which this package does not ship — so a debugger following them finds nothing. Excluding both is smaller and less misleading than shipping sources to make the maps resolve.",
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map",
+    "!dist/*.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc --build",
     "typecheck": "tsc --build --force",
     "clean": "rm -rf dist *.tsbuildinfo",
-    "//prepare": "npm runs this automatically after `npm install`. Without it, a fresh clone has no dist/ and the seed and migrate CLI scripts fail on their first import of @taproot/core.",
+    "//prepare": "npm runs this automatically after `npm install`. Without it, a fresh clone has no dist/ and the seed and migrate CLI scripts fail on their first import of @taprootcms/core.",
     "prepare": "npm run build"
   },
   "dependencies": {

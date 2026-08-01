@@ -1,4 +1,4 @@
-import { createTaxonomy, listTaxonomies } from '@taproot/core';
+import { createTaxonomy, listTaxonomies } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json } from '../_shared.js';

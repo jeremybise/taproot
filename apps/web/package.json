@@ -1,5 +1,5 @@
 {
-  "name": "@taproot/web",
+  "name": "@taprootcms/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@astrojs/node": "^11.0.3",
-    "@taproot/astro": "*",
+    "@taprootcms/astro": "*",
     "astro": "^7.1.4"
   }
 }

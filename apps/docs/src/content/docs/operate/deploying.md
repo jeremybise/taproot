@@ -93,7 +93,7 @@ them, which is a clearer failure than a redirect to a 404 on the wrong origin.
 
 ### Deploy it
 
-`npm run build --workspace=@taproot/web` produces an ordinary Astro server build. Node, Workers,
+`npm run build --workspace=@taprootcms/web` produces an ordinary Astro server build. Node, Workers,
 a container — wherever you already deploy Astro.
 
 ## Media URLs

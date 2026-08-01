@@ -1,6 +1,6 @@
-import { listMedia, referencedMediaIds } from '@taproot/core';
+import { listMedia, referencedMediaIds } from '@taprootcms/core';
 import type { Kysely } from 'kysely';
-import type { Database, FieldRow } from '@taproot/core';
+import type { Database, FieldRow } from '@taprootcms/core';
 
 import type { BlockTypeOption, ReusableBlockOption } from './islands/fields/BlockListEditor.js';
 

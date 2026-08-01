@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { SEO_GUIDANCE, resolveSeo, truncateForPreview, type SeoData } from '@taproot/core';
+import { SEO_GUIDANCE, resolveSeo, truncateForPreview, type SeoData } from '@taprootcms/core';
 
 import type { MediaOption } from '../mediaOptions.js';
 import { MediaField } from './media/MediaField.js';

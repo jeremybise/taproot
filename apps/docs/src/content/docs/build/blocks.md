@@ -36,7 +36,7 @@ The keys are the block types' `api_id` values, exactly as they appear in the adm
 
 ```astro
 ---
-import { BlockRenderer } from '@taproot/astro/components';
+import { BlockRenderer } from '@taprootcms/astro/components';
 import { BLOCK_COMPONENTS } from '../blocks/index.ts';
 
 const blockFields = item.fields.filter((field) => field.type === 'block');
@@ -119,7 +119,7 @@ same map:
 
 ```astro
 ---
-import { BlockRenderer } from '@taproot/astro/components';
+import { BlockRenderer } from '@taprootcms/astro/components';
 
 interface Props {
   heading: string;

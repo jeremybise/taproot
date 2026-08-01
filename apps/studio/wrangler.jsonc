@@ -34,7 +34,7 @@
 
   // --- D1 -------------------------------------------------------------------
   // `database_id` is a placeholder until you run `wrangler d1 create taproot`.
-  // The binding name `DB` is what @taproot/core looks for — see dbConfigFromEnv.
+  // The binding name `DB` is what @taprootcms/core looks for — see dbConfigFromEnv.
   "d1_databases": [
     {
       "binding": "DB",

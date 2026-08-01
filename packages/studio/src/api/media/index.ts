@@ -5,7 +5,7 @@ import {
   newId,
   now,
   readImageDimensions,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { apiError, formValue, handle, json } from '../_shared.js';
 

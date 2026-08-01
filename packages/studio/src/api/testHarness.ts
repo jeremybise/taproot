@@ -13,7 +13,7 @@ import {
   type StorageAdapter,
   type TaprootDb,
   type User,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import type { TaprootContext } from '../runtime/context.js';
 

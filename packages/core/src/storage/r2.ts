@@ -7,7 +7,7 @@ import {
 
 /**
  * Structural type for the R2 Workers binding — only the surface actually used, declared locally so
- * `@taproot/core` does not need `@cloudflare/workers-types` to be installed downstream.
+ * `@taprootcms/core` does not need `@cloudflare/workers-types` to be installed downstream.
  */
 export interface R2BucketLike {
   put(

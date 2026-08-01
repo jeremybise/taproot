@@ -1,4 +1,4 @@
-import { listContentTypes, reorderContentTypes } from '@taproot/core';
+import { listContentTypes, reorderContentTypes } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json } from '../_shared.js';

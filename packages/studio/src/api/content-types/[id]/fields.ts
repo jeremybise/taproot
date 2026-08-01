@@ -1,4 +1,4 @@
-import { createField, fieldInputSchema, listFields, reorderFields } from '@taproot/core';
+import { createField, fieldInputSchema, listFields, reorderFields } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { handle, json, noContent, readJson } from '../../_shared.js';

@@ -3,7 +3,7 @@ import {
   type BlockInstance,
   type FieldRow,
   type RepeaterRow,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import {
   BlockListEditor,

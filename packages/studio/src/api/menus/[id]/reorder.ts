@@ -1,4 +1,4 @@
-import { getMenu, listMenuItems, reorderMenuItems } from '@taproot/core';
+import { getMenu, listMenuItems, reorderMenuItems } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, readJson } from '../../_shared.js';

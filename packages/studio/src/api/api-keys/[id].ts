@@ -1,4 +1,4 @@
-import { getApiKey, recordAuditEntry, revokeApiKey } from '@taproot/core';
+import { getApiKey, recordAuditEntry, revokeApiKey } from '@taprootcms/core';
 
 import { apiError, handle, json } from '../_shared.js';
 

@@ -3,7 +3,7 @@ import {
   buildItemPayload,
   resolveDelivery,
   resolvePreviewToken,
-} from '@taproot/core';
+} from '@taprootcms/core';
 
 import { apiError, handleScoped, json } from '../_shared.js';
 import { deliveryCache, notModified } from './cache.js';
