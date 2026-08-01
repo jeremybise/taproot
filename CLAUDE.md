@@ -228,6 +228,18 @@ button, and the short expiry is the bound instead. **One mechanism covers a draf
 staged version** — Phase 3.5 added the second thing worth previewing, and a separate token for it is
 how two nearly-identical paths drift until one stops checking something.
 
+**The CMS deployment serves the admin and the API, and nothing else.** Its root redirects to
+`adminPath` (302, because that option is configurable and a cached 301 would outlive a change to
+it), and there is deliberately **no public catch-all**. A `publicRoutes` option used to inject one
+and it was a pre-split leftover: it read `taproot.db.db` directly, and rendered each field as a
+heading and a paragraph with no block resolution, no reusable-block dereferencing, and `item.seo`
+read raw so none of `resolveSeo`'s fallbacks applied. That is the second read path SCOPE rules out
+under "one contract, one set of docs, nothing to drift", and it had already drifted. `index.test.ts`
+asserts no injected pattern contains `[...path]`. The admin also keeps its own path segment —
+`adminPath: '/'` **throws** rather than silently coming back as `/admin`, which is what it used to
+do — because root-mounting would claim the whole top level (`/content`, `/media`, `/settings`…) for
+admin screens and leave the CMS host unable to serve anything else.
+
 **The accessibility checker is advisory and lives off the write path.** `checkItemAccessibility` in
 `content/accessibility.ts` never refuses a save or a publish, and no route calls it before writing.
 That is a decision, not an omission: an author who cannot publish because a checker disagrees routes

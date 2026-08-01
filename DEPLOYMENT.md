@@ -261,6 +261,11 @@ fail at runtime, not at deploy — check the dry-run output before shipping.
 **Email and password is the primary way in.** OAuth is optional — configure a provider in step 4
 and its buttons appear alongside the form; configure none and it is password-only.
 
+The CMS deployment serves the admin and the API and nothing else, so **its root redirects to
+`/admin`** — the hostname on its own is a working address, and you do not have to hand anyone a
+path. It is a 302 rather than a 301 on purpose: `adminPath` is configurable, and a permanent
+redirect would stay cached in browsers after an operator moved the admin.
+
 A fresh deployment has no accounts, so **`/admin` sends you to a one-time setup screen** that
 creates the first administrator and signs you in. It disables itself the moment any account exists,
 and the check is inside the same SQL statement that does the insert, so two people hitting it

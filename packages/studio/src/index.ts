@@ -6,15 +6,14 @@ import tailwind from '@tailwindcss/vite';
 import { loadEnv } from 'vite';
 
 export interface TaprootOptions {
-  /** Base path the admin panel is mounted at. Defaults to `/admin`. */
-  adminPath?: string;
   /**
-   * Inject the public catch-all route that resolves content items by path.
+   * Base path the admin panel is mounted at. Defaults to `/admin`.
    *
-   * Off by default: most sites want their own `[...path].astro` so they control the templates.
-   * `apps/web` does exactly that. Turn this on for a site with no custom rendering at all.
+   * Cannot be `/`. The admin claims a segment so the top level stays free — see the root redirect
+   * below — and `normalizeBase` refuses rather than quietly handing back `/admin`, which is what it
+   * used to do to anyone who asked for the root.
    */
-  publicRoutes?: boolean;
+  adminPath?: string;
   /**
    * Register the React renderer. Leave on unless the host app already adds `@astrojs/react`
    * itself, in which case Astro would warn about a duplicate renderer.
@@ -63,6 +62,23 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
             // Workers build from warning about a builtin it does not provide.
             ssr: { external: ['node:sqlite'] },
           },
+          /**
+           * The bare host lands in the CMS instead of 404ing.
+           *
+           * Since the split this deployment serves the admin and the API and nothing else, so `/`
+           * was a dead end — someone who types the hostname they were given got nothing. The admin
+           * keeps its segment rather than moving to the root: root-mounting would claim the whole
+           * top-level namespace (`/content`, `/media`, `/settings`…) for admin screens and leave
+           * the CMS host unable to serve anything else, which is a lot to give up for one segment.
+           *
+           * **302, not 301.** `adminPath` is configurable, and a permanent redirect is cached by
+           * browsers indefinitely — an operator who later moves the admin would have visitors
+           * bouncing to a path that no longer exists, with no way to tell them to stop.
+           *
+           * Declared through Astro's own `redirects` rather than an injected route, so a host app
+           * that wants its own `/` can define one without fighting a route it did not add.
+           */
+          redirects: { '/': { status: 302, destination: adminPath } },
         });
 
         if (options.addReactRenderer !== false) {
@@ -199,13 +215,17 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           });
         }
 
-        if (options.publicRoutes) {
-          injectRoute({
-            pattern: '/[...path]',
-            entrypoint: '@taproot/studio/admin/pages/public-catchall.astro',
-            prerender: false,
-          });
-        }
+        /*
+          There is deliberately no public catch-all here.
+
+          A `publicRoutes` option used to inject one, and it was a leftover from before the split:
+          it read the database directly — the affordance the delivery API replaced — and rendered
+          every field as a heading and a paragraph, with no block resolution, no reusable-block
+          dereferencing, and `item.seo` read raw so none of `resolveSeo`'s fallbacks applied. That
+          is the second read path SCOPE rules out under "one contract, one set of docs, nothing to
+          drift", and it had already drifted. A site renders content through `@taproot/astro` and
+          the delivery API; `apps/web` is the worked example.
+        */
 
         logger.info(`admin at ${adminPath}, API at ${apiPath}`);
       },
@@ -230,9 +250,26 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
   };
 }
 
+/**
+ * Refuses the root rather than quietly substituting `/admin` for it.
+ *
+ * `adminPath: '/'` used to come back as `/admin`, so an operator who asked for a root-mounted admin
+ * got one at a different path and no indication anything had been ignored — the same shape of bug
+ * as a `.strict()` message that is accepted and discarded. Throwing at config time makes it a
+ * legible error before the server starts rather than a surprise in the address bar.
+ */
 function normalizeBase(path: string): string {
   const trimmed = `/${path}`.replace(/\/+/g, '/').replace(/\/+$/, '');
-  return trimmed === '' ? '/admin' : trimmed;
+
+  if (trimmed === '') {
+    throw new Error(
+      "Taproot's `adminPath` cannot be '/'. The admin needs a path segment so the top level stays " +
+        'free for the root redirect and anything else the deployment serves. Pass a path such as ' +
+        "'/admin' or '/cms', or omit the option.",
+    );
+  }
+
+  return trimmed;
 }
 
 export type { TaprootContext } from './runtime/context.js';

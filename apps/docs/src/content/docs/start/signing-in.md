@@ -3,11 +3,14 @@ title: Signing in
 description: Getting into the admin, resetting a forgotten password, and what to do when a code is asked for.
 ---
 
-The admin lives at `/admin` on your **CMS**, which is a different address from the website itself.
+The admin lives on your **CMS**, which is a different address from the website itself.
 
 Taproot is two deployments: the CMS, where content is written, and the site visitors read. If your
 site is `example.edu`, the CMS is usually something like `cms.example.edu` — ask whoever set it up,
 or look for the address in a bookmark you were sent.
+
+Opening that address on its own is enough; it takes you to the admin. The admin's own URL is
+`/admin` on the CMS, so `cms.example.edu/admin` works too and is what your bookmark will say.
 
 That separation is why editing a page never takes the site down, and why the site can be redesigned
 without touching anything you have written.
