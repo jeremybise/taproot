@@ -1,7 +1,7 @@
 ---
 import '../admin.css';
 import { listContentTypes, type User } from '@taproot/core';
-import { getTaproot, canManageSchema, canStageToRelease } from '../../runtime/guards.js';
+import { getTaproot, canEditContent, canManageSchema, canStageToRelease } from '../../runtime/guards.js';
 import ThemeSwitcher from '../components/ThemeSwitcher.astro';
 import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
 
@@ -69,6 +69,12 @@ const groups: NavGroup[] = [
       // Kept last: per-type lists are the way in, and searching across every type is the
       // occasional case rather than the default.
       { href: '/admin/content', label: 'All content', exact: true },
+      /**
+       * Under Content rather than Settings, because it reports on the site's content rather than
+       * configuring anything. Editors and above: it lists items across every type, and a viewer
+       * has nothing to do with a list of things to go and fix.
+       */
+      ...(canEditContent(user) ? [{ href: '/admin/accessibility', label: 'Accessibility' }] : []),
       /**
        * Releases sits under Content rather than Settings because it *is* content — a batch of
        * pending versions — and a contributor can see it. Staging is not publishing: putting an item

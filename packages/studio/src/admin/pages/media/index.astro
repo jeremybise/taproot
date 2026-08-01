@@ -1,6 +1,6 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { listMedia } from '@taproot/core';
+import { listMedia, needsAltText } from '@taproot/core';
 import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -25,9 +25,12 @@ const withUrls = assets.map((asset) => ({
   ...asset,
   url: taproot.storage.publicUrl(asset.storage_key),
   isImage: asset.mime_type.startsWith('image/'),
+  // Through `needsAltText` rather than `!alt_text`, which is also true of the empty string — and
+  // the empty string is how an image is marked decorative.
+  undescribed: needsAltText({ mimeType: asset.mime_type, altText: asset.alt_text }),
 }));
 
-const missingAlt = withUrls.filter((asset) => asset.isImage && !asset.alt_text).length;
+const missingAlt = withUrls.filter((asset) => asset.undescribed).length;
 
 // The upload form posts to the API, which redirects back here with one of these.
 const uploaded = Astro.url.searchParams.get('uploaded');
@@ -94,8 +97,13 @@ const uploadError = Astro.url.searchParams.get('error');
         <strong class="font-semibold">
           {missingAlt} {missingAlt === 1 ? 'image is' : 'images are'} missing alt text.
         </strong>{' '}
-        Alt text feeds the accessibility checker arriving in Phase 4, and is needed for the site to
-        meet WCAG 1.1.1.
+        A screen reader announces nothing useful for them, which is a WCAG 1.1.1 failure on every
+        page they appear on. Open one to describe it — or to mark it decorative, if it carries no
+        information of its own. The{' '}
+        <a href="/admin/accessibility" class="underline">
+          accessibility report
+        </a>{' '}
+        lists them alongside everything else worth fixing.
       </p>
     )
   }
@@ -180,9 +188,7 @@ const uploadError = Astro.url.searchParams.get('error');
                   {(asset.size_bytes / 1024).toFixed(0)} KB
                   {asset.width && asset.height && ` · ${asset.width}×${asset.height}`}
                 </p>
-                {asset.isImage && !asset.alt_text && (
-                  <p class="mt-1 text-xs text-warning">Missing alt text</p>
-                )}
+                {asset.undescribed && <p class="mt-1 text-xs text-warning">Missing alt text</p>}
               </div>
             </a>
           </li>

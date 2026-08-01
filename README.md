@@ -3,12 +3,13 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 3.75 complete.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 4 complete.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL. Then move it through a review workflow, schedule it,
-batch it with a dozen other pages into a release that goes live all at once, and read back who did
-what in the audit log. See [SCOPE.md](SCOPE.md) for the full plan and [what's next](#whats-next).
+batch it with a dozen other pages into a release that goes live all at once, find out which pages
+are hard to use with a screen reader, and read back who did what in the audit log. See
+[SCOPE.md](SCOPE.md) for the full plan and [what's next](#whats-next).
 
 **The handbook is in [`apps/docs`](apps/docs)** — `npm run docs` — and covers using the CMS,
 administering a site, and running the server.
@@ -116,8 +117,24 @@ toolchain — Taproot has zero native dependencies.
   one-time link to hand over; the person sets their own. Nothing temporary is stored, and no
   administrator ever knows a colleague's password. A fresh install bootstraps through a setup
   screen that disables itself atomically the moment an account exists.
-- **REST API** with a typed client.
-- **An accessible admin.** WCAG 2.1 AA, verified by `npm run a11y`.
+- **A delivery API that answers a page in one round trip**, and a thin Astro client that reads it.
+  The item, its type, breadcrumbs, children, blocks already dereferenced, resolved SEO, and lookup
+  maps for media, relations, and terms — one request, with an ETag. Types for your own content
+  types are generated from the live model, so the consumer is typed over what it actually receives
+  rather than over table rows.
+- **API keys that are principals rather than users.** A key carries scopes and no role, and the
+  admin's own REST API refuses one outright — narrowing what a machine may do only means something
+  if the machine cannot reach the screens people use.
+- **A checker that reads your content, not just your admin.** Missing alt text, headings that skip
+  a level, links reading "click here" — in a panel beside the editor that updates as you type, and
+  in a report covering the whole site so an existing backlog is something you can work through
+  rather than merely be told about. It never blocks a save or a publish: an author who cannot
+  publish because a checker disagrees learns to route around the CMS. Decorative images are a state
+  of their own, because "nobody has described this" and "this needs no description" look identical
+  in an empty box and mean opposite things.
+- **An accessible admin.** WCAG 2.1 AA, verified by `npm run a11y` — a separate thing from the
+  checker above, and both matter: an editor can write an inaccessible page in a perfectly
+  accessible editor.
 
 ---
 
@@ -125,13 +142,14 @@ toolchain — Taproot has zero native dependencies.
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Dev server at :4321 (Astro 7 daemonises it — `astro dev stop\|status\|logs`) |
+| `npm run dev` | Both servers: the CMS on :4321, the site on :4323. Astro 7 daemonises each — stop one with `astro dev stop --root apps/studio` (or `apps/web`) |
+| `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent — safe to re-run |
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
 | `npm run docs` | The handbook at :4322 — Starlight, no database, builds on its own |
-| `npm test` | Unit tests (960 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, releases, the delivery API and type generation, taxonomies, menus, redirects, SEO, blocks, the field builder) |
+| `npm test` | Unit tests (1015 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, releases, the delivery API and type generation, taxonomies, menus, redirects, SEO, blocks, the field builder, the accessibility checker) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/studio` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -142,10 +160,22 @@ toolchain — Taproot has zero native dependencies.
 ## Layout
 
 ```
-packages/core     @taproot/core   — data layer, auth, content services, storage. No framework.
-packages/studio    @taproot/studio  — the Astro integration: admin panel, REST API, client
-apps/web          the demo campus site
+packages/core     @taproot/core    data layer, auth, content services, storage. No framework
+packages/studio   @taproot/studio  the SERVER: admin panel, REST API, delivery API
+packages/astro    @taproot/astro   the CLIENT a site installs. No database; ~460K built
+apps/studio       the CMS deployment — owns the database, runs the scheduler
+apps/web          the reference consumer — holds an API key, reads over HTTP
+apps/docs         the handbook
 ```
+
+The names are the architecture. `@taproot/astro` is what a *site* installs; the server is
+`@taproot/studio` and a site never installs it. Having those the wrong way round was the Phase 0
+misreading that Phase 3.75 corrected.
+
+The consumer must never pull the data layer into its bundle, and the check is concrete: the built
+consumer is ~460K against the server's 12M, and contains no `kysely`. `@taproot/astro` imports
+`@taproot/core/pure` at runtime — crop arithmetic and nothing else — and everything else as
+`import type`, erased at build.
 
 `@taproot/studio` ships TypeScript and `.astro` **source** rather than a build. Astro's
 `injectRoute` compiles `.astro` entrypoints out of `node_modules` through the host's Vite pipeline
@@ -224,8 +254,10 @@ refuses to start.
 
 ## Accessibility
 
-The admin itself must be WCAG 2.1 AA — separate from the content-accessibility checker that arrives
-in Phase 4. Debt here compounds, so it is checked per phase rather than at the end:
+The admin itself must be WCAG 2.1 AA. That is a different thing from the content-accessibility
+checker described above, and both are needed — an editor can write an inaccessible page in a
+perfectly accessible editor, and a checker that reports on content says nothing about the screen it
+is reported on. Debt here compounds, so it is checked per phase rather than at the end:
 
 ```bash
 npm run dev      # in one terminal
@@ -262,7 +294,7 @@ degradation is asserted; the measured behaviour needs eyes.
 npm test
 ```
 
-817 tests. The ones worth knowing about:
+1015 tests. The ones worth knowing about:
 
 - Both SQL dialects against a real database, including that `node:sqlite` rejects JS booleans — the
   driver coerces them, and there is a test that fails loudly if that regresses.
@@ -322,14 +354,68 @@ npm test
   checks as well as writes, which is where they used to disagree with each other.
 - The API routes themselves: the 401-versus-403 distinction, that a refused delete is a 409 rather
   than a 500, and that an unexpected error never returns its own message to the client.
+- That the accessibility checker treats `h2 → h3 → h2` as legal. Going back *up* a level is a new
+  section, not a skip — and calling it one is the most common way this rule is got wrong.
+- That an image marked decorative is not reported and an undescribed one is. The two are the empty
+  string and null, and every screen that used to ask `!altText` could not tell them apart.
+- That the checker's panel fetches an asset outside the media library's first page instead of
+  reporting it as undescribed, and asks for it exactly once — a re-request per keystroke is what
+  the naive version does.
 
 ---
 
 ## What's next
 
-**Phase 3.5 is done.** Content Releases shipped: a named batch of content staged to go live
-together, which is the first place in Taproot a content item can have a version that is not live.
-Editing a published page still publishes immediately — a release is what you use when it must not.
+**Phase 5 — integrations — is next.** Webhooks and a tracking script manager. API keys already
+shipped in 3.75, which could not be done without them.
+
+**Phase 4 is done.** The content accessibility checker: alt text, heading order, and link text, in
+a panel beside the editor and in a site-wide report. Three things about it are worth knowing:
+
+- **It never blocks anything.** Not a save, not a publish. A gate on publishing was the obvious
+  alternative and is the wrong shape — an author who cannot publish because a checker disagrees
+  routes around the CMS, and every false positive becomes an outage.
+- **`alt_text` has three states, not two.** Null is "nobody has said" and the empty string is
+  "somebody marked it decorative". Without that distinction the rule is unusable, because every
+  divider and icon in the library is a permanent complaint and a panel that is always red is one
+  nobody reads.
+- **Heading order is checked within one rich text value.** Taproot ships no templates, so it does
+  not know what order a site renders a type's fields in — the outline a visitor receives is not
+  knowable from here, and claiming otherwise would mean inventing findings.
+
+It reads *content*. The WCAG compliance of the admin itself is a different job, has been an
+acceptance criterion since Phase 0, and is what `npm run a11y` checks.
+
+**Phase 3.75 before it, and it is the one that changed the shape of the project.** Taproot is now a
+CMS server plus a thin Astro client — which is what SCOPE always described and what Phases 0–2 built
+the opposite of, because the original plan misread Wolly's architecture and had the admin panel
+injected into the host site's own project. `npm run dev` starting two servers is that correction,
+not an inconvenience.
+
+Four things it settled:
+
+- **The delivery API answers a page in one round trip.** `resolveDelivery` returns the item, its
+  type and fields, breadcrumbs, visible children, blocks already dereferenced, resolved SEO, and
+  lookup maps for media, relations, and terms. It lives in core rather than in the route, for the
+  same reason `resolveSeo` does: the server's own reads and the delivery API must not drift.
+- **References are lookup maps, never inlined.** Inlining would break the match between `data` and
+  the field types the CMS validates against, serialise a twice-used image twice, and make the
+  payload unusable for a write.
+- **A redirect is a 200 carrying `{ kind: 'redirect' }`, not a 30x.** The consumer has to redirect
+  its *own* visitor — a real 30x would redirect the server-side fetch and serve the wrong page's
+  content under the requested URL.
+- **An API key is a principal, not a user.** A key has scopes and no role, and `handle()` stays
+  session-only with `handleScoped()` as the opt-in, so a route that says nothing about keys does not
+  accept one. That default is what keeps a `content:read` key out of the admin REST API.
+
+Cross-origin preview moved with it. `?preview=1` used to work only because the site and the CMS
+shared an origin, so the session cookie came along — that was the whole security property, and it
+disappears with the split. Preview is now a short-lived revocable token row, and one mechanism
+covers both a draft and a release's staged version.
+
+**Phase 3.5 before it.** Content Releases: a named batch of content staged to go live together,
+which is the first place in Taproot a content item can have a version that is not live. Editing a
+published page still publishes immediately — a release is what you use when it must not.
 
 Three decisions are worth knowing before touching it:
 
@@ -348,8 +434,6 @@ Three decisions are worth knowing before touching it:
 The one asymmetry to remember: a scheduled *page* goes live whether or not a sweep runs, because
 visibility is computed on read. A scheduled *release* does not — its content has to be applied, and
 no page view can do that. Settings → System says so, and so does the handbook.
-
-[Phase 3.75](SCOPE.md) — the standalone server and delivery API — is next.
 
 **Phase 3 was smaller than it used to be.** The plan called for departments as a first-class entity — with
 membership, ownership of content items, and role assignments scoped to them — and that turned out
@@ -372,8 +456,10 @@ Self-service password reset shipped with it. Taproot sends exactly one message �
 and **still needs no external service to run**: with nothing configured the mailer writes to the
 server log and the "Forgot your password?" link is hidden, so `npm run dev` works from a fresh
 clone. Real delivery is a webhook taking flat JSON, deliberately vendor-neutral. Scheduled
-publishing runs as a Cloudflare cron trigger on the site's own Worker, so it needs no second
-service and no shared secret; the HTTP endpoint remains for platforms with no cron of their own.
+publishing runs as a Cloudflare cron trigger on the CMS's own Worker — the scheduler belongs to the
+server, which owns the database; the consumer has no cron and nothing to sweep. So it needs no
+second service and no shared secret, and the HTTP endpoint remains for platforms with no cron of
+their own.
 
 The richtext editor needs JavaScript, unlike the rest of the admin. That is unavoidable for a
 document editor, and the item editor around it is already an island; the trade is noted rather than
@@ -381,7 +467,3 @@ hidden. Underline is allowed by the sanitiser but has no toolbar button, because
 that is not a link is a usability problem — pasted underlines survive, new ones are not encouraged. Content lists are ordered by path and cannot
 be sorted by date — for a hierarchical type the path order *is* the tree, so a date sort would
 leave the indentation describing a nesting the rows no longer follow.
-
-`scheduled` is a real status with a colour and a filter option, but the editor does not offer it:
-nothing yet flips a scheduled item live. The seed includes one so the gap is visible rather than
-theoretical.

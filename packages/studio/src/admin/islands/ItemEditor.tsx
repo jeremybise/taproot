@@ -10,6 +10,7 @@ import {
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
+import AccessibilityPanel from './AccessibilityPanel.js';
 import SeoPanel from './SeoPanel.js';
 import type { MediaOption } from '../mediaOptions.js';
 import type { RelationTarget } from '../relationOptions.js';
@@ -59,6 +60,15 @@ interface Props {
    * stop a document field from ever reaching a PDF.
    */
   media?: MediaOption[];
+  /**
+   * The assets this item already references, however old they are.
+   *
+   * Separate from `media` because that is the library's most recent page: an item pointing at an
+   * asset uploaded a year ago is not in it, and the accessibility panel reading alt text from the
+   * page on hand would report every one of those images as undescribed. Same trap
+   * `relationTargetsForFields` already avoids by being handed the item's stored data.
+   */
+  referencedMedia?: MediaOption[];
   /** The content type's default social image, inherited when the item chooses none. */
   defaultOgImage?: MediaOption | null;
   /** Where this item resolves publicly. Empty for a singleton, which has no path of its own. */
@@ -94,6 +104,7 @@ export default function ItemEditor({
   canPublish,
   isHierarchical,
   media = [],
+  referencedMedia = [],
   defaultOgImage = null,
   path = '/',
   origin = '',
@@ -490,6 +501,24 @@ export default function ItemEditor({
           </button>
         </div>
         )}
+
+        {/*
+          Between Publishing and SEO, and both neighbours are the reason.
+
+          Above Publishing it would push the save button off the screen; below SEO it would sit
+          where nobody scrolls, which for a checker is the same as not existing. Here it is the
+          thing you pass on the way to publishing, which is exactly when it is worth reading — and
+          it collapses to a single line when there is nothing to say, so it costs almost no height
+          on the pages that are already fine.
+        */}
+        <AccessibilityPanel
+          fields={fields}
+          data={data}
+          referencedMedia={referencedMedia}
+          library={media}
+          blockTypes={blockTypes}
+          reusableBlocks={reusableBlocks}
+        />
 
         {/*
           Below Publishing rather than above it. The save button has to stay reachable without

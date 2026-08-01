@@ -280,6 +280,20 @@ export function mapError(error: unknown): Response {
   return apiError(500, 'Something went wrong. Check the server logs for details.');
 }
 
+/**
+ * One text field of a plain HTML form, trimmed, with blank meaning absent.
+ *
+ * A text input that was left empty submits `''` rather than nothing, so a route storing the raw
+ * value writes an empty string where it means null. That is harmless for most columns and is not
+ * for `media.alt_text`, where `''` is a deliberate "this image needs no description" — see
+ * `needsAltText`.
+ */
+export function formValue(form: FormData, key: string): string | null {
+  const raw = form.get(key);
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed === '' ? null : trimmed;
+}
+
 /** Parse and validate a JSON request body. */
 export async function readJson<T extends z.ZodType>(
   request: Request,

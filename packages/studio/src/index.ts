@@ -92,6 +92,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/content/new', 'content/new'],
           ['/content/type/[apiId]', 'content/type/[apiId]'],
           ['/content/[id]', 'content/[id]'],
+          ['/accessibility', 'accessibility'],
           ['/singleton/[apiId]', 'singleton/[apiId]'],
           ['/releases', 'releases/index'],
           ['/releases/[id]', 'releases/[id]'],

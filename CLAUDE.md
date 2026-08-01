@@ -22,8 +22,13 @@ a Cloudflare cron trigger for the publishing sweep.
 **Phase 3.5 — Content Releases — is complete.**
 
 **Phase 3.75 is complete.** Taproot is now a CMS server plus a thin Astro client, which is what
-SCOPE always described and what Phases 0–2 built the opposite of. Phase 4 — the accessibility
-checker — is next.
+SCOPE always described and what Phases 0–2 built the opposite of.
+
+**Phase 4 — the content accessibility checker — is complete.** Alt text, heading order, and link
+text, in a live panel beside the editor and in a site-wide report at `/admin/accessibility`. It is
+advisory by design; see the constraint below. Do not confuse it with `npm run a11y`, which checks
+the WCAG compliance of the admin itself — an editor can write an inaccessible page in a perfectly
+accessible editor, and the two have never been the same job.
 
 The equivalence tests in `delivery.test.ts` compare the delivery layer against the *methods* the
 embedded route used (`getItemByPath`, `getChildren`, `ancestorPaths`, `resolveSeo`, `resolveMenu`)
@@ -46,7 +51,7 @@ declares it.
 | `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 960 tests |
+| `npm test` | Vitest, 1015 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
@@ -223,6 +228,41 @@ button, and the short expiry is the bound instead. **One mechanism covers a draf
 staged version** — Phase 3.5 added the second thing worth previewing, and a separate token for it is
 how two nearly-identical paths drift until one stops checking something.
 
+**The accessibility checker is advisory and lives off the write path.** `checkItemAccessibility` in
+`content/accessibility.ts` never refuses a save or a publish, and no route calls it before writing.
+That is a decision, not an omission: an author who cannot publish because a checker disagrees routes
+around the CMS, and a false positive in a rule would become an outage. `validateItemData` is where a
+rule that *must* hold goes. Four things follow:
+- **The rules are pure and the resolution is a different file.** `accessibility.ts` takes fields,
+  data, and a lookup context with no database handle — which is what lets the editor's island run it
+  on every keystroke — and `accessibilityReport.ts` is the half that finds content and resolves what
+  the rules read. Same argument as `resolveSeo`: the panel and the site-wide report must not drift.
+- **The walk mirrors `validateItemData`'s**, through blocks (bounded by `MAX_BLOCK_DEPTH`) and
+  repeater rows (through `repeaterRowFields`). A value validation reaches and this does not is a
+  value nobody is checking. `referencedMediaIds` uses the same walk, or a media field it missed
+  would report every one of its images as undescribed.
+- **`media.alt_text` has three states.** `null` is "nobody has said", `''` is "somebody marked it
+  decorative", and the distinction is what makes the rule usable rather than a permanent complaint
+  about every divider and icon. Ask through **`needsAltText`**, never `!altText` — which is also
+  true of `''`, and which is how the library banner, the picker, and the media field all asked
+  before. Blank form inputs normalise to `null` (`formValue`); only the Decorative checkbox writes
+  `''`.
+- **Alt text is resolved from the item's stored data, not from the library's first page.**
+  `referencedMediaOptions` exists for that: `mediaOptions` answers "the most recent 60", so an item
+  pointing at an older asset would have every one of its images reported as undescribed. Same trap
+  `relationTargetsForFields` already avoids, and the panel fetches anything still unresolved rather
+  than guessing — an id it cannot resolve is **not reported**, because that is a broken reference
+  rather than a missing description.
+
+**Heading order is checked within one richtext value, not across the page**, and the report is a
+scan rather than an indexed query. Both are limits worth knowing before "fixing" them. Taproot ships
+no templates, so it cannot know what order a site renders a type's fields in — a document-wide
+outline is not knowable here, only within one value. And the report reads every item's `data` and
+walks it, so it paginates and states what it checked ("Checked 50 of 312 items") instead of offering
+a site-wide issue total: a true total means reading every row, and a quietly capped one is worse
+than none. Undescribed *images* are asked separately as a real query, which is also the only way to
+catch an image uploaded and not yet placed on any page.
+
 **The workflow is a graph in core, not a status column.** `content/workflow.ts` holds every legal
 transition and the role each needs, and `canChangeStatus` asks it two questions in order: is this
 move legal *at all* (which does not depend on who is asking — `archived → published` is refused for
@@ -388,7 +428,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-32 routes, 0 violations, all 36 token pairs passing in both themes.
+34 routes, 0 violations, all 36 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
@@ -526,8 +566,8 @@ many), *Block*, *Reusable Block*, *Content Type*.
   host site's decision, passed to `resolveMenu` as a `termHref` callback — most taxonomies (review
   status, internal owner, audience segment) classify content without deserving a page each, so the
   default is no URL. `termArchivePath` is a convention offered, not applied; nothing in core calls
-  it. `apps/web/src/site.ts` is the worked example, and both the catch-all route and the menu
-  resolver read the same set so they cannot disagree.
+  it. `apps/web/src/taproot.ts` is the worked example — `PUBLIC_TERM_TAXONOMIES` and `termHref` —
+  and both the catch-all route and the menu resolver read the same set so they cannot disagree.
 - **Menu items reference their target, never store a URL.** That is the entire point: a moved page
   keeps its place in the navigation and an unpublished one leaves it, with no menu edit. A deleted
   target nulls the reference rather than cascading, so the broken entry stays visible in the admin

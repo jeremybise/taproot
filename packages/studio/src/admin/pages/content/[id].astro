@@ -10,7 +10,7 @@ import {
   blockTypeOptionsForFields,
   reusableBlockOptionsForFields,
 } from '../../blockTypeOptions.js';
-import { findImage, mediaOptions } from '../../mediaOptions.js';
+import { findImage, mediaOptions, referencedMediaOptions } from '../../mediaOptions.js';
 import ReleaseBadge from '../../components/ReleaseBadge.astro';
 import {
   getContentType,
@@ -104,6 +104,16 @@ const reusableBlocks = await reusableBlockOptionsForFields(taproot.db.db, conten
 // narrows to images through the picker's accept list rather than by getting a narrower query.
 const media = await mediaOptions(taproot.db.db, taproot.storage);
 const defaultOgImage = findImage(media, contentType.default_og_image_id);
+
+// For the accessibility panel: the staged data in release mode, matching `relationTargets` above —
+// the version being edited is the version whose images should be checked.
+const referencedMedia = await referencedMediaOptions(
+  taproot.db.db,
+  taproot.storage,
+  contentType.fields,
+  staged ? staged.data : item.data,
+  { blockTypes, reusableBlocks },
+);
 
 /**
  * Deleting is an editor's action, and a singleton has no delete at all — its whole contract is
@@ -303,6 +313,7 @@ const flash = error
     canPublish={canPublishContent(user)}
     isHierarchical={contentType.kind === 'page'}
     media={media}
+    referencedMedia={referencedMedia}
     defaultOgImage={defaultOgImage}
     path={item.path}
     origin={Astro.url.origin}

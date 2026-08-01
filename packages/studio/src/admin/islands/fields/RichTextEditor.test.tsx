@@ -160,7 +160,7 @@ describe('the field config shapes the toolbar', () => {
 
   it('never offers a Heading 1 button', async () => {
     // The page's h1 is its title. A second one breaks the document outline — WCAG 1.3.1, and
-    // exactly what the Phase 4 checker exists to flag.
+    // exactly what the accessibility checker flags if one reaches the database another way.
     const { bar } = await setupWithToolbar();
     expect(within(bar).queryByRole('button', { name: /Heading 1/ })).toBeNull();
   });

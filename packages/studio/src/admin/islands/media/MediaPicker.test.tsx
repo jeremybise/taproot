@@ -394,6 +394,16 @@ describe('accessibility', () => {
     renderPicker();
     expect(within(screen.getByRole('option', { name: /library-reading-room/ })).getByText('Missing alt text')).toBeDefined();
   });
+
+  it('says nothing about an image marked decorative', () => {
+    // `''` is somebody having decided this image needs no description; `null` is nobody having
+    // said. `!altText` cannot tell them apart, which is why this asks `needsAltText`.
+    renderPicker({ library: [...ASSETS, img('e', 'rule-divider.svg', '')] });
+
+    expect(
+      within(screen.getByRole('option', { name: /rule-divider/ })).queryByText('Missing alt text'),
+    ).toBeNull();
+  });
 });
 
 describe('MediaField', () => {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, ImagePlus, Trash2 } from 'lucide-react';
+import { needsAltText } from '@taproot/core';
 
 import type { MediaOption } from '../../mediaOptions.js';
 import { MediaPicker } from './MediaPicker.js';
@@ -182,7 +183,7 @@ export function MediaField({
                   <p className="truncate text-sm font-medium">
                     {entry.asset?.filename ?? 'Asset no longer in the library'}
                   </p>
-                  {entry.asset?.mimeType.startsWith('image/') && !entry.asset.altText && (
+                  {entry.asset && needsAltText(entry.asset) && (
                     <p className="text-xs text-warning">
                       Missing alt text — add it in Media so screen readers can describe it.
                     </p>

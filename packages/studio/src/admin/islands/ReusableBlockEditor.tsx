@@ -2,6 +2,7 @@
 import type { FieldRow } from '@taproot/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
+import AccessibilityPanel from './AccessibilityPanel.js';
 import type { RelationTarget } from '../relationOptions.js';
 import type { MediaOption } from '../mediaOptions.js';
 
@@ -29,6 +30,8 @@ interface Props {
   termsByTaxonomy?: Record<string, TermOption[]>;
   relationTargets?: Record<string, RelationTarget>;
   media?: MediaOption[];
+  /** Assets this entry already references, for the accessibility panel — see the item editor. */
+  referencedMedia?: MediaOption[];
   usageCount: number;
   canEdit: boolean;
 }
@@ -41,6 +44,7 @@ export default function ReusableBlockEditor({
   termsByTaxonomy,
   relationTargets,
   media,
+  referencedMedia,
   usageCount,
   canEdit,
 }: Props) {
@@ -177,6 +181,18 @@ export default function ReusableBlockEditor({
           ))
         )}
       </fieldset>
+
+      {/*
+        The same panel the item editor shows, and this is where its findings are actually fixable.
+        A page placing this entry reports the issue too, attributed here — the library row owns the
+        content, so a page's author has nothing to change on their own screen.
+      */}
+      <AccessibilityPanel
+        fields={fields}
+        data={data}
+        referencedMedia={referencedMedia}
+        library={media}
+      />
 
       {canEdit && (
         <button

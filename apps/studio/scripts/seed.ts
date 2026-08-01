@@ -612,7 +612,12 @@ async function ensureAsset(
   filename: string,
   bytes: Uint8Array,
   dimensions: { width: number; height: number },
-  altText: string,
+  /**
+   * `null` means nobody has described it and the accessibility report will say so; `''` would mean
+   * somebody decided it needs no description. Seeded assets get real alt text — except one, below,
+   * which is what gives the report something true to find.
+   */
+  altText: string | null,
   title: string,
   /**
    * An off-centre focal point, for the assets where it should visibly do something.
@@ -647,9 +652,9 @@ async function ensureAsset(
       size_bytes: stored.size,
       width: dimensions.width,
       height: dimensions.height,
-      // Written rather than left null on purpose: the media library warns about missing alt text,
-      // and the picker repeats the warning on every card. Seeding assets without it would seed
-      // the warning too, on every screen that shows them.
+      // Written rather than left null for all but one: the media library warns about missing alt
+      // text, and the picker repeats the warning on every card. Seeding every asset without it
+      // would seed the warning too, on every screen that shows them.
       alt_text: altText,
       title,
       hotspot_x: hotspot?.x ?? null,
@@ -719,6 +724,22 @@ await ensureAsset(
   { width: 900, height: 1600 },
   'A graduate crossing the stage during the spring convocation.',
   'Spring convocation',
+);
+
+/**
+ * One asset nobody has described, and it is not on any page.
+ *
+ * The most common real accessibility problem in a CMS is an image uploaded in a hurry, and it is
+ * also the case the item scan cannot find — an asset placed nowhere appears in no item's data, so
+ * only the library query catches it, and it will be undescribed on whatever page it eventually
+ * lands on. Seeding it here is what makes that half of the report demonstrably do something.
+ */
+await ensureAsset(
+  'open-day-crowd.png',
+  placeholderPng(85, 1600, 900),
+  { width: 1600, height: 900 },
+  null,
+  'Open day',
 );
 
 // --- Content items ----------------------------------------------------------
@@ -807,8 +828,18 @@ await ensureItem(
     userId: admin.id,
     data: {
       summary: 'Start your application to Riverbend College.',
+      /**
+       * The link says "click here", and it is deliberate.
+       *
+       * The accessibility report needs something real to find or it opens empty on a fresh clone,
+       * which is the one arrangement where "the checker works" and "the checker is broken" look
+       * identical. This is also the single most common finding on a real campus site, so it is a
+       * fair example rather than a contrived one — and it is a warning, not an error, so the demo
+       * site is not shipped with a WCAG failure to make a point.
+       */
       body:
-        '<p>Applications open on <strong>1 September</strong>. You will need transcripts and two references.</p>',
+        '<p>Applications open on <strong>1 September</strong>. You will need transcripts and two references — ' +
+        '<a href="/financial-aid">click here</a> for funding.</p>',
       show_in_nav: true,
       departments: [termId('Admissions')],
     },

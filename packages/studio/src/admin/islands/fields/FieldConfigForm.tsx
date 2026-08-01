@@ -202,10 +202,14 @@ const RichtextConfig: ConfigForm = ({ config, onChange }) => (
       value={config.maxLength}
       onChange={(maxLength) => onChange({ ...config, maxLength })}
     />
+    {/*
+      No plan vocabulary. This said the toolbar options "arrive with the rich-text editor in the
+      next tranche" and named a phase number, long after both had shipped — the same bug as the
+      "Phase N" badges the field-type picker used to render at a campus editor.
+    */}
     <p className="rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-xs text-content-subtle">
-      Toolbar and allowed-format options arrive with the rich-text editor in the next tranche.
-      Restricting formats is also what keeps heading order sane for the Phase 4 accessibility
-      checker.
+      Narrowing the formats an editor can use is also what keeps a page's heading order sane — the
+      accessibility report flags a body heading that skips a level.
     </p>
   </div>
 );

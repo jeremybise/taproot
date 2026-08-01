@@ -20,8 +20,13 @@ Describe what the image shows, in a sentence, as if to somebody who cannot see i
 - **Good:** "Students walking across the quad in autumn."
 - **Not useful:** "image", "photo", "IMG_4821.jpg".
 
-If an image is purely decorative and the surrounding text already says everything, leave alt text
-empty deliberately rather than describing it redundantly.
+If an image is purely decorative and the surrounding text already says everything, open it and tick
+**Decorative — this image needs no alt text** rather than describing it redundantly.
+
+Ticking that box is not the same as leaving the field blank. Blank means nobody has described it
+yet, and the [accessibility report](/content/accessibility/) will say so; Decorative means somebody
+decided it needs no description, and the report leaves it alone. The two look identical in an empty
+text box, which is why the box exists.
 
 ## Choosing an image
 

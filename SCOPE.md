@@ -54,7 +54,7 @@ The relation field is a named gap in Wolly — make it a first-class field type 
 - Media library — assets with alt text and a focal point (alt text feeds the accessibility checker). **No stored variants**: the focal point and crop are data, resolved to a rectangle on demand, so one asset drives every shape without a derivative per use — see the media section below
 - Webhooks, API keys, tracking script manager, audit log — standard admin-config entities, low complexity, defer to later phase
 - **Email**: Taproot sends exactly one message, the self-service password reset link, and **needs no mail service to run**. The standing constraint was recorded as "nothing sends any email", which was a correct instinct stated one step too far: what has to hold is that `npm run dev` needs no external service, not that no message can ever leave. Self-service reset has no non-email form — an admin handing over a link is the flow that already existed, and it is not self-service — so the constraint moved to where it actually bites. With nothing configured the mailer writes to the server log and the "Forgot your password?" link is hidden, because offering a form whose success message is a lie is worse than not offering one. Delivery is a webhook (`TAPROOT_MAIL_WEBHOOK_URL`) taking flat JSON, and **no vendor is built in**: Resend, Postmark, SES and SendGrid each have their own payload shape and error semantics, and a CMS that ships no block templates should not maintain four mail adapters. Reset requests are throttled in their own keyspace, separate from sign-in, or asking to reset someone's password would be a way to lock them out of it. As predicted, this needed a sender and not a schema change — `password_reset_tokens.created_by` was already nullable and self-service links record nobody
-- Accessibility checker — starts with alt-text presence, heading-order validation in richtext/blocks, and link-text quality; contrast checking against your defined theme tokens is a good v2 add
+- Accessibility checker — starts with alt-text presence, heading-order validation in richtext/blocks, and link-text quality; contrast checking against your defined theme tokens is a good v2 add. *Built in Phase 4, and it does check inside blocks and repeater rows — the walk mirrors `validateItemData`'s, because a value validation reaches and the checker does not is a value nobody is checking. Contrast stayed out for the reason the phase entry gives: the checker reads content, and the colours belong to templates it cannot see*
 - **Revisions** — every save on a content item creates an append-only revision (author, timestamp, diff-able snapshot), with restore-to-previous. Cheap to build in from the start, painful to retrofit onto existing content later, so it belongs in Phase 1 rather than deferred.
 - **SEO sidebar** — per-content-item panel: meta title/description, OG image (falls back to a default per content type if unset), and live search-result / social-card previews. This is really just a structured field group plus a preview renderer, so it can ride along with Phase 1's content editing work rather than needing its own phase.
 
@@ -188,8 +188,42 @@ One thing to decide here rather than discover: `resolveMenu` takes a `termHref` 
 
 This lands after Content Releases rather than immediately after Phase 3 because Releases changes what "published" means — versions staged per release, not simply current-vs-draft — and a delivery API built before it would have its visibility rules plumbed twice.
 
-**Phase 4 — Accessibility checker v1**
-Alt-text presence, heading order, link-text quality, surfaced inline in the editor.
+**Phase 4 — Accessibility checker v1** *(complete)*
+Alt-text presence, heading order, and link-text quality, surfaced inline in the editor — plus a
+site-wide report, which this section did not ask for and which the feature is close to useless
+without: a campus site arrives with content already written, and "every page has a panel now" is not
+a plan for fixing any of it.
+
+Four decisions worth keeping:
+
+- **Advisory, never blocking.** Nothing the checker finds refuses a save or a publish. The
+  alternative — a gate on the transition into `published`, the shape `releasePreflight` already
+  has — was rejected because an author who cannot publish on a checker's say-so routes around the
+  CMS, and every false positive becomes an outage. `validateItemData` is where a rule that *must*
+  hold goes; this is where a rule that should usually hold goes, and the two are deliberately not
+  the same code path.
+- **The rules are a pure function and the resolution is a separate file.** `checkItemAccessibility`
+  takes fields, data, and a lookup context — no database handle — which is what lets the editor's
+  React island run it on every keystroke and what makes each rule testable on its own.
+  `accessibilityReport.ts` is the half that finds the content and resolves what the rules need. Same
+  argument as `resolveSeo`: one implementation, so the panel and the report cannot disagree.
+- **`alt_text` is three states, not two.** `null` is "nobody has said"; `''` is "somebody decided
+  this needs no description". Without that distinction the rule is unusable — every divider, icon,
+  and background flourish is a permanent complaint, and a panel that is always red is one nobody
+  reads. Four screens asked the question as `!altText`, which is also true of `''`, so the answer is
+  one exported `needsAltText` rather than four places to remember.
+- **Heading order is checked within one rich text value, not across the page.** Taproot ships no
+  templates and does not know what order a site renders a content type's fields in, or whether it
+  renders all of them, so the outline a visitor actually receives is not knowable here. Within one
+  value it is knowable exactly. This is a real limit rather than a shortcut, and it is stated in the
+  handbook because "why didn't it catch the h2 after my block's h3" is the first question anyone
+  asks.
+
+The report is a **scan, not an indexed query**, and says so on screen: it works through 50 items at
+a time and reports how far it got rather than a site-wide issue total, because a true total means
+reading every row and a quietly capped one is worse than none. Undescribed *images* are the
+exception and are asked separately, as a real query — that one also catches an image uploaded and
+not yet placed, which no item scan can see.
 
 **Phase 5 — Integrations**
 Webhooks, tracking script manager. (Redirects moved to Phase 1 — see URL structure section above. API keys moved to Phase 3.75, which cannot ship without them.)

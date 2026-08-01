@@ -100,8 +100,7 @@ const error = Astro.url.searchParams.get('error');
       <div>
         <label for="alt" class="block text-sm font-medium">Alt text</label>
         <p id="alt-hint" class="mt-0.5 text-xs text-content-subtle">
-          What the image conveys, for anyone who cannot see it. Leave blank only if it is purely
-          decorative.
+          What the image conveys, for anyone who cannot see it.
         </p>
         <input
           id="alt"
@@ -112,6 +111,40 @@ const error = Astro.url.searchParams.get('error');
           class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
         />
       </div>
+
+      {/*
+        Decorative is a third state, not an empty second one.
+
+        "Nobody has described this yet" and "this needs no description" look identical in a text
+        box and mean opposite things, and the accessibility report can only be useful if it can
+        tell them apart — otherwise every divider and icon in the library is a permanent complaint,
+        and a report that is always red is one nobody opens.
+      */}
+      {
+        isImage && (
+          <div class="flex gap-2.5">
+            <input
+              id="decorative"
+              name="decorative"
+              type="checkbox"
+              checked={asset.alt_text === ''}
+              disabled={!canEdit}
+              aria-describedby="decorative-hint"
+              class="mt-0.5 size-4 shrink-0 rounded border-border-strong"
+            />
+            <div>
+              <label for="decorative" class="block text-sm font-medium">
+                Decorative — this image needs no alt text
+              </label>
+              <p id="decorative-hint" class="mt-0.5 text-xs text-content-subtle">
+                For images that carry no information of their own: a divider, a background texture,
+                an icon beside a label that already says the same thing. Saving with this ticked
+                clears the alt text above, and the accessibility report stops asking.
+              </p>
+            </div>
+          </div>
+        )
+      }
 
       <div>
         <label for="title" class="block text-sm font-medium">Title</label>

@@ -7,7 +7,7 @@ import {
   readImageDimensions,
 } from '@taproot/core';
 
-import { apiError, handle, json } from '../_shared.js';
+import { apiError, formValue, handle, json } from '../_shared.js';
 
 /** Uploads larger than this are rejected outright rather than buffered. */
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -103,8 +103,17 @@ export const POST = handle(
       size_bytes: stored.size,
       width: dimensions?.width ?? null,
       height: dimensions?.height ?? null,
-      alt_text: (form.get('alt') as string | null) ?? null,
-      title: (form.get('title') as string | null) ?? null,
+      /**
+       * Blank becomes null, not the empty string.
+       *
+       * `''` means "somebody decided this image needs no description" and null means "nobody has
+       * said" — the distinction the accessibility checker rests on. An empty text input submits
+       * `''`, so passing the form value straight through would have every upload with the alt box
+       * left blank claiming to be a deliberate decision. Declaring an image decorative is done on
+       * the asset's own screen, where the rest of its description lives.
+       */
+      alt_text: formValue(form, 'alt'),
+      title: formValue(form, 'title'),
       hotspot_x: null,
       hotspot_y: null,
       crop_top: null,

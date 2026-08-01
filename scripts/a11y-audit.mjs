@@ -52,6 +52,15 @@ const ROUTES = [
   '/admin',
   '/admin/content',
   '/admin/content/new',
+  /**
+   * The accessibility report itself, which would be a memorable thing to leave unaudited.
+   *
+   * Both shapes are worth a look and the seed gives them: `?all=1` widens the scan past what the
+   * public can see, and it is the wider one that actually renders the issue list — a filter chain
+   * plus a repeated pattern of nested lists per item.
+   */
+  '/admin/accessibility',
+  '/admin/accessibility?all=1',
   '/admin/settings/types',
   '/admin/settings/types/new',
   '/admin/settings/blocks',

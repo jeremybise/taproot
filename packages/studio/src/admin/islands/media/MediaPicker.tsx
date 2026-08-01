@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Check, Search, Upload, X } from 'lucide-react';
-import { mediaMatchesAccept } from '@taproot/core';
+import { mediaMatchesAccept, needsAltText } from '@taproot/core';
 
 import type { MediaOption } from '../../mediaOptions.js';
 
@@ -377,7 +377,7 @@ export function MediaPicker({
                         <p className="truncate text-xs font-medium" title={asset.filename}>
                           {asset.filename}
                         </p>
-                        {asset.mimeType.startsWith('image/') && !asset.altText && (
+                        {needsAltText(asset) && (
                           <p className="mt-0.5 text-xs text-warning">Missing alt text</p>
                         )}
                       </div>
@@ -431,7 +431,7 @@ export function MediaPicker({
  *
  * Alt text sits here rather than only on the library screen because this is the moment someone
  * knows what the image is for. An upload path that never asks is how a library fills with images
- * nobody can describe later, and alt text is what the Phase 4 checker reads.
+ * nobody can describe later, and alt text is what the accessibility checker reads.
  */
 function UploadPanel({
   id,

@@ -16,6 +16,8 @@ At the bottom of that group:
 
 - **All content** — searches across every type at once. Useful when you know a title but not what
   kind of thing it is.
+- **Accessibility** — everything on the site worth fixing for people using a screen reader. See
+  [Accessibility](/content/accessibility/).
 - **Releases** — batches of content staged to go live together. See
   [Releases](/publishing/releases/).
 

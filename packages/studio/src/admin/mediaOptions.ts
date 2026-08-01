@@ -1,6 +1,8 @@
-import { listMedia } from '@taproot/core';
+import { listMedia, referencedMediaIds } from '@taproot/core';
 import type { Kysely } from 'kysely';
-import type { Database } from '@taproot/core';
+import type { Database, FieldRow } from '@taproot/core';
+
+import type { BlockTypeOption, ReusableBlockOption } from './islands/fields/BlockListEditor.js';
 
 /**
  * One media asset as the admin's React islands see it.
@@ -51,6 +53,42 @@ export async function imageOptions(
   limit = 60,
 ): Promise<MediaOption[]> {
   const { media } = await listMedia(db, { accept: ['image/'], limit });
+  return media.map((row) => toMediaOption(row, storage));
+}
+
+/**
+ * Exactly the assets an item's stored data points at, however far down the library they sit.
+ *
+ * The accessibility panel needs alt text for the images actually on the page, and `mediaOptions`
+ * answers a different question — the library's most recent page, which is what a picker opens with.
+ * An item referencing an asset uploaded a year ago is not in it, and reading alt text from the page
+ * on hand would report that image as undescribed on a screen the author cannot fix it from. The
+ * same trap `relationTargetsForFields` avoids, and the same fix: resolve from the stored data.
+ */
+export async function referencedMediaOptions(
+  db: Kysely<Database>,
+  storage: { publicUrl(key: string): string },
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  registries: { blockTypes?: BlockTypeOption[]; reusableBlocks?: ReusableBlockOption[] } = {},
+): Promise<MediaOption[]> {
+  const ids = referencedMediaIds(fields, data, {
+    blockTypes: new Map(
+      (registries.blockTypes ?? []).map((type) => [type.api_id, { name: type.name, fields: type.fields }]),
+    ),
+    reusableBlocks: new Map(
+      (registries.reusableBlocks ?? []).map((entry) => [
+        entry.id,
+        { id: entry.id, name: entry.name, type: entry.block_type, data: entry.data },
+      ]),
+    ),
+  });
+
+  // `listMedia` with an empty id list returns nothing rather than everything, which is the right
+  // default there and the wrong query to make at all here.
+  if (ids.length === 0) return [];
+
+  const { media } = await listMedia(db, { ids, limit: ids.length });
   return media.map((row) => toMediaOption(row, storage));
 }
 

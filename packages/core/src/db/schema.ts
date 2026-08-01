@@ -370,7 +370,14 @@ export interface MediaTable {
   size_bytes: number;
   width: number | null;
   height: number | null;
-  /** Feeds the Phase 4 accessibility checker. */
+  /**
+   * What a screen reader announces in place of the image.
+   *
+   * Three states, not two: `null` is "nobody has described it", `''` is "somebody decided it needs
+   * no description", and an actual string is the description. The accessibility checker reports the
+   * first and leaves the second alone — collapsing them makes every divider and icon a permanent
+   * complaint. Ask through `needsAltText`, never `!alt_text`, which cannot tell them apart.
+   */
   alt_text: string | null;
   title: string | null;
   /**

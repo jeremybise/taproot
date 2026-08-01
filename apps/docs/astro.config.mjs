@@ -69,6 +69,7 @@ export default defineConfig({
             { label: 'Images and files', slug: 'content/media' },
             { label: 'Tags and categories', slug: 'content/taxonomies' },
             { label: 'Search engines and social cards', slug: 'content/seo' },
+            { label: 'Accessibility', slug: 'content/accessibility' },
             { label: 'Revision history', slug: 'content/revisions' },
           ],
         },

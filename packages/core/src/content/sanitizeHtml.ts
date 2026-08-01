@@ -30,8 +30,9 @@
  * Tags that survive, each mapped to the attributes allowed on it.
  *
  * `h1` is absent on purpose. The page's `<h1>` is its title, rendered by the template; letting body
- * content introduce a second breaks the document outline — a WCAG 1.3.1 failure, and exactly what
- * the Phase 4 accessibility checker exists to catch. Body headings start at `h2`.
+ * content introduce a second breaks the document outline — a WCAG 1.3.1 failure. Body headings
+ * start at `h2`, and `checkRichText` reports one that does not, for content that reached the
+ * database without passing through here.
  *
  * `img` is absent too: images belong to the media library, where they carry alt text and a
  * hotspot. An `<img>` pasted into prose has neither and cannot be managed.
@@ -125,7 +126,7 @@ export function sanitizeHtml(input: string, options: SanitizeOptions = {}): stri
   return out.join('');
 }
 
-type Token =
+export type HtmlToken =
   | { kind: 'text'; value: string }
   | { kind: 'open'; name: string; attributes: string }
   | { kind: 'close'; name: string }
@@ -136,8 +137,12 @@ type Token =
  *
  * Strict on purpose: a `<` that does not begin something tag-shaped is emitted as literal text and
  * escaped downstream, which is what browsers do and what stops `< script>`-style tricks.
+ *
+ * Exported because the accessibility checker walks the same stored HTML looking for heading order
+ * and link text. A second parser — a regex over `<h[2-4]>`, say — would be a second answer to "what
+ * does this markup say", and the one that has been attacked in tests is this one.
  */
-function* tokenize(input: string): Generator<Token> {
+export function* tokenize(input: string): Generator<HtmlToken> {
   let i = 0;
 
   while (i < input.length) {
