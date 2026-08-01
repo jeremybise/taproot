@@ -1,4 +1,4 @@
-import type { ContentStatus } from '@taproot/core';
+import type { ContentStatus, ReleaseStatus } from '@taproot/core';
 
 /**
  * How each content status presents in the admin.
@@ -58,6 +58,56 @@ export const STATUS_META: Record<ContentStatus, StatusMeta> = {
     badgeClass: 'border-status-archived bg-status-archived-subtle',
   },
 };
+
+export const RELEASE_STATUS_ORDER = [
+  'open',
+  'scheduled',
+  'blocked',
+  'published',
+] as const satisfies readonly ReleaseStatus[];
+
+/**
+ * How a release's own status presents.
+ *
+ * Here rather than on the releases screen for the reason the whole module exists: a badge that is
+ * amber in the list and grey on the detail page teaches editors that the colour means nothing.
+ *
+ * Deliberately built from tokens that already exist. `open` borrows the draft pair because it means
+ * the same thing — being worked on, not yet anybody else's problem — and `blocked` borrows the
+ * danger pair. A new colour token is not done until it has a pair in `a11y-contrast.mjs`, and both
+ * of these are already checked there; inventing `status-release-blocked` would have added an
+ * unchecked colour for no gain in meaning.
+ *
+ * As with content statuses, the colour is always redundant with the text label. A badge that became
+ * a bare swatch would fail WCAG 1.4.1.
+ */
+export const RELEASE_STATUS_META: Record<ReleaseStatus, StatusMeta> = {
+  open: {
+    label: 'Open',
+    badgeClass: 'border-status-draft bg-status-draft-subtle',
+  },
+  scheduled: {
+    label: 'Scheduled',
+    badgeClass: 'border-status-scheduled bg-status-scheduled-subtle',
+  },
+  blocked: {
+    label: 'Blocked',
+    badgeClass: 'border-danger bg-danger-subtle',
+  },
+  published: {
+    label: 'Published',
+    badgeClass: 'border-status-published bg-status-published-subtle',
+  },
+};
+
+export function releaseStatusMeta(status: string): StatusMeta {
+  return (
+    RELEASE_STATUS_META[status as ReleaseStatus] ?? {
+      label: status.replace(/_/g, ' '),
+      badgeClass: 'border-border bg-surface-sunken',
+    }
+  );
+}
 
 /**
  * Presentation for a status that has no entry above.

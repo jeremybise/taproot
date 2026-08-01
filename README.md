@@ -3,11 +3,15 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0, 1, and 2 complete.** Sign in, define a content type and its fields visually, write
-content with a real rich text editor, pick images from a real media browser, classify it, relate it
-to other content, put it in a menu, set its focal point, and see it render — cropped to that focal
-point — at a real nested URL. See [SCOPE.md](SCOPE.md) for the full plan and
-[what's next](#whats-next).
+**Status: Phases 0 through 3.5 complete.** Sign in, define a content type and its fields visually,
+write content with a real rich text editor, pick images from a real media browser, classify it,
+relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
+that focal point — at a real nested URL. Then move it through a review workflow, schedule it,
+batch it with a dozen other pages into a release that goes live all at once, and read back who did
+what in the audit log. See [SCOPE.md](SCOPE.md) for the full plan and [what's next](#whats-next).
+
+**The handbook is in [`apps/docs`](apps/docs)** — `npm run docs` — and covers using the CMS,
+administering a site, and running the server.
 
 ---
 
@@ -123,7 +127,8 @@ toolchain — Taproot has zero native dependencies.
 | `npm run db:reset` | Delete the local database and re-seed |
 | `npm run db:migrate` | Apply pending migrations locally |
 | `npm run db:migrate:remote` | Apply them to deployed D1 |
-| `npm test` | Unit tests (859 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, taxonomies, menus, redirects, SEO, blocks, the field builder) |
+| `npm run docs` | The handbook at :4322 — Starlight, no database, builds on its own |
+| `npm test` | Unit tests (908 covering dialects, auth, sign-in throttling, password reset and mail, API routes, storage adapters, guards, paths, validation, revisions, releases, taxonomies, menus, redirects, SEO, blocks, the field builder) |
 | `npm run typecheck` | TypeScript across `@taproot/core` and `@taproot/astro` |
 | `npm run a11y` | axe-core audit of every admin screen, plus a contrast check |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -319,10 +324,31 @@ npm test
 
 ## What's next
 
-**Phase 3 is done.** User management, the draft/review/schedule/publish workflow with role gates, a
-scheduler, and an audit log all shipped. [Phase 3.5](SCOPE.md) — Content Releases — is next.
+**Phase 3.5 is done.** Content Releases shipped: a named batch of content staged to go live
+together, which is the first place in Taproot a content item can have a version that is not live.
+Editing a published page still publishes immediately — a release is what you use when it must not.
 
-It is smaller than it used to be. The plan called for departments as a first-class entity — with
+Three decisions are worth knowing before touching it:
+
+- **A staged version carries its own content rather than pointing at a revision.** Revisions record
+  what the live item *has been*, so staging by reference would write a line into the history of a
+  page that never showed it.
+- **Pre-flight instead of atomicity.** SCOPE asked what happens when item 4 of 12 fails at publish
+  time; it cannot be answered with a transaction, because D1 has none spanning N item updates and
+  each item's publish is already its own batch of path rewrites, redirects, and a revision. So every
+  staged version is validated *before* anything is written. `release_items.published_at` makes the
+  residue of a genuinely unexpected failure resumable.
+- **Staging is not publishing.** Contributors stage, editors publish — which answers the permission
+  question SCOPE left open, and falls out of the workflow graph rather than being a new rule, since
+  every transition into `published` already needs the editor role.
+
+The one asymmetry to remember: a scheduled *page* goes live whether or not a sweep runs, because
+visibility is computed on read. A scheduled *release* does not — its content has to be applied, and
+no page view can do that. Settings → System says so, and so does the handbook.
+
+[Phase 3.75](SCOPE.md) — the standalone server and delivery API — is next.
+
+**Phase 3 was smaller than it used to be.** The plan called for departments as a first-class entity — with
 membership, ownership of content items, and role assignments scoped to them — and that turned out
 to be the wrong reading of what a department is here. A department is *what a page is about*, which
 is what a taxonomy does, and the Phase 1 `department` taxonomy already does it. With no ownership

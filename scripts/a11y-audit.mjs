@@ -65,6 +65,7 @@ const ROUTES = [
   '/admin/taxonomies',
   '/admin/menus',
   '/admin/settings/redirects',
+  '/admin/releases',
   '/admin/settings',
 ];
 
@@ -161,6 +162,38 @@ if (taxonomies?.[0]) ROUTES.push(`/admin/taxonomies/${taxonomies[0].id}`);
 const menusResponse = await fetch(`${base}/api/taproot/menus`, { headers: { cookie } });
 const { menus } = await menusResponse.json();
 if (menus?.[0]) ROUTES.push(`/admin/menus/${menus[0].id}`);
+
+/**
+ * A release with content in it, and the item editor opened in release mode.
+ *
+ * The release chosen is the one with the most items, for the same reason the item editor is chosen
+ * by field count rather than alphabetically: a release with nothing in it renders an empty state
+ * and misses every per-item form, the conflict notes, and the publish controls — which is all of
+ * the screen worth auditing. The seed ships one with two items so this is never a no-op.
+ *
+ * Release mode matters separately because it swaps a whole panel of the item editor: the status
+ * buttons and the schedule field are replaced by the staged-version panel, and none of that markup
+ * is reachable from `/admin/content/{id}` on its own.
+ */
+const releasesResponse = await fetch(`${base}/api/taproot/releases`, { headers: { cookie } });
+const { releases } = await releasesResponse.json();
+const fullestRelease = (releases ?? [])
+  .slice()
+  .sort((a, b) => (b.itemCount ?? 0) - (a.itemCount ?? 0))[0];
+
+if (fullestRelease) {
+  ROUTES.push(`/admin/releases/${fullestRelease.id}`);
+
+  const detail = await fetch(`${base}/api/taproot/releases/${fullestRelease.id}`, {
+    headers: { cookie },
+  });
+  const { items: staged } = await detail.json();
+  if (staged?.[0]) {
+    ROUTES.push(
+      `/admin/content/${staged[0].content_item_id}?release=${fullestRelease.id}`,
+    );
+  }
+}
 
 /**
  * Elements a `<label for>` may point at, per the HTML spec's "labelable elements".

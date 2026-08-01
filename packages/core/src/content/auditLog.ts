@@ -23,7 +23,8 @@ export type AuditSubjectType =
   | 'media'
   | 'taxonomy'
   | 'reusable_block'
-  | 'redirect';
+  | 'redirect'
+  | 'release';
 
 export interface AuditEntryInput {
   /** Dotted verb: `item.published`, `user.two_factor_cleared`. Past tense — it already happened. */

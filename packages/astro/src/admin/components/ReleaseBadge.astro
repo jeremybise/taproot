@@ -1,0 +1,28 @@
+---
+import { releaseStatusMeta } from '../status.js';
+
+/**
+ * The release counterpart of `StatusBadge`, and a separate component rather than a `kind` prop on
+ * that one — the two take different value spaces (`ContentStatus` vs `ReleaseStatus`), and a single
+ * component taking `string` would lose the type error that catches a status which has no meta.
+ */
+interface Props {
+  status: string;
+}
+
+const { status } = Astro.props;
+const meta = releaseStatusMeta(status);
+---
+
+{/*
+  The label is always rendered, so colour reinforces rather than carries the message — the same rule
+  that keeps `StatusBadge` clear of WCAG 1.4.1. This must never become a bare swatch.
+*/}
+<span
+  class:list={[
+    'inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium',
+    meta.badgeClass,
+  ]}
+>
+  {meta.label}
+</span>

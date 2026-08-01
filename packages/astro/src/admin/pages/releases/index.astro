@@ -1,0 +1,209 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import ReleaseBadge from '../../components/ReleaseBadge.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import { listReleases } from '@taproot/core';
+import {
+  getTaproot,
+  loginRedirect,
+  canStageToRelease,
+  canManageRelease,
+} from '../../../runtime/guards.js';
+
+/**
+ * Content Releases.
+ *
+ * A release is a named batch of content that goes live together — "tuition changes across a dozen
+ * pages, all at 9am on the same day". Until this existed, editing a published page changed what
+ * visitors saw at the moment of the save, so a coordinated launch meant twelve people watching a
+ * clock.
+ *
+ * Visible to contributors, because staging is not publishing: putting content into a release
+ * reaches nobody until an editor publishes it, which is the same shape as submitting for review.
+ * Creating and publishing a release are editor-only, so a contributor sees the list and the
+ * contents and not the buttons that would put them in front of the public.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canStageToRelease(user)) return Astro.redirect('/admin');
+
+const canManage = canManageRelease(user);
+
+const { releases, total } = await listReleases(taproot.db.db, { limit: 100 });
+
+const deleted = Astro.url.searchParams.get('deleted');
+const error = Astro.url.searchParams.get('error');
+
+const flash = error ? error : deleted ? `Deleted the release “${deleted}”.` : null;
+
+/** Open and blocked releases are work in progress; the rest are a record. */
+const active = releases.filter((release) => release.status !== 'published');
+const done = releases.filter((release) => release.status === 'published');
+---
+
+<AdminLayout
+  title="Releases"
+  user={user}
+  breadcrumbs={[{ label: 'Releases' }]}
+  flash={flash}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Releases</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      A release holds a copy of several items' content and publishes all of it at once, either when
+      you press the button or at a time you choose. Editing an item inside a release leaves the live
+      page alone until then.
+    </p>
+  </header>
+
+  {
+    canManage && (
+      <form
+        method="post"
+        action="/api/taproot/releases"
+        class="mb-8 flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface-raised p-4"
+      >
+        <div class="min-w-56 flex-1">
+          <label for="name" class="block text-sm font-medium">
+            New release
+          </label>
+          <input
+            id="name"
+            name="name"
+            required
+            maxlength="200"
+            placeholder="Spring tuition update"
+            aria-describedby="name-hint"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          />
+          <p id="name-hint" class="mt-1.5 text-xs text-content-subtle">
+            Name it after the launch, not the date — the date can change and the name is what people
+            will look for.
+          </p>
+        </div>
+
+        <div class="min-w-56 flex-1">
+          <label for="description" class="block text-sm font-medium">
+            What it is for <span class="font-normal text-content-subtle">(optional)</span>
+          </label>
+          <input
+            id="description"
+            name="description"
+            maxlength="2000"
+            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          />
+        </div>
+
+        <button
+          type="submit"
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          Create release
+        </button>
+      </form>
+    )
+  }
+
+  {
+    total === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No releases yet.
+        {canManage
+          ? ' Create one above, then add content to it from any item’s editor.'
+          : ' An editor creates them; you can then add content to one from any item’s editor.'}
+      </p>
+    ) : (
+      <>
+        <section aria-labelledby="active-heading">
+          <h2 id="active-heading" class="text-base font-semibold">
+            In progress
+          </h2>
+          {active.length === 0 ? (
+            <p class="mt-2 rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-content-muted">
+              Nothing is being assembled right now.
+            </p>
+          ) : (
+            <ul class="mt-3 space-y-2">
+              {active.map((release) => (
+                <li class="rounded-lg border border-border bg-surface-raised px-4 py-3">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <ReleaseBadge status={release.status} />
+                    <a
+                      href={`/admin/releases/${release.id}`}
+                      class="font-medium underline-offset-2 hover:underline"
+                    >
+                      {release.name}
+                    </a>
+                    <span class="text-sm text-content-muted">
+                      {release.itemCount} {release.itemCount === 1 ? 'item' : 'items'}
+                    </span>
+                  </div>
+
+                  {release.description && (
+                    <p class="mt-1 max-w-prose text-sm text-content-muted">{release.description}</p>
+                  )}
+
+                  <p class="mt-1 text-xs text-content-subtle">
+                    {release.status === 'scheduled' && release.publish_at ? (
+                      <>
+                        Goes live <Timestamp value={release.publish_at} />
+                      </>
+                    ) : release.status === 'blocked' ? (
+                      'A scheduled publish was refused. Open it to see what needs fixing.'
+                    ) : (
+                      <>
+                        Created <Timestamp value={release.created_at} />
+                        {release.authorName ? ` by ${release.authorName}` : ''}
+                      </>
+                    )}
+                    {/*
+                      Only ever non-zero after a publish that failed part-way through. Shown because
+                      it is the difference between "nothing has happened yet" and "some of this is
+                      already live", which changes what somebody should do next.
+                    */}
+                    {release.publishedCount > 0 && release.status !== 'published' && (
+                      <> · {release.publishedCount} already published</>
+                    )}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {done.length > 0 && (
+          <section aria-labelledby="done-heading" class="mt-8">
+            <h2 id="done-heading" class="text-base font-semibold">
+              Published
+            </h2>
+            <p class="mt-1 max-w-prose text-sm text-content-muted">
+              Kept as the record of which items went live together.
+            </p>
+            <ul class="mt-3 space-y-2">
+              {done.map((release) => (
+                <li class="flex flex-wrap items-center gap-2 rounded-lg border border-border px-4 py-2.5">
+                  <ReleaseBadge status={release.status} />
+                  <a
+                    href={`/admin/releases/${release.id}`}
+                    class="font-medium underline-offset-2 hover:underline"
+                  >
+                    {release.name}
+                  </a>
+                  <span class="text-sm text-content-muted">
+                    {release.itemCount} {release.itemCount === 1 ? 'item' : 'items'}
+                  </span>
+                  {release.published_at && (
+                    <span class="text-xs text-content-subtle">
+                      <Timestamp value={release.published_at} />
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </>
+    )
+  }
+</AdminLayout>

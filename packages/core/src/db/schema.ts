@@ -375,6 +375,75 @@ export interface RevisionsTable {
 }
 
 // ---------------------------------------------------------------------------
+// Content Releases
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a release is in its life.
+ *
+ * `blocked` is the only one that needs explaining: a scheduled release whose moment arrived and
+ * whose pre-flight refused it. It exists for the unattended case alone — a release that fails
+ * pre-flight while an editor is looking at the screen simply shows them the reasons and stays put,
+ * because there is somebody there to act. One that fails at 3am has nobody, and leaving it
+ * `scheduled` would mean sweeping the same broken content every minute until someone noticed.
+ */
+export type ReleaseStatus = 'open' | 'scheduled' | 'published' | 'blocked';
+
+/**
+ * A named batch of content staged to go live together.
+ *
+ * The reasons a release cannot simply be "a list of item ids to publish" are all in
+ * `ReleaseItemsTable`: the point is that the *content* waits with it, so a live page can be edited
+ * for a launch without the edit reaching visitors in the meantime.
+ */
+export interface ReleasesTable {
+  id: string;
+  name: string;
+  description: string | null;
+  status: ReleaseStatus;
+  /** When a `scheduled` release should go live. Mirrors `content_items.publish_at`. */
+  publish_at: string | null;
+  published_at: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
+ * One item's pending version, waiting inside a release.
+ *
+ * Carries its own authored content rather than pointing at a revision. A revision is a frozen
+ * record of what the live item *has been*; a staged version is editable and has never been live,
+ * so referencing one would mean every edit to unpublished content wrote a line into the history of
+ * a page that never showed it.
+ *
+ * `parent_id` is deliberately absent, matching `RevisionsTable`. A staged `slug` is captured
+ * because it is authored beside the title, and publishing one cascades paths and writes redirects
+ * through the ordinary update path.
+ */
+export interface ReleaseItemsTable {
+  id: string;
+  release_id: string;
+  content_item_id: string;
+  title: string;
+  slug: string;
+  data: JsonText;
+  seo: JsonText;
+  staged_by: string | null;
+  /**
+   * When this staged version reached its item, or null if it has not.
+   *
+   * Per-item because a release publish is N writes and cannot be one statement — each item's update
+   * is already its own batch of path rewrites, redirects, and a revision, and D1 has no interactive
+   * transaction to wrap them in. Pre-flight validation is what stops "item 4 of 12 fails" from
+   * happening; this is what makes the residue of a genuine mid-flight failure resumable.
+   */
+  published_at: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+// ---------------------------------------------------------------------------
 // Taxonomies
 // ---------------------------------------------------------------------------
 
@@ -474,9 +543,9 @@ export interface MenuItemsTable {
 /**
  * The full Kysely database interface.
  *
- * Phase 3 adds `audit_log`. Phase 3.5 adds `releases`. There is deliberately no `departments`
- * or `role_assignments` table — roles are flat and site-wide, and departments are classification,
- * which `taxonomies` already covers. See SCOPE.md.
+ * Phase 3 added `audit_log`; Phase 3.5 adds `releases` and `release_items`. There is deliberately
+ * no `departments` or `role_assignments` table — roles are flat and site-wide, and departments are
+ * classification, which `taxonomies` already covers. See SCOPE.md.
  */
 export interface Database {
   users: UsersTable;
@@ -496,6 +565,8 @@ export interface Database {
   media: MediaTable;
   redirects: RedirectsTable;
   revisions: RevisionsTable;
+  releases: ReleasesTable;
+  release_items: ReleaseItemsTable;
   taxonomies: TaxonomiesTable;
   terms: TermsTable;
   taxonomy_assignments: TaxonomyAssignmentsTable;
@@ -537,6 +608,14 @@ export type NewRedirect = Insertable<RedirectsTable>;
 
 export type RevisionRow = Selectable<RevisionsTable>;
 export type NewRevision = Insertable<RevisionsTable>;
+
+export type ReleaseRow = Selectable<ReleasesTable>;
+export type NewRelease = Insertable<ReleasesTable>;
+export type ReleaseUpdate = Updateable<ReleasesTable>;
+
+export type ReleaseItemRow = Selectable<ReleaseItemsTable>;
+export type NewReleaseItem = Insertable<ReleaseItemsTable>;
+export type ReleaseItemUpdate = Updateable<ReleaseItemsTable>;
 
 export type TaxonomyRow = Selectable<TaxonomiesTable>;
 export type NewTaxonomy = Insertable<TaxonomiesTable>;

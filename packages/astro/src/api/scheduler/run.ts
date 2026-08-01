@@ -1,5 +1,5 @@
 import type { APIContext } from 'astro';
-import { publishDueItems } from '@taproot/core';
+import { publishDueItems, publishDueReleases } from '@taproot/core';
 
 import { apiError, json } from '../_shared.js';
 import { getTaproot, hasRole } from '../../runtime/guards.js';
@@ -41,6 +41,12 @@ export async function POST(context: APIContext): Promise<Response> {
   }
 
   const result = await publishDueItems(taproot.db.db);
+  /**
+   * Items first, then releases. A release publishes through `updateItem`, which clears
+   * `publish_at`, so a page that is both scheduled on its own and staged in a release would lose
+   * its own moment if the release ran first.
+   */
+  const releases = await publishDueReleases(taproot.db);
 
   /**
    * A form post comes from the admin's "Run now" button and wants a screen back.
@@ -50,8 +56,23 @@ export async function POST(context: APIContext): Promise<Response> {
    */
   if ((context.request.headers.get('content-type') ?? '').includes('form')) {
     const params = new URLSearchParams({ published: String(result.published.length) });
+    if (releases.published.length > 0) {
+      params.set('releases', String(releases.published.length));
+    }
+    // A blocked release is the one outcome of a sweep that needs somebody to do something, so it
+    // travels back to the screen rather than only into the audit log.
+    if (releases.blocked.length > 0) {
+      params.set('blocked', releases.blocked.map((release) => release.name).join(', '));
+    }
     return context.redirect(`/admin/content?${params}`, 303);
   }
 
-  return json({ published: result.published, count: result.published.length });
+  return json({
+    published: result.published,
+    count: result.published.length,
+    releases: {
+      published: releases.published,
+      blocked: releases.blocked.map(({ id, name }) => ({ id, name })),
+    },
+  });
 }

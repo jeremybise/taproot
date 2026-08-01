@@ -745,6 +745,34 @@ export async function itemDeleteImpact(
     );
   }
 
+  /**
+   * Staged in an unpublished release: a blocker, not a warning.
+   *
+   * `release_items.content_item_id` cascades, so deleting the item would take its staged version
+   * with it and the release would simply publish without that page — no broken row, no message,
+   * and nobody notices until the launch is missing something. That is the distinction this list
+   * turns on: a menu entry and an incoming relation *degrade visibly*, which is why they only warn.
+   *
+   * Queried directly rather than through `openReleasesForItem`, which would make `releases.ts` and
+   * this module import each other. The dependency runs one way — releases reads items — for the
+   * same reason `visibleToPublic` lives here rather than in `scheduler.ts`.
+   */
+  const releases = await db
+    .selectFrom('release_items')
+    .innerJoin('releases', 'releases.id', 'release_items.release_id')
+    .select(['releases.name as name'])
+    .where('release_items.content_item_id', '=', itemId)
+    .where('releases.status', '!=', 'published')
+    .execute();
+
+  if (releases.length > 0) {
+    const names = [...new Set(releases.map((release) => release.name))].join(', ');
+    blockers.push(
+      `it is staged in ${releases.length} unpublished release(s): ${names}. Remove it from them ` +
+        'first, or the release publishes without it and nothing says so.',
+    );
+  }
+
   const menuEntries = await db
     .selectFrom('menu_items')
     .innerJoin('menus', 'menus.id', 'menu_items.menu_id')

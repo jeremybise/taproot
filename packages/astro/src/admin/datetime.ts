@@ -54,3 +54,24 @@ export function formatTimestamp(
 
   return { text, full: FULL.format(date), machine: iso };
 }
+
+/**
+ * ISO 8601 → the `YYYY-MM-DDTHH:mm` a `datetime-local` input speaks.
+ *
+ * Here rather than duplicated in a screen because two callers already want it — the release
+ * scheduler and, in its own React copy, the item editor. This one is deliberately the *server's*
+ * zone, which is the caveat: an Astro page has no access to the viewer's, and pre-filling an input
+ * with a time that is already stored is better than pre-filling it with nothing. The hint beside
+ * the field says "your local time" because that is what an empty input and a fresh entry mean, and
+ * anything already scheduled is displayed by `<Timestamp>` alongside it.
+ */
+export function toLocalInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+}

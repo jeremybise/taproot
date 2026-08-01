@@ -11,5 +11,6 @@ export * from './imageCrop.js';
 export * from './media.js';
 export * from './reusableBlocks.js';
 export * from './revisions.js';
+export * from './releases.js';
 export * from './taxonomies.js';
 export * from './menus.js';

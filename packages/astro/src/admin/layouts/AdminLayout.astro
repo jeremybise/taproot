@@ -1,7 +1,7 @@
 ---
 import '../admin.css';
 import { listContentTypes, type User } from '@taproot/core';
-import { getTaproot, canManageSchema } from '../../runtime/guards.js';
+import { getTaproot, canManageSchema, canStageToRelease } from '../../runtime/guards.js';
 import ThemeSwitcher from '../components/ThemeSwitcher.astro';
 import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
 
@@ -69,6 +69,13 @@ const groups: NavGroup[] = [
       // Kept last: per-type lists are the way in, and searching across every type is the
       // occasional case rather than the default.
       { href: '/admin/content', label: 'All content', exact: true },
+      /**
+       * Releases sits under Content rather than Settings because it *is* content — a batch of
+       * pending versions — and a contributor can see it. Staging is not publishing: putting an item
+       * in a release reaches nobody until an editor publishes it, which is the same shape as
+       * submitting for review. A viewer sees nothing here.
+       */
+      ...(canStageToRelease(user) ? [{ href: '/admin/releases', label: 'Releases' }] : []),
     ],
   },
   ...(singletons.length > 0

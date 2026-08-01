@@ -17,8 +17,19 @@ focal point the hotspot editor had always stored and nothing read.
 classification, which the Phase 1 taxonomy already provides, so there is no departments entity and
 no department-scoped role. Roles are flat and site-wide. User management, workflow transitions with
 role gates, the scheduler, and the audit log all shipped, along with self-service password reset and
-a Cloudflare cron trigger for the publishing sweep. Phase 3.5 — Content Releases — is next; read the
-Roles & permissions section of SCOPE.md before starting.
+a Cloudflare cron trigger for the publishing sweep.
+
+**Phase 3.5 — Content Releases — is complete.** Phase 3.75, the standalone server and delivery API,
+is next; read the Phase 3.75 entry and the Roles & permissions section of SCOPE.md before starting,
+and note that a release changes what "published" means, which is the reason the split waited for it.
+
+**[apps/docs](apps/docs) is the handbook** — Astro + Starlight, `npm run docs`, port 4322. It is
+end-user documentation (editors, site admins, operators), not developer docs, and it is a separate
+app so the demo site stays a demo. It declares **no `sharp`** and configures the passthrough image
+service, because the default image service is a native dependency; `sharp` still arrives
+transitively through Astro and wrangler, which is not something this repo controls, but nothing here
+declares it. Phase 3.75 will invalidate parts of the operator section — the split changes install
+and deployment — so update it in that phase rather than leaving it describing the old shape.
 
 ## Commands
 
@@ -27,7 +38,8 @@ Roles & permissions section of SCOPE.md before starting.
 | `npm run dev` | Dev server at :4321. Astro 7 daemonises it — `astro dev stop\|status\|logs` |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 859 tests |
+| `npm test` | Vitest, 908 tests |
+| `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
@@ -147,6 +159,57 @@ snapshot it — a scheduled moment is an intention about the future, so restorin
 lands in `scheduled` with no date: invisible, never swept, and shown as an empty required field.
 Fails closed and says so.
 
+**A release is the only place a content item can have a version that is not live.** `content_items`
+holds one row per item, so editing a published page changes what visitors see at the moment of the
+save — there is no draft of a live page, and Content Releases is what fills that gap rather than
+merely batching publishes. Four things hold it up, and each has a simpler-looking alternative:
+- **`release_items` carries its own `title`, `slug`, `data`, and `seo`** rather than referencing a
+  revision. Revisions are an append-only record of what the *live* item has been, so staging by
+  reference would write a line into the history of a page that never showed it — and a staged
+  version has to be editable, which a revision is not. `parent_id` is deliberately not staged,
+  matching what revisions capture: re-parenting is a change to the tree, and a release must not
+  rearrange the site's hierarchy as a side effect of a copy change.
+- **Pre-flight replaces atomicity, because atomicity is unavailable.** A release publish is N item
+  updates, each already its own batch of path rewrites, redirects, and a revision, and D1 has no
+  transaction spanning them. `releasePreflight` validates every staged version *before* anything is
+  written — against the content type **as it is now**, since a release can sit open for weeks and a
+  newly-required field is exactly what turns a staged version unsavable. It is recomputed on every
+  render, never stored: a cached list of reasons still accuses somebody an hour after they fixed it.
+  `release_items.published_at` is what makes a genuinely unexpected mid-flight failure resumable.
+- **Publishing goes through `updateItem`, never around it.** A staged slug change has to cascade to
+  descendants and write its redirects exactly as a rename does; a direct row write would be a second
+  implementation of the part people get wrong.
+- **Staging is contributor, publishing is editor.** Staging reaches nobody, which makes it the same
+  shape as submitting for review — gating it higher would stop content authors assembling their own
+  launch. Publishing is editor because every transition into `published` already is, and a release
+  must not be a route to a change `canChangeStatus` would refuse one item at a time. The staged
+  endpoint therefore refuses `status` outright.
+
+**A scheduled release needs the sweep; a scheduled item does not.** An item's visibility is computed
+on read (`visibleToPublic`), so it goes live with no cron wired up. A release's content lives in
+`release_items` and has to be *applied*, which no page view can do. Do not "fix" this by teaching
+the read path about releases — that would mean resolving staged content on the hot path of every
+public request. The asymmetry is stated on Settings → System and in the handbook because it is the
+one place "scheduling works with no cron" stops being true. `publishDueReleases` claims a release by
+**clearing `publish_at`** rather than adding a `publishing` status: the clear is a rule that already
+had to hold in every path off `scheduled`, so reusing it as the claim leaves no state to strand if
+the process dies — what a crash leaves is a release reading `scheduled` with no date, visibly wrong
+and never swept again. Items sweep **before** releases, or a page that is both scheduled and staged
+loses its own moment when `updateItem` clears `publish_at`.
+
+**`blocked` exists only for the unattended case.** A scheduled release refused at 3am has nobody to
+tell, and leaving it `scheduled` would sweep the same broken content every minute forever, writing
+an audit entry each time. A release refused while somebody is looking at the screen is *not* moved
+to `blocked` — they are right there, and the screen recomputes the reasons anyway.
+
+**Deleting an item staged in an unpublished release is blocked, not warned.** `release_items`
+cascades on `content_item_id`, so the delete would take the staged version with it and the release
+would publish without that page — no broken row, no message, nobody notices until the launch is
+missing something. That is the line the blocker/warning split turns on: a menu entry and an incoming
+relation *degrade visibly*, which is why they only warn. The query lives inline in `items.ts` rather
+than calling `openReleasesForItem`, because `releases.ts` imports `items.ts` and the dependency must
+run one way — same reason `visibleToPublic` lives in `items.ts` and not `scheduler.ts`.
+
 **The audit log is append-only and nothing may make it aimable.** `recordAuditEntry` never throws:
 the action it describes has already happened, and failing it would report a failure that did not
 occur. `actor_email` and `subject_label` are copied at write time rather than joined, because a log
@@ -238,7 +301,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-28 routes, 0 violations, all 36 token pairs passing in both themes.
+31 routes, 0 violations, all 36 token pairs passing in both themes.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive

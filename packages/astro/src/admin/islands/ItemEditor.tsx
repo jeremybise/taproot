@@ -64,6 +64,20 @@ interface Props {
   /** Where this item resolves publicly. Empty for a singleton, which has no path of its own. */
   path?: string;
   origin?: string;
+  /**
+   * The release whose staged version is being edited, if any.
+   *
+   * Its presence changes what this form *is*. Without it the editor writes to `content_items` and a
+   * published page changes the moment it saves; with it the editor writes to `release_items` and the
+   * live page is untouched until the release publishes. That is the whole point of the feature — the
+   * tuition page can be rewritten weeks early without the new figure appearing on the site — so the
+   * mode is announced rather than merely implied by a different endpoint.
+   *
+   * Status, scheduling, and parent are all absent in this mode. A release publishes what is in it,
+   * so "what status will this end up in" is the release's question, not the item's; and accepting a
+   * status here would be a route to a transition `canChangeStatus` never saw.
+   */
+  release?: { id: string; name: string } | null;
 }
 
 export default function ItemEditor({
@@ -83,6 +97,7 @@ export default function ItemEditor({
   defaultOgImage = null,
   path = '/',
   origin = '',
+  release = null,
 }: Props) {
   const [title, setTitle] = useState(initial.title);
   const [slug, setSlug] = useState(initial.slug);
@@ -140,13 +155,31 @@ export default function ItemEditor({
       data,
       seo: pruneSeo(seo),
     };
-    const url = itemId ? `/api/taproot/items/${itemId}` : '/api/taproot/items';
+
+    /**
+     * In release mode the payload is deliberately narrower, not just aimed elsewhere.
+     *
+     * `status`, `publishAt`, and `parentId` are dropped rather than sent and ignored: the staged
+     * endpoint refuses them, and building a payload the boundary rejects half of is how a field
+     * quietly stops working when somebody later relaxes that schema.
+     */
+    const url = release
+      ? `/api/taproot/releases/${release.id}/items/${itemId}`
+      : itemId
+        ? `/api/taproot/items/${itemId}`
+        : '/api/taproot/items';
+
+    const requestBody = release
+      ? { title, slug, data, seo: pruneSeo(seo) }
+      : itemId
+        ? payload
+        : { ...payload, contentTypeId };
 
     try {
       const response = await fetch(url, {
         method: itemId ? 'PATCH' : 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(itemId ? payload : { ...payload, contentTypeId }),
+        body: JSON.stringify(requestBody),
       });
 
       const body = (await response.json().catch(() => null)) as {
@@ -178,7 +211,9 @@ export default function ItemEditor({
        * hand-managing the focus and announcement that a real navigation gives for free. The flash
        * lands in the layout's live region on the way back.
        */
-      window.location.href = `/admin/content/${itemId}?updated=1`;
+      window.location.href = release
+        ? `/admin/content/${itemId}?release=${encodeURIComponent(release.id)}&updated=1`
+        : `/admin/content/${itemId}?updated=1`;
     } catch {
       setMessage('Could not reach the server. Your changes have not been saved.');
     } finally {
@@ -278,6 +313,42 @@ export default function ItemEditor({
 
       {/* Sidebar ---------------------------------------------------------- */}
       <aside className="space-y-6">
+        {release ? (
+          <div className="rounded-lg border border-status-scheduled bg-status-scheduled-subtle p-4">
+            <h2 className="text-sm font-semibold">Staged in a release</h2>
+            <p className="mt-1.5 text-sm">
+              You are editing the version waiting in{' '}
+              <a href={`/admin/releases/${release.id}`} className="font-medium underline">
+                {release.name}
+              </a>
+              . The live page does not change until that release publishes.
+            </p>
+            {/*
+              No status buttons and no schedule field, and their absence is the point rather than an
+              omission. A release publishes everything in it at once, so the moment this page goes
+              live is the release's to decide — offering a per-item status here would put two
+              answers to one question on the same screen.
+            */}
+            <p className="mt-2 text-xs text-content-muted">
+              Status, scheduling, and the parent page are edited on the live item, not here.
+            </p>
+
+            <button
+              type="submit"
+              disabled={busy}
+              className="mt-4 w-full rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover disabled:opacity-60"
+            >
+              {busy ? 'Saving…' : 'Save to release'}
+            </button>
+
+            <a
+              href={`/admin/content/${itemId}`}
+              className="mt-2 block rounded-md px-3 py-2 text-center text-sm text-content-muted transition-colors hover:bg-surface-sunken"
+            >
+              Edit the live page instead
+            </a>
+          </div>
+        ) : (
         <div className="rounded-lg border border-border bg-surface-raised p-4">
           <h2 className="text-sm font-semibold">Publishing</h2>
 
@@ -418,6 +489,7 @@ export default function ItemEditor({
             {busy ? 'Saving…' : itemId ? 'Save changes' : 'Create item'}
           </button>
         </div>
+        )}
 
         {/*
           Below Publishing rather than above it. The save button has to stay reachable without

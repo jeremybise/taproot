@@ -1,0 +1,429 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import ReleaseBadge from '../../components/ReleaseBadge.astro';
+import StatusBadge from '../../components/StatusBadge.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import DangerZone from '../../components/DangerZone.astro';
+import {
+  getReleaseWithItems,
+  releaseDeleteBlockers,
+  releasePreflight,
+  slugify,
+} from '@taproot/core';
+import {
+  getTaproot,
+  loginRedirect,
+  canStageToRelease,
+  canManageRelease,
+} from '../../../runtime/guards.js';
+import { toLocalInputValue } from '../../datetime.js';
+
+/**
+ * One release: what is in it, what is wrong with it, and how to send it live.
+ *
+ * The pre-flight result is recomputed on every render rather than stored. A release blocked at 3am
+ * because a required field was empty is unblocked the moment somebody fills it in, and a cached
+ * list of reasons would still be accusing them an hour later — the same argument that keeps delete
+ * blockers in core and read fresh by the screen rather than counted here.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canStageToRelease(user)) return Astro.redirect('/admin');
+
+const canManage = canManageRelease(user);
+
+const result = await getReleaseWithItems(taproot.db.db, Astro.params.id!);
+if (!result) return new Response('Release not found', { status: 404 });
+
+const { release, items } = result;
+const published = release.status === 'published';
+
+/**
+ * Pre-flight is skipped for a published release.
+ *
+ * It would report "already published" as a problem, which is true and useless: the screen already
+ * says so in the badge, and a red panel on a launch that went fine reads as a failure.
+ */
+const preflight = published
+  ? { ok: true, problems: [] }
+  : await releasePreflight(taproot.db.db, release.id);
+
+const problemsByItem = new Map<string, string[]>();
+const releaseProblems: string[] = [];
+for (const problem of preflight.problems) {
+  if (problem.contentItemId) {
+    problemsByItem.set(problem.contentItemId, [
+      ...(problemsByItem.get(problem.contentItemId) ?? []),
+      problem.reason,
+    ]);
+  } else {
+    releaseProblems.push(problem.reason);
+  }
+}
+
+const deleteBlockers = canManage ? await releaseDeleteBlockers(taproot.db.db, release.id) : [];
+
+/**
+ * The confirmation token, slugified rather than the raw name.
+ *
+ * `DangerZone` asks for something machine-ish precisely because a display name carries punctuation
+ * and casing that make an exact match a guessing game — "Spring '27 tuition (phase 2)" is a typing
+ * test, not a confirmation. A release has no `api_id` to borrow, so the slug is the nearest thing:
+ * short, unambiguous, and visibly derived from the name shown right above the input.
+ */
+const confirmToken = slugify(release.name) || release.id.slice(0, 8);
+
+const params = Astro.url.searchParams;
+const error = params.get('error');
+const publishedCount = params.get('published');
+const partial = params.get('partial');
+const scheduled = params.get('scheduled');
+
+const flash = error
+  ? error
+  : publishedCount
+    ? `Published ${publishedCount} ${publishedCount === '1' ? 'item' : 'items'}. The release is now a record of what went live.`
+    : partial
+      ? `${partial} published, ${params.get('failed')} failed. The ones that failed are marked below; publishing again retries only those.`
+      : params.get('blocked')
+        ? 'Nothing was published. The problems below have to be cleared first.'
+        : scheduled
+          ? 'Scheduled. Taproot publishes it at that moment, as long as the scheduler is running.'
+          : params.get('saved')
+            ? 'Release details saved.'
+            : params.get('reopened')
+              ? 'Reopened. It will not publish on a timer until you schedule it again.'
+              : params.get('staged')
+                ? 'Added to the release.'
+                : params.get('unstaged')
+                  ? 'Removed from the release.'
+                  : params.get('restaged')
+                    ? 'Refreshed from the live page. Edits made inside the release were discarded.'
+                    : null;
+
+const pending = items.filter((entry) => !entry.published_at);
+---
+
+<AdminLayout
+  title={release.name}
+  user={user}
+  breadcrumbs={[{ label: 'Releases', href: '/admin/releases' }, { label: release.name }]}
+  flash={flash}
+>
+  <header class="mb-6">
+    <div class="flex flex-wrap items-center gap-2">
+      <ReleaseBadge status={release.status} />
+      <h1 class="text-2xl font-semibold tracking-tight">{release.name}</h1>
+    </div>
+    {release.description && (
+      <p class="mt-1 max-w-prose text-sm text-content-muted">{release.description}</p>
+    )}
+    <p class="mt-1 text-sm text-content-muted">
+      {items.length} {items.length === 1 ? 'item' : 'items'}
+      {release.status === 'scheduled' && release.publish_at && (
+        <>
+          {' · goes live '}
+          <Timestamp value={release.publish_at} />
+        </>
+      )}
+      {published && release.published_at && (
+        <>
+          {' · published '}
+          <Timestamp value={release.published_at} />
+        </>
+      )}
+    </p>
+  </header>
+
+  {
+    /*
+      Problems with the release as a whole, above the list rather than in it. "It has no content in
+      it" belongs to the release; "this page no longer validates" belongs to a row.
+    */
+    releaseProblems.length > 0 && (
+      <section
+        aria-labelledby="release-problems"
+        class="mb-6 rounded-lg border border-danger bg-danger-subtle px-4 py-3"
+      >
+        <h2 id="release-problems" class="text-sm font-semibold">
+          Not ready to publish
+        </h2>
+        <ul class="mt-1.5 list-disc space-y-1 pl-5 text-sm">
+          {releaseProblems.map((reason) => <li>{reason}</li>)}
+        </ul>
+      </section>
+    )
+  }
+
+  {
+    release.status === 'blocked' && (
+      <section
+        aria-labelledby="blocked-note"
+        class="mb-6 rounded-lg border border-danger bg-danger-subtle px-4 py-3"
+      >
+        <h2 id="blocked-note" class="text-sm font-semibold">
+          A scheduled publish was refused
+        </h2>
+        <p class="mt-1 max-w-prose text-sm">
+          Taproot reached this release at its scheduled moment and stopped rather than publishing
+          part of it. Nothing is on a timer now — fix whatever is listed here, then publish it or
+          schedule it again. The audit log records when it was refused and why.
+        </p>
+      </section>
+    )
+  }
+
+  {/* Items ------------------------------------------------------------- */}
+  <section aria-labelledby="items-heading">
+    <h2 id="items-heading" class="text-base font-semibold">
+      Content in this release
+    </h2>
+
+    {
+      items.length === 0 ? (
+        <p class="mt-3 rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+          Nothing in it yet. Open any content item and use “Add this item to a release”.
+        </p>
+      ) : (
+        <ul class="mt-3 space-y-2">
+          {items.map((entry) => {
+            const problems = problemsByItem.get(entry.content_item_id) ?? [];
+            return (
+              <li
+                class:list={[
+                  'rounded-lg border px-4 py-3',
+                  problems.length > 0
+                    ? 'border-danger bg-danger-subtle'
+                    : 'border-border bg-surface-raised',
+                ]}
+              >
+                <div class="flex flex-wrap items-center gap-2">
+                  {entry.live ? (
+                    <a
+                      href={`/admin/content/${entry.content_item_id}?release=${release.id}`}
+                      class="font-medium underline-offset-2 hover:underline"
+                    >
+                      {entry.title}
+                    </a>
+                  ) : (
+                    <span class="font-medium">{entry.title}</span>
+                  )}
+
+                  {/* The *live* item's status, which is what the release will move it out of. */}
+                  {entry.live && <StatusBadge status={entry.live.status} />}
+
+                  {entry.published_at && (
+                    <span class="text-xs text-content-subtle">
+                      published <Timestamp value={entry.published_at} />
+                    </span>
+                  )}
+                </div>
+
+                <p class="mt-0.5 text-xs text-content-subtle">
+                  {entry.live ? (
+                    <>
+                      <code class="font-mono">{entry.live.path}</code> · {entry.live.contentTypeName}
+                    </>
+                  ) : (
+                    'The content item this was staged from has been deleted.'
+                  )}
+                  {entry.stagedByName && <> · staged by {entry.stagedByName}</>}
+                </p>
+
+                {problems.length > 0 && (
+                  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">
+                    {problems.map((reason) => <li>{reason}</li>)}
+                  </ul>
+                )}
+
+                {/*
+                  An item can sit in more than one unpublished release at once, which the scope doc
+                  asks for and which is a real hazard: publishing one makes the other's copy stale,
+                  and the staler one wins on whichever release nobody reopened. Named on both
+                  screens rather than forbidden, because staging the same page in two launches is
+                  something editors legitimately do.
+                */}
+                {entry.otherReleases.length > 0 && (
+                  <p class="mt-1.5 text-xs">
+                    Also staged in{' '}
+                    {entry.otherReleases.map((other, index) => (
+                      <>
+                        {index > 0 && ', '}
+                        <a href={`/admin/releases/${other.id}`} class="underline">
+                          {other.name}
+                        </a>
+                      </>
+                    ))}
+                    . Whichever publishes last is what visitors end up with.
+                  </p>
+                )}
+
+                {!published && !entry.published_at && (
+                  <form method="post" action={`/api/taproot/releases/${release.id}/items`} class="mt-2 flex flex-wrap gap-2">
+                    <input type="hidden" name="contentItemId" value={entry.content_item_id} />
+                    <button
+                      type="submit"
+                      name="_method"
+                      value="restage"
+                      class="rounded-md border border-border-strong px-3 py-1 text-xs font-medium transition-colors hover:bg-surface-sunken"
+                    >
+                      Refresh from live page
+                    </button>
+                    <button
+                      type="submit"
+                      name="_method"
+                      value="unstage"
+                      class="rounded-md px-3 py-1 text-xs font-medium text-danger transition-colors hover:bg-surface-sunken"
+                    >
+                      Remove from release
+                    </button>
+                  </form>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )
+    }
+  </section>
+
+  {/* Publishing --------------------------------------------------------- */}
+  {
+    canManage && !published && (
+      <section aria-labelledby="publish-heading" class="mt-10 border-t border-border pt-8">
+        <h2 id="publish-heading" class="text-base font-semibold">
+          Publish this release
+        </h2>
+        <p class="mt-1 max-w-prose text-sm text-content-muted">
+          Publishing applies every staged version to its page at once and moves each to Published.
+          Taproot checks all of them first — if any would fail, nothing is written.
+        </p>
+
+        <div class="mt-4 flex flex-wrap items-start gap-6">
+          <form method="post" action={`/api/taproot/releases/${release.id}/publish`}>
+            <button
+              type="submit"
+              disabled={!preflight.ok}
+              aria-describedby={preflight.ok ? undefined : 'publish-blocked'}
+              class="rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover disabled:opacity-50"
+            >
+              Publish {pending.length} {pending.length === 1 ? 'item' : 'items'} now
+            </button>
+            {!preflight.ok && (
+              <p id="publish-blocked" class="mt-1.5 max-w-xs text-xs text-content-subtle">
+                {/*
+                  Disabled *and* refused on the server. The pre-flight in `publishRelease` is the
+                  boundary; this only stops somebody pressing a button that would bounce.
+                */}
+                Clear the problems listed above first.
+              </p>
+            )}
+          </form>
+
+          <form
+            method="post"
+            action={`/api/taproot/releases/${release.id}`}
+            class="flex flex-wrap items-end gap-3"
+          >
+            <input type="hidden" name="_method" value="schedule" />
+            <div>
+              <label for="publishAt" class="block text-sm font-medium">
+                Or go live at
+              </label>
+              <input
+                id="publishAt"
+                name="publishAt"
+                type="datetime-local"
+                required
+                value={toLocalInputValue(release.publish_at)}
+                aria-describedby="publishAt-hint"
+                class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+              />
+              <p id="publishAt-hint" class="mt-1.5 max-w-xs text-xs text-content-subtle">
+                Your local time. Unlike a single scheduled page, a release needs the scheduler to be
+                running — its content has to be applied, which no page view can do.
+              </p>
+            </div>
+            <button
+              type="submit"
+              class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+            >
+              Schedule
+            </button>
+          </form>
+
+          {release.status !== 'open' && (
+            <form method="post" action={`/api/taproot/releases/${release.id}`}>
+              <input type="hidden" name="_method" value="reopen" />
+              <button
+                type="submit"
+                class="rounded-md px-4 py-2 text-sm font-medium text-content-muted transition-colors hover:bg-surface-sunken"
+              >
+                {release.status === 'scheduled' ? 'Cancel the schedule' : 'Reopen'}
+              </button>
+            </form>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  {/* Details ------------------------------------------------------------ */}
+  {
+    canManage && !published && (
+      <section aria-labelledby="details-heading" class="mt-10 border-t border-border pt-8">
+        <h2 id="details-heading" class="text-base font-semibold">
+          Release details
+        </h2>
+        <form
+          method="post"
+          action={`/api/taproot/releases/${release.id}`}
+          class="mt-3 flex max-w-2xl flex-wrap items-end gap-3"
+        >
+          <input type="hidden" name="_method" value="update" />
+          <div class="min-w-56 flex-1">
+            <label for="name" class="block text-sm font-medium">Name</label>
+            <input
+              id="name"
+              name="name"
+              required
+              maxlength="200"
+              value={release.name}
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+          <div class="min-w-56 flex-1">
+            <label for="description" class="block text-sm font-medium">Description</label>
+            <input
+              id="description"
+              name="description"
+              maxlength="2000"
+              value={release.description ?? ''}
+              class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+          >
+            Save
+          </button>
+        </form>
+      </section>
+    )
+  }
+
+  {
+    canManage && (
+      <DangerZone
+        noun="release"
+        confirmToken={confirmToken}
+        action={`/api/taproot/releases/${release.id}`}
+        blockers={deleteBlockers}
+        blockedIntro="This release cannot be deleted:"
+        allowedIntro="Deleting a release discards the staged versions inside it. The live pages are not affected."
+      />
+    )
+  }
+</AdminLayout>

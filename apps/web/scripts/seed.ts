@@ -4,6 +4,7 @@ import {
   createItem,
   createMenu,
   createMenuItem,
+  createRelease,
   createReusableBlock,
   createTaxonomy,
   createTerm,
@@ -13,7 +14,10 @@ import {
   findUserByEmail,
   getContentTypeByApiId,
   getTaxonomyByApiId,
+  listReleases,
   listTerms,
+  stageItem,
+  updateStagedItem,
   buildStorageKey,
   migrateToLatest,
   newId,
@@ -1218,6 +1222,70 @@ if (existingMenu && (await listMenuItems(handle.db, existingMenu.id)).length > 0
   }
 
   console.log(`  menu main (created with ${(await listMenuItems(handle.db, menu.id)).length} items)`);
+}
+
+// --- A release in progress ------------------------------------------------
+//
+// Seeded so the feature is visible rather than described. It stages two *published* pages and
+// rewrites their content, which is the case releases exist for and the one nothing else in the CMS
+// can do: editing a live page changes what visitors see immediately, so a coordinated change to
+// several of them had no home before this.
+//
+// Left `open` rather than `scheduled` on purpose. A seeded scheduled release would publish itself
+// the first time anybody ran the sweep, which turns "here is the feature" into "why did the demo
+// site change on its own".
+
+const { releases: existingReleases } = await listReleases(handle.db);
+if (existingReleases.length > 0) {
+  console.log(`  release ${existingReleases[0]!.name} (existing)`);
+} else {
+  const release = await createRelease(handle.db, {
+    name: 'Tuition update 2027',
+    description:
+      'Next year’s figures, across every page that quotes one. All of it goes live together.',
+    userId: admin.id,
+  });
+
+  const stageByPath = async (path: string, rewrite: (body: string) => string) => {
+    const target = await handle.db
+      .selectFrom('content_items')
+      .select(['id', 'data'])
+      .where('path', '=', path)
+      .executeTakeFirst();
+    if (!target) return false;
+
+    await stageItem(handle.db, release.id, target.id, { actor: admin });
+
+    const data = JSON.parse(target.data) as Record<string, unknown>;
+    const body = typeof data.body === 'string' ? data.body : '';
+    await updateStagedItem(handle.db, release.id, target.id, {
+      data: { ...data, body: rewrite(body) },
+    });
+    return true;
+  };
+
+  let staged = 0;
+  if (
+    await stageByPath(
+      '/financial-aid',
+      (body) =>
+        `<p>Tuition for the 2027–28 academic year is $38,400, with the average aid package ` +
+        `covering 62% of it.</p>${body}`,
+    )
+  ) {
+    staged += 1;
+  }
+
+  if (
+    await stageByPath(
+      '/admissions/apply',
+      (body) => `<p>Applications for the 2027–28 year open on 1 September.</p>${body}`,
+    )
+  ) {
+    staged += 1;
+  }
+
+  console.log(`  release ${release.name} (created, ${staged} items staged)`);
 }
 
 const counts = await handle.db

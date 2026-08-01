@@ -1,5 +1,6 @@
 import {
   publishDueItems,
+  publishDueReleases,
   purgeExpiredAttempts,
   purgeExpiredSessions,
   purgeStaleResetTokens,
@@ -41,6 +42,9 @@ interface ScheduledControllerLike {
 
 export interface ScheduledRunResult {
   published: { id: string; title: string; path: string }[];
+  /** Releases that went live on this run, and the ones the sweep reached and refused. */
+  publishedReleases: { id: string; name: string; itemCount: number }[];
+  blockedReleases: { id: string; name: string }[];
   /** Expired or spent rows removed. Housekeeping, reported so a run is never silently a no-op. */
   purgedSessions: number;
   purgedResetTokens: number;
@@ -61,6 +65,17 @@ export async function runScheduledTasks(): Promise<ScheduledRunResult> {
   const { published } = await publishDueItems(db);
 
   /**
+   * Releases sweep after individual items, and the order is not arbitrary.
+   *
+   * A release publishes through `updateItem`, which clears `publish_at` — so a page that was both
+   * scheduled on its own and staged in a release would have its own scheduled moment silently
+   * discarded if the release went first. Items first means each scheduled page keeps the launch it
+   * was given, and the release then applies its staged version on top, which is the order the two
+   * decisions were made in.
+   */
+  const releases = await publishDueReleases(context.db);
+
+  /**
    * Expired sessions, spent reset tokens, and aged-out login attempts ride along here.
    *
    * All three were written to be safe to call on a schedule and none had a caller, so the rows
@@ -73,7 +88,14 @@ export async function runScheduledTasks(): Promise<ScheduledRunResult> {
   const purgedResetTokens = await purgeStaleResetTokens(db);
   const purgedLoginAttempts = await purgeExpiredAttempts(db);
 
-  return { published, purgedSessions, purgedResetTokens, purgedLoginAttempts };
+  return {
+    published,
+    publishedReleases: releases.published,
+    blockedReleases: releases.blocked.map(({ id, name }) => ({ id, name })),
+    purgedSessions,
+    purgedResetTokens,
+    purgedLoginAttempts,
+  };
 }
 
 /**

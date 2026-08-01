@@ -152,12 +152,21 @@ turned off something that is now on by default. Remove it.
 
 ## 4b. Scheduled publishing
 
-Scheduling works with no configuration: a page goes live for visitors at its scheduled moment
+Scheduling a **page** works with no configuration: it goes live for visitors at its scheduled moment
 whether or not anything is running, because visibility is computed when the page is requested.
 
 What a scheduler adds is the *record* catching up — the status turning from Scheduled to Published,
 and `published_at` being stamped. Without one, the admin keeps saying "scheduled" about a page the
 public can already see, and offers a button to reconcile it by hand.
+
+> **A scheduled Content Release is the exception, and it is not a cosmetic one.** A release's
+> content lives in `release_items` and has to be *applied* when its moment arrives — paths
+> recalculated, redirects written, revisions appended — which no page request can do. With nothing
+> running the sweep, a scheduled release simply does not publish.
+>
+> If anyone on the site intends to schedule a release, confirm the sweep is running before they rely
+> on it. **Settings → System** reports releases waiting, releases past their time, and releases the
+> sweep reached and refused.
 
 **On Cloudflare this is already wired and needs no configuration.** `wrangler.jsonc` carries a cron
 trigger, and `apps/web/src/worker.ts` is the Worker entry that handles it:
@@ -197,11 +206,18 @@ POST https://your-domain/api/taproot/scheduler/run
 Authorization: Bearer <TAPROOT_CRON_SECRET>
 ```
 
-It is idempotent — running it twice publishes nothing the second time — so a scheduler that retries
-on timeout cannot double-publish. Every fifteen minutes is plenty; the endpoint is cheap when there
-is nothing due. An admin can also run it by hand from the content list, and **Settings → System**
-reports how many items are waiting, how many are overdue, and when the sweep last published
-anything.
+It is idempotent — running it twice publishes nothing the second time, because each item and each
+release is claimed conditionally — so a scheduler that retries on timeout cannot double-publish.
+Every fifteen minutes is plenty for items; if you schedule releases, match the interval to how
+precise "goes live at 9am" needs to be, since a release publishes only when the sweep reaches it.
+
+An admin can also run it by hand from the content list, and **Settings → System** reports how many
+items are waiting, how many are overdue, how many releases are waiting, overdue, or blocked, and
+when the sweep last published anything.
+
+A release that fails its pre-flight check during an unattended sweep is marked **Blocked** and is
+not retried — retrying broken content every few minutes with nobody watching would fill the audit
+log and fix nothing. The blocked count on Settings → System is the signal that somebody is needed.
 
 ---
 

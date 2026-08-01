@@ -11,12 +11,23 @@ import {
   reusableBlockOptionsForFields,
 } from '../../blockTypeOptions.js';
 import { findImage, mediaOptions } from '../../mediaOptions.js';
-import { getContentType, getItem, itemDeleteImpact, listItems } from '@taproot/core';
+import ReleaseBadge from '../../components/ReleaseBadge.astro';
+import {
+  getContentType,
+  getItem,
+  getRelease,
+  getStagedItem,
+  itemDeleteImpact,
+  listItems,
+  openReleasesForItem,
+  releasesAvailableFor,
+} from '@taproot/core';
 import {
   getTaproot,
   loginRedirect,
   canEditContent,
   canPublishContent,
+  canStageToRelease,
 } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -40,12 +51,50 @@ if (contentType.kind === 'page') {
     .map((candidate) => ({ id: candidate.id, title: candidate.title, path: candidate.path }));
 }
 
+/**
+ * Release mode: `?release=` swaps which version of this item the editor is editing.
+ *
+ * One screen rather than a second editor under `/admin/releases/…/items/…`. The fields, the media
+ * picker, the block editor, and the SEO panel are identical either way — a parallel screen would be
+ * a copy of all of it, differing in one endpoint and drifting from the day it was written. What
+ * changes is the source of `initial` and where a save goes, both of which are props.
+ */
+const requestedReleaseId = Astro.url.searchParams.get('release');
+const release = requestedReleaseId
+  ? await getRelease(taproot.db.db, requestedReleaseId)
+  : undefined;
+
+const staged =
+  release && release.status !== 'published'
+    ? await getStagedItem(taproot.db.db, release.id, item.id)
+    : undefined;
+
+/**
+ * A `?release=` naming something this item is not in falls back to editing the live page.
+ *
+ * The alternative — 404 — would be right if the URL were wrong, but the common way to reach this
+ * state is having the item removed from the release in another tab, where the useful outcome is the
+ * editor they were going to need anyway.
+ */
+const releaseMode = release && staged ? { id: release.id, name: release.name } : null;
+
+// Which unpublished releases already hold this item, and which open ones could. Both are read for
+// every editor because both are shown: the first as a banner, the second as the "Add to" control.
+const [inReleases, addableReleases] = canStageToRelease(user)
+  ? await Promise.all([
+      openReleasesForItem(taproot.db.db, item.id),
+      releasesAvailableFor(taproot.db.db, item.id),
+    ])
+  : [[], []];
+
 const termsByTaxonomy = await termOptionsForFields(taproot.db.db, contentType.fields);
 
 const relationTargets = await relationTargetsForFields(
   taproot.db.db,
   contentType.fields,
-  item.data,
+  // The staged version's own data, in release mode, so a relation stored only in the staged copy
+  // still resolves to a title rather than a raw uuid.
+  staged ? staged.data : item.data,
 );
 
 const blockTypes = await blockTypeOptionsForFields(taproot.db.db, contentType.fields);
@@ -72,15 +121,21 @@ const restored = Astro.url.searchParams.get('restored');
 
 const error = Astro.url.searchParams.get('error');
 
+const stagedFlash = Astro.url.searchParams.get('staged');
+
 const flash = error
   ? error
   : saved
   ? 'Content item created.'
-  : updated
-    ? 'Changes saved.'
-    : restored
-      ? `Restored revision ${restored}. The restore was recorded as a new revision.`
-      : null;
+  : stagedFlash
+    ? `Added to ${stagedFlash}. Edit the staged version from there, or from the banner above.`
+    : updated
+      ? releaseMode
+        ? 'Saved to the release. The live page is unchanged.'
+        : 'Changes saved.'
+      : restored
+        ? `Restored revision ${restored}. The restore was recorded as a new revision.`
+        : null;
 ---
 
 <AdminLayout
@@ -126,20 +181,118 @@ const flash = error
     }
   </header>
 
+  {
+    /*
+      The releases this item is waiting in, shown to everyone who can stage.
+
+      An editor who opens a live page and starts typing has no other way to learn that the same page
+      has a rewritten version queued for next Tuesday — and the two would silently fight, because a
+      release overwrites whatever the live page says when it publishes.
+    */
+    inReleases.length > 0 && (
+      <section
+        aria-labelledby="release-banner"
+        class="mb-6 rounded-lg border border-status-scheduled bg-status-scheduled-subtle px-4 py-3"
+      >
+        <h2 id="release-banner" class="text-sm font-semibold">
+          {releaseMode ? 'Editing a staged version' : 'This item is staged in a release'}
+        </h2>
+        <ul class="mt-2 space-y-1.5 text-sm">
+          {inReleases.map((entry) => (
+            <li class="flex flex-wrap items-center gap-2">
+              <ReleaseBadge status={entry.status} />
+              <a href={`/admin/releases/${entry.id}`} class="font-medium underline-offset-2 hover:underline">
+                {entry.name}
+              </a>
+              {releaseMode?.id === entry.id ? (
+                <span class="text-content-muted">— the version you are editing</span>
+              ) : (
+                <a
+                  href={`/admin/content/${item.id}?release=${entry.id}`}
+                  class="text-content-muted underline-offset-2 hover:underline"
+                >
+                  Edit its staged version
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+        {!releaseMode && (
+          <p class="mt-2 text-xs text-content-muted">
+            Changes you make here go live immediately if this page is published. The staged version
+            replaces them when its release publishes.
+          </p>
+        )}
+      </section>
+    )
+  }
+
+  {
+    /*
+      Adding to a release is a plain form, not a dialog.
+
+      It is a one-field decision made rarely, and the admin is server-rendered so that every screen
+      works without JavaScript. Only `open` releases are offered — `releasesAvailableFor` filters
+      both by status and by what this item is already in, so the control cannot offer something the
+      API would then refuse.
+    */
+    !releaseMode && addableReleases.length > 0 && (
+      <section
+        aria-labelledby="add-to-release"
+        class="mb-6 rounded-lg border border-border bg-surface-raised px-4 py-3"
+      >
+        <h2 id="add-to-release" class="text-sm font-medium">
+          Add this item to a release
+        </h2>
+        <p class="mt-0.5 max-w-prose text-xs text-content-subtle">
+          Takes a copy of the content as it is now. You then edit that copy without the live page
+          changing.
+        </p>
+
+        {/*
+          A submit button per release, using `formaction`, rather than a `<select>` that a script
+          retargets the form with. The release id belongs in the path, and the only way to put a
+          chosen value there without JavaScript is to let the chosen control carry the URL — which
+          is exactly what `formaction` is for. The admin is server-rendered so that every screen
+          keeps working with scripting off, and a select whose `onchange` rewrote the action would
+          have silently posted every item to whichever release sorted first.
+
+          The cost is a row per open release. That is bounded by how many launches a site is
+          assembling at once, which is small, and each button reads as the act it performs.
+        */}
+        <form method="post" class="mt-2 flex flex-wrap gap-2">
+          <input type="hidden" name="_method" value="stage" />
+          <input type="hidden" name="contentItemId" value={item.id} />
+
+          {addableReleases.map((entry) => (
+            <button
+              type="submit"
+              formaction={`/api/taproot/releases/${entry.id}/items`}
+              class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+            >
+              Add to {entry.name}
+            </button>
+          ))}
+        </form>
+      </section>
+    )
+  }
+
   <ItemEditor
     client:load
     itemId={item.id}
     contentTypeId={contentType.id}
     contentTypeName={contentType.name}
     fields={contentType.fields}
+    release={releaseMode}
     initial={{
-      title: item.title,
-      slug: item.slug,
+      title: staged?.title ?? item.title,
+      slug: staged?.slug ?? item.slug,
       status: item.status,
       publishAt: item.publish_at,
       parentId: item.parent_id,
-      data: item.data,
-      seo: item.seo,
+      data: staged?.data ?? item.data,
+      seo: staged?.seo ?? item.seo,
     }}
     parents={parents}
     termsByTaxonomy={termsByTaxonomy}

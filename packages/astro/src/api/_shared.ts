@@ -4,6 +4,7 @@ import {
   ContentItemError,
   ContentTypeError,
   MenuError,
+  ReleaseError,
   ReusableBlockError,
   RevisionError,
   TaxonomyError,
@@ -159,6 +160,24 @@ export function mapError(error: unknown): Response {
         return apiError(409, error.message);
       case 'validation_failed':
         return apiError(422, error.message, error.fieldErrors);
+      default:
+        return apiError(400, error.message);
+    }
+  }
+
+  if (error instanceof ReleaseError) {
+    switch (error.code) {
+      case 'not_found':
+      case 'item_not_found':
+        return apiError(404, error.message);
+      case 'validation_failed':
+        return apiError(422, error.message, error.fieldErrors);
+      // The request was well-formed and the refusal is about state, not about the request — the
+      // same reasoning that makes a blocked delete a 409 rather than a 400.
+      case 'not_open':
+      case 'already_published':
+      case 'in_use':
+        return apiError(409, error.message);
       default:
         return apiError(400, error.message);
     }

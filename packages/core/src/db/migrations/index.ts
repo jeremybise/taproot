@@ -14,6 +14,7 @@ import * as m0008 from './0008_password_auth.js';
 import * as m0009 from './0009_two_factor.js';
 import * as m0010 from './0010_audit_log.js';
 import * as m0011 from './0011_scheduling.js';
+import * as m0012 from './0012_releases.js';
 
 /**
  * The migration registry.
@@ -38,6 +39,7 @@ export const migrations: Record<string, Migration> = {
   '0009_two_factor': m0009,
   '0010_audit_log': m0010,
   '0011_scheduling': m0011,
+  '0012_releases': m0012,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

@@ -129,6 +129,34 @@ export function statusChangeNeedsPublish(
   return role === 'editor';
 }
 
+/**
+ * Putting content into a release, and editing the version waiting there.
+ *
+ * Contributor, and the reason is that staging is not publishing. A staged version reaches nobody:
+ * it sits in `release_items` until an editor publishes the release, which is the same shape as a
+ * contributor moving an item to `in_review` and an editor approving it. Requiring the editor role
+ * to stage would mean the people who write the content could not assemble the launch it is for.
+ *
+ * This is the permission question SCOPE.md left open, and the flat role model makes it a smaller
+ * one than it was drafted as: with no departments to scope against, "can a Contributor add their
+ * department's item to someone else's Release" is just "can a Contributor stage".
+ */
+export function canStageToRelease(user: User | undefined): boolean {
+  return hasRole(user, 'contributor');
+}
+
+/**
+ * Creating, scheduling, publishing, and deleting a release.
+ *
+ * Editor, and this one is not a new rule so much as the existing one arriving by a different route:
+ * publishing a release performs a transition into `published` for every item in it, and the workflow
+ * graph already prices that at editor. A release must not become a way to make a change that
+ * `canChangeStatus` would refuse one item at a time.
+ */
+export function canManageRelease(user: User | undefined): boolean {
+  return hasRole(user, 'editor');
+}
+
 export function canManageUsers(user: User | undefined): boolean {
   return hasRole(user, 'admin');
 }

@@ -93,6 +93,8 @@ It's more complex than a single item's scheduled publish, worth naming clearly:
 
 Given the dependency on revisions + workflow + scheduling all being stable first, and that it's a genuinely large feature, it gets its own phase below rather than being folded into Phase 3.
 
+**Built, in Phase 3.5.** Every bullet above survived contact; see the phase entry for what each turned into. The one framing worth correcting here: this section describes a release as a coordination layer over revisions and workflow, which undersold it. Until releases existed there was **nowhere for a pending version of a live page to wait at all** — `content_items` holds one row per item, so editing a published page changed what visitors saw at the moment of the save. That, rather than the batching, is what the feature adds; batching is what makes it worth a screen.
+
 ## URL structure & path resolution
 
 Explicitly solving what Wolly (and most flat-page CMSes) don't: content should be able to nest under URLs like `/admissions/how-to-apply`, not land as siblings of everything else.
@@ -148,8 +150,19 @@ The draft/review/schedule/publish workflow with role gates, a scheduler that act
 
 **User management already shipped**, ahead of this phase and out of order: making email/password the primary sign-in method meant a deployment had no way to add a second person, which is not a state to leave a CMS in. Creating users, assigning roles, deactivating, and set-password links are all built. Materially smaller than this phase used to be: it was scoped around departments as an ownership entity and a role model narrowed to them, and both were dropped once departments turned out to be classification — which Phase 1's taxonomies already deliver. The flat role model is already built and enforced; what is missing is the screen to administer it. Read the constraints at the end of the Roles & permissions section before starting; they are what keep Phase 3.75 from turning into a rewrite of this one.
 
-**Phase 3.5 — Content Releases**
-Batched staging and coordinated publish (manual or scheduled) across multiple content items. Build only once Phase 3's revisions and workflow states are stable — see the Content Releases section above for why.
+**Phase 3.5 — Content Releases** *(complete)*
+Batched staging and coordinated publish, manual or scheduled, across multiple content items. Two tables — `releases` and `release_items` — plus a screen each, a sweep, and the role split below.
+
+The open questions this section listed are now answered, and each answer was smaller than the question:
+
+- **Versions-per-release**, as predicted. `release_items` carries its own `title`, `slug`, `data`, and `seo` rather than pointing at a revision. A revision records what the live item *has been*; staging by reference would mean every edit to a not-yet-live version wrote a line into the history of a page that never showed it. It also makes the staged copy editable, which is the feature.
+- **Partial-failure handling is pre-flight, not atomicity.** "What happens if item 4 of 12 fails validation at publish time" cannot be answered with a transaction: D1 has none spanning N item updates, and each item's publish is already its own batch of path rewrites, redirects, and a revision. So the check moved earlier — every staged version is validated before anything is written, which turns the common failure into "nothing happened, here is what to fix". `release_items.published_at` makes the residue of a genuinely unexpected failure resumable rather than a puzzle. A release publishes through `updateItem`, never around it, so a staged slug change cascades and writes its redirects exactly as a rename does.
+- **The permissions question — can a Contributor add to a Release someone else created — is yes.** Staging is not publishing: a staged version reaches nobody until an editor publishes the release, which is the same shape as submitting for review. Gating it at editor would mean the people who write the content could not assemble the launch it is for. Publishing stays at editor, and that is not a new rule so much as the existing one arriving by another route — every transition into `published` already needs it, and a release must not be a way to make a change `canChangeStatus` would refuse one item at a time.
+- **Singletons stage like anything else**, as this doc asked. Nothing special-cases them.
+
+Two things worth carrying forward. An item may sit in several unpublished releases at once — the doc asked for it and it is a real hazard, since whichever publishes last wins, so both screens name the conflict rather than the schema forbidding it. And **a scheduled release genuinely needs the sweep**, unlike a scheduled item: an item's visibility is computed on read, while a release's content has to be *applied*, which no page view can do. That asymmetry is on the system screen, in the handbook, and in `publishDueReleases`' own comment, because it is the one place "scheduling works with no cron wired up" stops being true.
+
+`blocked` is the one status that needs justifying: a scheduled release whose pre-flight fails at 3am has nobody to tell, and leaving it `scheduled` would sweep the same broken content every minute forever. A release refused while somebody is *looking* at the screen just shows them the reasons and stays put.
 
 **Phase 3.75 — Standalone server & delivery API**
 Split the one package into a deployable CMS and a thin Astro client, correcting the Phase 0 misreading recorded under Core architecture decisions. The shape is settled:
