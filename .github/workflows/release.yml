@@ -1,0 +1,76 @@
+name: Release
+
+# Publishing runs on a tag, never on a push to main. A release is a decision, and `git tag` is
+# where somebody makes it — a workflow that publishes whatever lands on main turns every merge
+# into a release and makes the version number the only brake.
+on:
+  push:
+    tags:
+      - 'v*'
+
+# No NPM_TOKEN anywhere. `id-token: write` lets the job mint a short-lived OIDC credential that npm
+# verifies against the trusted-publisher configuration on each package — tied to this repository,
+# this workflow filename, and this environment. Nothing long-lived exists to leak, and the npm CLI
+# attaches provenance automatically, so `--provenance` is not passed.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          # Node 24: the CLI scripts run TypeScript through --experimental-strip-types, and the
+          # core suite talks to a real database through node:sqlite.
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm 11.5.1 or newer. The runner's bundled npm is usually fine,
+      # but pinning the floor here turns "the runner image moved" into a clear failure rather than
+      # a fallback to token auth that then finds no token.
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
+      - run: npm ci
+
+      # The same three gates the repo already treats as the definition of done, minus `npm run
+      # a11y`, which needs a running dev server and belongs to a phase rather than a release.
+      - run: npm run typecheck
+      - run: npm test
+
+      # A tag that disagrees with package.json means the tag was written by hand against the wrong
+      # commit. Publishing anyway puts a version on the registry that no tag describes, and the
+      # registry is the copy nobody can correct afterwards.
+      - name: Check the tag matches the packages
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for pkg in core studio astro create-taproot; do
+            version=$(node -p "require('./packages/$pkg/package.json').version")
+            if [ "$version" != "$tag" ]; then
+              echo "::error::packages/$pkg is $version but the tag is $tag"
+              exit 1
+            fi
+          done
+          echo "All four packages are $tag."
+
+      # Order is load-bearing: studio and astro depend on core at the version being published, so
+      # publishing either first leaves a window where `npm install` cannot resolve them. The four
+      # share one version and release together — a mismatched pair is a broken install rather than
+      # a supported combination.
+      - name: Publish @taprootcms/core
+        run: npm publish --workspace=./packages/core
+
+      - name: Publish @taprootcms/studio
+        run: npm publish --workspace=./packages/studio
+
+      - name: Publish @taprootcms/astro
+        run: npm publish --workspace=./packages/astro
+
+      - name: Publish create-taproot
+        run: npm publish --workspace=./packages/create-taproot
