@@ -204,7 +204,16 @@ the question SCOPE flagged to decide rather than discover; it is decided.
 may declare but not implement, so a generated helper function in one is a syntax error rather than a
 convenience. A repeater's sub-fields are read in the stored `FieldRow` shape (`api_id`), never the
 delivery shape: reading them as `DeliveryField` silently emitted properties literally named
-`undefined`, which type-checks and is nonsense.
+`undefined`, which type-checks and is nonsense. **A repeater row is emitted as its envelope,
+`{ id, data: { …sub-fields } }`, not as the sub-fields flat** — that is what `buildValueSchema`
+validates and what `resolveDelivery` sends, and emitting the inside of it let a consumer write
+`row.headline` against a payload carrying only `row.data.headline`: it compiled, rendered nothing,
+and errored nowhere. The rule generalises past this one case — **a generated type must describe the
+payload Taproot actually sends**, which is why `media` and `relation` emit ids rather than resolved
+objects and why `block` keeps its own envelope. Flattening *delivery* to match was the other way to
+close the gap and is the wrong one: `data` has to keep the stored shape so the payload stays usable
+for a write. Note the older test asserted only that the sub-field names appeared, which they do
+either way — that is why this survived.
 
 **A preview token's draft snapshot is a rendering input, not a version.** Phase 4.5's split view
 needs the editor's *unsaved* state to reach a consumer that renders server-side, so `preview_tokens`
@@ -953,12 +962,48 @@ many), *Block*, *Reusable Block*, *Content Type*.
   that resolver is handed the item's stored data so an id outside the first page still renders a
   title rather than a raw uuid. Stored shape follows the config, matching `media`: a bare id when
   single, an ordered array when multiple.
+  - **A content type's field list is only the top level, and `fieldTree.ts` is what reaches the
+    rest.** A relation or taxonomy field inside a block type or a repeater row is just as editable
+    and was invisible to both `relationTargetsForFields` and `termOptionsForFields`, so the control
+    rendered "Items of the target type are listed here in the item editor" — a sentence naming the
+    screen the editor was already looking at. `media` escaped it only because `mediaOptions` loads
+    the library wholesale rather than per field. **The options walk is over the *schema*
+    (`reachableFields`), never over the item's data**: an editor adds a block *after* the page has
+    rendered, and the control inside it has to work when they do — a data-driven walk looks correct
+    on every screen where somebody is revising and is dead on every screen where somebody is
+    composing. `walkStoredValues` is the separate, data-driven half, and is only for resolving ids
+    already stored. Consequence for the pages: the block registries have to be loaded **before**
+    both resolvers, which is a reordering, not a new query.
   - **`itemsReferencing` is the reverse side**, rendered by `ReferencedBy.astro` and grouped by the
     field's `reverseLabel` — a config value the builder had collected since the field type was
     designed and nothing had ever read. It is two queries on purpose: the relation *fields* that
     could point here come from the `fields` table first, and only then is `data` searched. A bare
     `LIKE` for the id across every item would also match it sitting in a body or a media
     reference, and report a relationship that does not exist.
+- **`link` is a field type because a relation cannot be a button.** A relation names a content item
+  and has no way to express an external address, a file, or "open in a new tab" — which between
+  them are most of what a call-to-action is. Four things hold it up:
+  - **The control *is* `LinkDialog`**, the one rich text already uses. An editor who has linked a
+    word in a paragraph has learned this dialog; a second interface for the same act is how
+    somebody ends up trusting neither, the same argument as "there is one preview control, not
+    two". `LinkField` is the translation and nothing else.
+  - **It stores `{ kind, id | href }`, not the `taproot:item:{id}` marker rich text stores.**
+    Storing the marker would have made the control nearly free, since the dialog already speaks it —
+    and it puts a string a consumer has to parse where an id and a lookup belong, so every consumer
+    that forgot would ship `taproot:item:…` to a visitor. Rich text accepts that trade because
+    `set:html` cannot perform a lookup; a structured field has no such excuse. The `item` and
+    `media` kinds are therefore references resolved through the delivery maps, exactly as `relation`
+    and `media` fields are — which is what makes `collectReferences` needing a `link` case
+    load-bearing rather than tidy.
+  - **The `url` kind goes through `safeUrl`, which is the sanitiser's own export.** This is a write
+    path whose value lands in an `href`, so it is exactly as exposed as rich text — a second opinion
+    about `javascript:` is a rule that will disagree with itself once. `taproot:` is excluded there
+    even though `safeUrl` admits it, or an internal target would have two spellings and one of them
+    would be invisible to `collectReferences`.
+  - **No `multiple`, deliberately.** Several links is a row of buttons, which is a repeater of a
+    link field — and that composes, because each row can then carry its own heading. `link` is in
+    `REPEATER_SUB_FIELD_TYPES` for exactly that reason. A `multiple` would be a second spelling with
+    a stored shape that follows the config for no gain.
 - **Every field type has an editing control or is listed in `DEFERRED_FIELD_TYPES`**, and
   `fieldControls.test.tsx` asserts the list matches what `FieldControl` actually renders.
   `fieldConfigForms.test.ts` had always checked that every type has a *config* form; the absence of

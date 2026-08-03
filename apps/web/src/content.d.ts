@@ -42,16 +42,11 @@ export interface GalleryData {
 }
 /** Any block instance, discriminated by `type`. */
 export type TaprootBlock =
-  | ({ id: string; type: "hero"; reusable?: false } & HeroData)
-  | { id: string; type: "hero"; reusable: true; ref: string; data: HeroData }
-  | ({ id: string; type: "call_to_action"; reusable?: false } & CallToActionData)
-  | { id: string; type: "call_to_action"; reusable: true; ref: string; data: CallToActionData }
-  | ({ id: string; type: "prose"; reusable?: false } & ProseData)
-  | { id: string; type: "prose"; reusable: true; ref: string; data: ProseData }
-  | ({ id: string; type: "quote"; reusable?: false } & QuoteData)
-  | { id: string; type: "quote"; reusable: true; ref: string; data: QuoteData }
-  | ({ id: string; type: "gallery"; reusable?: false } & GalleryData)
-  | { id: string; type: "gallery"; reusable: true; ref: string; data: GalleryData }
+  | { id: string; type: "hero"; data: HeroData; ref?: string }
+  | { id: string; type: "call_to_action"; data: CallToActionData; ref?: string }
+  | { id: string; type: "prose"; data: ProseData; ref?: string }
+  | { id: string; type: "quote"; data: QuoteData; ref?: string }
+  | { id: string; type: "gallery"; data: GalleryData; ref?: string }
 /** Page — `page` (page). */
 export interface PageData {
   /** One or two sentences shown in listings and search results. */
@@ -74,12 +69,17 @@ export interface EventData {
   capacity?: number;
   /** Sessions within the event, in the order they run. */
   schedule?: {
-    time: string;
-    what: string;
-    room?: string;
+    id: string;
+    data: {
+      time: string;
+      what: string;
+      room?: string;
+    };
   }[];
   /** The department or programme page this event belongs to. */
   host_page?: ContentItemId;
+  /** Where people sign up — a page here, a file, or an external booking system. */
+  registration_link?: ({ kind: "item"; id: ContentItemId; label?: string; newTab: boolean; noFollow: boolean } | { kind: "media"; id: MediaId; label?: string; newTab: boolean; noFollow: boolean } | { kind: "url"; href: string; label?: string; newTab: boolean; noFollow: boolean });
 }
 /** Weather Banner — `weather_banner` (singleton). */
 export interface WeatherBannerData {

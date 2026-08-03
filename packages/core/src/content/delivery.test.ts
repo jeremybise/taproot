@@ -9,7 +9,7 @@ import { createTaxonomy, createTerm } from './taxonomies.js';
 import { createReusableBlock } from './reusableBlocks.js';
 import { resolveSeo } from './seo.js';
 import { ancestorPaths } from './paths.js';
-import { deliverMenu, deliverySchema, resolveDelivery } from './delivery.js';
+import { collectReferences, deliverMenu, deliverySchema, resolveDelivery } from './delivery.js';
 // Moved out of `delivery.ts` so it is reachable from `@taprootcms/core/pure` — a consumer runs it,
 // and `delivery.ts` imports Kysely.
 import { applyTermHrefs } from './menuHrefs.js';
@@ -438,5 +438,90 @@ describe('the schema endpoint', () => {
     expect(schema.contentTypes.map((t) => t.apiId)).toEqual(['page']);
     expect(schema.blockTypes.map((t) => t.apiId)).toEqual(['hero']);
     expect(schema.contentTypes[0]!.fields.map((f) => f.apiId)).toEqual(['body']);
+  });
+});
+
+/**
+ * References stored inside a repeater row.
+ *
+ * A row is `{ id, data }` and the sub-field values live under `data`, so a walk that reads the row
+ * itself finds nothing — the same envelope mistake `typegen` made. It is invisible from a block,
+ * because a block's values go through `collectLoose`, which walks structurally and picks the id up
+ * anyway; only a repeater at the top level of a content type is affected.
+ */
+describe('references inside a repeater row', () => {
+  it('collects a media id one level down, under `data`', () => {
+    const refs = collectReferences(
+      [
+        {
+          id: 'f-gallery',
+          content_type_id: 't1',
+          api_id: 'gallery',
+          label: 'Gallery',
+          type: 'repeater',
+          help_text: null,
+          position: 0,
+          required: 0,
+          localized: 0,
+          config: JSON.stringify({
+            fields: [{ api_id: 'shot', label: 'Shot', type: 'media', required: false, config: {} }],
+          }),
+        } as unknown as FieldRow,
+      ],
+      { gallery: [{ id: 'row-1', data: { shot: '11111111-1111-1111-1111-111111111111' } }] },
+    );
+
+    expect([...refs.mediaIds]).toContain('11111111-1111-1111-1111-111111111111');
+  });
+});
+
+/**
+ * A link's target has to reach the lookup maps.
+ *
+ * `{ kind: 'item', id }` is a reference exactly as a relation field's id is, and the maps are the
+ * only route from that id to a path — a link field that never reached `collectReferences` would
+ * render as a dead button, with nothing anywhere reporting a problem.
+ */
+describe('references from a link field', () => {
+  const linkField = {
+    id: 'f-cta',
+    content_type_id: 't1',
+    api_id: 'cta',
+    label: 'Call to action',
+    type: 'link',
+    help_text: null,
+    position: 0,
+    required: 0,
+    localized: 0,
+    config: '{}',
+  } as unknown as FieldRow;
+
+  it('collects an item link as an item reference', () => {
+    const refs = collectReferences([linkField], {
+      cta: { kind: 'item', id: '22222222-2222-2222-2222-222222222222', newTab: false, noFollow: false },
+    });
+
+    expect([...refs.itemIds]).toContain('22222222-2222-2222-2222-222222222222');
+    expect([...refs.mediaIds]).toEqual([]);
+  });
+
+  it('collects a file link as a media reference', () => {
+    const refs = collectReferences([linkField], {
+      cta: { kind: 'media', id: '33333333-3333-3333-3333-333333333333', newTab: false, noFollow: false },
+    });
+
+    expect([...refs.mediaIds]).toContain('33333333-3333-3333-3333-333333333333');
+    expect([...refs.itemIds]).toEqual([]);
+  });
+
+  /** An address is not a reference, and must not be offered to any of the maps as a lookup key. */
+  it('collects nothing from an address', () => {
+    const refs = collectReferences([linkField], {
+      cta: { kind: 'url', href: 'https://example.edu', newTab: true, noFollow: false },
+    });
+
+    expect([...refs.itemIds]).toEqual([]);
+    expect([...refs.mediaIds]).toEqual([]);
+    expect([...refs.termIds]).toEqual([]);
   });
 });

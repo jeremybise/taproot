@@ -236,3 +236,78 @@ describe('the default is strict', () => {
     expect(validateItemData(fields, {}, { requireComplete: true }).success).toBe(false);
   });
 });
+
+/**
+ * The `link` field's `url` variant, which is a write path whose value ends up in an `href`.
+ *
+ * It is exactly as exposed as rich text is, and the whole reason `safeUrl` was exported rather than
+ * a second scheme check being written here: a rule that exists twice is a rule that disagrees with
+ * itself once. Every case below is one `sanitizeHtml` already refuses inside prose.
+ */
+describe('a link field is not a hole in the URL allowlist', () => {
+  const linkField = (config: Record<string, unknown> = {}) =>
+    field({ api_id: 'cta', type: 'link', config: JSON.stringify(config) });
+
+  const store = (value: unknown, config?: Record<string, unknown>) =>
+    validateItemData([linkField(config)], { cta: value });
+
+  for (const hostile of [
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    ' javascript:alert(1)',
+    'data:text/html;base64,PHNjcmlwdD4=',
+    'vbscript:msgbox(1)',
+  ]) {
+    it(`refuses ${JSON.stringify(hostile)}`, () => {
+      expect(store({ kind: 'url', href: hostile }).success).toBe(false);
+    });
+  }
+
+  it('accepts the addresses a link is actually for', () => {
+    for (const href of ['https://example.edu/apply', '/admissions', 'mailto:a@b.edu', 'tel:+15550100']) {
+      expect(store({ kind: 'url', href }).success, href).toBe(true);
+    }
+  });
+
+  /**
+   * An internal target is the `item` kind, not a URL spelled `taproot:`.
+   *
+   * `safeUrl` admits the scheme because rich text stores references that way; here a second spelling
+   * of the same thing would be unresolvable through the lookup maps and invisible to
+   * `collectReferences`, which is how a link renders as `taproot:item:…` on a live page.
+   */
+  it('refuses a taproot: reference spelled as an address', () => {
+    expect(
+      store({ kind: 'url', href: 'taproot:item:11111111-1111-1111-1111-111111111111' }).success,
+    ).toBe(false);
+  });
+
+  it('stores an item reference as an id, not a string to parse', () => {
+    const result = store({ kind: 'item', id: '11111111-1111-1111-1111-111111111111' });
+    expect(result.success).toBe(true);
+    expect(result.data?.cta).toMatchObject({
+      kind: 'item',
+      id: '11111111-1111-1111-1111-111111111111',
+      // Defaults are filled in, which is why the generated type has them as non-optional.
+      newTab: false,
+      noFollow: false,
+    });
+  });
+
+  it('refuses a kind the field does not allow', () => {
+    expect(store({ kind: 'url', href: 'https://example.edu' }, { allowedKinds: ['item'] }).success).toBe(
+      false,
+    );
+    expect(
+      store({ kind: 'item', id: '11111111-1111-1111-1111-111111111111' }, { allowedKinds: ['item'] })
+        .success,
+    ).toBe(true);
+  });
+
+  /** An unknown key is a shape nobody wrote deliberately, so it is refused rather than dropped. */
+  it('refuses unrecognised keys', () => {
+    expect(
+      store({ kind: 'url', href: 'https://example.edu', onclick: 'alert(1)' }).success,
+    ).toBe(false);
+  });
+});

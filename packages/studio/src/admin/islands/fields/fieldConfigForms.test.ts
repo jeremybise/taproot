@@ -58,6 +58,7 @@ describe('config round-trips through core validation', () => {
     media: { multiple: true, accept: ['image/'] },
     taxonomy: { taxonomyId: 'tax1', multiple: true },
     relation: { targetContentTypeId: 'abc', multiple: false, reverseLabel: 'Referenced by' },
+    link: { allowedKinds: ['item', 'url'] },
     block: { allowedBlocks: [], maxBlocks: 4 },
     repeater: { minItems: 0, maxItems: 5, fields: [] },
   };

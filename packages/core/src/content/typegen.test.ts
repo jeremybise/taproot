@@ -137,6 +137,64 @@ describe('field types', () => {
     expect(out).toContain('room?: string;');
     expect(out).not.toContain('undefined:');
   });
+
+  /**
+   * The row is an envelope, and this emitted the inside of it.
+   *
+   * A repeater stores `{ id, data: { …sub-fields } }` — `buildValueSchema` validates that, the
+   * editor writes it, and `resolveDelivery` sends it. Emitting the sub-fields flat let a consumer
+   * write `row.headline` against a payload that only ever carries `row.data.headline`: it compiled,
+   * rendered nothing, and reported no error anywhere. Asserting the sub-field *names* appear was
+   * what let it pass — they appear either way, which is why the test above did not catch this.
+   */
+  it('wraps a repeater’s rows in their stored envelope', () => {
+    const out = generateTypes(
+      schema({
+        contentTypes: [
+          {
+            apiId: 'event',
+            name: 'Event',
+            namePlural: 'Events',
+            kind: 'collection',
+            urlPrefix: 'events',
+            fields: [
+              field({
+                apiId: 'schedule',
+                type: 'repeater',
+                config: {
+                  fields: [
+                    { api_id: 'time', label: 'Time', type: 'text', required: true, config: {} },
+                  ],
+                },
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(out).toContain('schedule?: {\n    id: string;\n    data: {\n      time: string;\n    };\n  }[];');
+  });
+
+  /** No describable sub-fields still means a row, because the envelope does not depend on them. */
+  it('keeps the envelope when a repeater declares no sub-fields', () => {
+    const out = generateTypes(
+      schema({
+        contentTypes: [
+          {
+            apiId: 'event',
+            name: 'Event',
+            namePlural: 'Events',
+            kind: 'collection',
+            urlPrefix: 'events',
+            fields: [field({ apiId: 'rows', type: 'repeater', config: {} })],
+          },
+        ],
+      }),
+    );
+
+    expect(out).toContain('rows?: { id: string; data: Record<string, unknown> }[];');
+  });
 });
 
 describe('blocks', () => {
@@ -225,5 +283,48 @@ describe('naming', () => {
     expect(typeName('staff_profile')).toBe('StaffProfile');
     expect(typeName('event')).toBe('Event');
     expect(typeName('call-to-action')).toBe('CallToAction');
+  });
+});
+
+describe('link fields', () => {
+  const linkType = (config: Record<string, unknown> = {}) =>
+    generateTypes(
+      schema({
+        contentTypes: [
+          {
+            apiId: 'page',
+            name: 'Page',
+            namePlural: 'Pages',
+            kind: 'page',
+            urlPrefix: null,
+            fields: [field({ apiId: 'cta', type: 'link', config })],
+          },
+        ],
+      }),
+    );
+
+  /**
+   * Ids, not resolved objects — the same rule `media` and `relation` follow. Typing the target as
+   * the page it points at would describe a payload Taproot does not send.
+   */
+  it('emits a union discriminated by kind, with ids for the references', () => {
+    const out = linkType();
+
+    expect(out).toContain('kind: "item"; id: ContentItemId');
+    expect(out).toContain('kind: "media"; id: MediaId');
+    expect(out).toContain('kind: "url"; href: string');
+  });
+
+  /** `newTab` and `noFollow` default to false in the config schema, so a stored link always has them. */
+  it('does not mark the options optional, because validation fills them in', () => {
+    expect(linkType()).toContain('newTab: boolean; noFollow: boolean');
+  });
+
+  it('narrows to the kinds the field allows', () => {
+    const out = linkType({ allowedKinds: ['item'] });
+
+    expect(out).toContain('kind: "item"');
+    expect(out).not.toContain('kind: "url"');
+    expect(out).not.toContain('kind: "media"');
   });
 });

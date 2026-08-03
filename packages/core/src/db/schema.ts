@@ -289,9 +289,12 @@ export interface ContentTypesTable {
 }
 
 /**
- * The v1 field set from the scope doc. Every one of these has an editing control except
- * `repeater`, which has its column and validation seam and nothing to author with — see
- * `DEFERRED_FIELD_TYPES`, which is the single place that fact is recorded.
+ * The v1 field set from the scope doc, plus `link`. Which of these can be authored is recorded in
+ * exactly one place — `DEFERRED_FIELD_TYPES` — and it is currently empty.
+ *
+ * `link` is not a `relation` with extra options: a relation names a content item and cannot express
+ * an external address, a file, or "open in a new tab", which between them are most of what a button
+ * is. It stores whichever of the three a link actually is, discriminated by `kind`.
  */
 export type FieldType =
   | 'text'
@@ -303,6 +306,7 @@ export type FieldType =
   | 'media'
   | 'taxonomy'
   | 'relation'
+  | 'link'
   | 'block'
   | 'repeater';
 

@@ -459,7 +459,7 @@ function CurrentTarget({
  * the relation field and the media field already use. An address needs no lookup and reports
  * itself immediately, which is why the fetch is skipped rather than run and discarded.
  */
-function useResolvedTarget(href: string | undefined): ResolvedTarget {
+export function useResolvedTarget(href: string | undefined): ResolvedTarget {
   const reference = parseReference(href);
   const [state, setState] = useState<ResolvedTarget>(() => initialTarget(href));
 

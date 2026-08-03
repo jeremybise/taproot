@@ -12,6 +12,7 @@ import {
 } from './BlockListEditor.js';
 import { RichTextEditor } from './RichTextEditor.js';
 import { RelationField } from './RelationField.js';
+import { LinkField, type LinkValue } from './LinkField.js';
 import { RepeaterField } from './RepeaterField.js';
 import { MediaField } from '../media/MediaField.js';
 import type { MediaOption } from '../../mediaOptions.js';
@@ -204,7 +205,8 @@ export function FieldControl({
       }
 
       default:
-        // richtext, media, block, relation, repeater.
+        // richtext, media, block, relation, link, repeater. `link` puts `id` on a `role="group"`,
+        // which is not labelable — it is named through `aria-labelledby` like the others here.
         return false;
     }
   }
@@ -461,6 +463,32 @@ export function FieldControl({
             invalid={Boolean(errors?.length)}
             disabled={preview}
             noun={noun}
+          />
+        );
+      }
+
+      /**
+       * One link, always the same stored shape — unlike `media` and `relation`, whose shape follows
+       * their `multiple` config. A row of buttons is a repeater of these; see the `link` config
+       * schema in core for why there is no `multiple` here to convert.
+       */
+      case 'link': {
+        const stored =
+          typeof value === 'object' && value !== null && 'kind' in value
+            ? (value as LinkValue)
+            : null;
+
+        return (
+          <LinkField
+            id={id}
+            labelledBy={labelId}
+            describedBy={describedBy || undefined}
+            value={stored}
+            onChange={(next) => onChange(next)}
+            media={media ?? []}
+            allowedKinds={stringArrayOr(config.allowedKinds, undefined) ?? []}
+            invalid={Boolean(errors?.length)}
+            disabled={preview}
           />
         );
       }

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { htmlToText, sanitizeHtml } from '../content/sanitizeHtml.js';
+import { htmlToText, safeUrl, sanitizeHtml } from '../content/sanitizeHtml.js';
 import type { FieldRow, FieldType } from '../db/schema.js';
 import { parseJson, stringifyJson } from '../db/values.js';
 
@@ -49,6 +49,9 @@ export const REPEATER_SUB_FIELD_TYPES = [
   'media',
   'taxonomy',
   'relation',
+  // A row of buttons is the case this whole field type was added for, and a repeater is how a row
+  // of anything is spelled here.
+  'link',
 ] as const satisfies readonly FieldType[];
 
 export type RepeaterSubFieldType = (typeof REPEATER_SUB_FIELD_TYPES)[number];
@@ -70,6 +73,92 @@ export const repeaterSubField = z.object({
 });
 
 export type RepeaterSubField = z.infer<typeof repeaterSubField>;
+
+/**
+ * What one link points at.
+ *
+ * Three kinds rather than one `href`, because the three are stored differently and only one of them
+ * is a URL. An item or a file is a **reference** — an id, resolved through the delivery response's
+ * `references` and `media` maps exactly as `relation` and `media` fields are — so a page that moves
+ * keeps every link aimed at it and nobody edits content to fix a URL. That is the same rule menu
+ * items follow, and the reason rich text stores `taproot:item:{id}` instead of a path.
+ *
+ * Storing the `taproot:` marker here instead was the near miss. It would have made the editor
+ * control almost free, since `LinkDialog` already speaks that vocabulary — but it puts a string a
+ * consumer has to parse where an id and a lookup belong, and every consumer that forgot would ship
+ * `taproot:item:…` to a visitor. Rich text accepts that trade because `set:html` cannot perform a
+ * lookup; a structured field has no such excuse.
+ */
+export const LINK_KINDS = ['item', 'media', 'url'] as const;
+export type LinkKind = (typeof LINK_KINDS)[number];
+
+const linkOptions = {
+  /**
+   * The link's own text. Optional because plenty of links take their text from elsewhere — the
+   * target's title, or a separate field the site already has.
+   */
+  label: z.string().max(300).optional(),
+  newTab: z.boolean().default(false),
+  noFollow: z.boolean().default(false),
+};
+
+/**
+ * A link value, narrowed to the kinds a field offers.
+ *
+ * The `url` variant goes through `safeUrl`, which is the sanitiser's own answer about `javascript:`
+ * and friends — this is a write path whose value ends up in an `href`, so it is exactly as exposed
+ * as rich text is and must not grow a second opinion. `taproot:` is *excluded* here even though
+ * `safeUrl` admits it: an internal target is the `item` or `media` kind, and letting one arrive
+ * spelled as a URL would be a second way to store the same thing, unresolvable through the lookup
+ * maps and invisible to `collectReferences`.
+ */
+const itemLink = z.strictObject({
+  kind: z.literal('item'),
+  id: z.string().min(1),
+  ...linkOptions,
+});
+
+const mediaLink = z.strictObject({
+  kind: z.literal('media'),
+  id: z.string().min(1),
+  ...linkOptions,
+});
+
+const urlLink = z.strictObject({
+  kind: z.literal('url'),
+  href: z
+    .string()
+    .min(1)
+    .refine(
+      (value) => {
+        const safe = safeUrl(value);
+        // `safeUrl` admits `taproot:`; here it must not — see the note on this function.
+        return safe !== null && !safe.toLowerCase().startsWith('taproot:');
+      },
+      { error: 'Must be a valid http(s), mailto:, tel: or site-relative address.' },
+    ),
+  ...linkOptions,
+});
+
+const LINK_VARIANTS = { item: itemLink, media: mediaLink, url: urlLink };
+
+export function linkValueSchema(allowedKinds: LinkKind[] = []): z.ZodType {
+  const allowed = allowedKinds.length > 0 ? allowedKinds : [...LINK_KINDS];
+  const chosen = allowed.map((kind) => LINK_VARIANTS[kind]);
+
+  // A single permitted kind still carries `kind`, so the stored shape never depends on the config —
+  // unlike `media` and `relation`, where it deliberately does.
+  if (chosen.length === 1) return chosen[0]!;
+
+  /**
+   * The cast is Zod's typing, not a shortcut: `discriminatedUnion` wants a literal tuple and this
+   * array is built from a runtime list. The members are the same three objects either way.
+   */
+  return z.discriminatedUnion(
+    'kind',
+    chosen as unknown as [typeof itemLink, typeof mediaLink, ...(typeof urlLink)[]],
+  );
+}
 
 export const fieldConfigSchemas = {
   text: z.object({
@@ -122,6 +211,22 @@ export const fieldConfigSchemas = {
     multiple: z.boolean().default(false),
     /** Label shown on the reverse side of the relation in the target type's editor. */
     reverseLabel: z.string().optional(),
+  }),
+  link: z.object({
+    /**
+     * Which of page, file and address the dialog offers. Empty means all three, matching `media`'s
+     * `accept`.
+     */
+    allowedKinds: z.array(z.enum(LINK_KINDS)).default([]),
+    /**
+     * Deliberately no `multiple`.
+     *
+     * `media` and `relation` carry one because a gallery and a list of related pages are single
+     * fields holding several of one thing. Several *links* is a row of buttons, which is a repeater
+     * of a link field — and that composes, because each row can then carry its own heading or
+     * variant. A `multiple` here would be a second way to spell the same thing, with a stored shape
+     * that follows the config for no gain.
+     */
   }),
   block: z.object({
     /** Block types allowed in this field. Empty means all. */
@@ -183,6 +288,7 @@ export const FIELD_TYPE_META: Record<FieldType, FieldTypeMeta> = {
   media: { type: 'media', label: 'Media', description: 'An image or file from the media library.' },
   taxonomy: { type: 'taxonomy', label: 'Taxonomy', description: 'Terms from a taxonomy tree.' },
   relation: { type: 'relation', label: 'Relation', description: 'A reference to other content items.' },
+  link: { type: 'link', label: 'Link', description: 'A page, a file, or a web address — with optional label.' },
   block: { type: 'block', label: 'Blocks', description: 'Composable blocks placed into a region.' },
   repeater: { type: 'repeater', label: 'Repeater', description: 'A repeating group of sub-fields.' },
 };
@@ -333,6 +439,17 @@ export function buildValueSchema(
 
     case 'relation':
       schema = config.multiple === true ? z.array(z.string()) : z.string();
+      break;
+
+    case 'link':
+      /**
+       * Narrowed to the kinds this field offers, so the boundary refuses what the dialog never
+       * showed. An empty `allowedKinds` means all three — the same "empty means anything" the
+       * `media` field's `accept` list uses.
+       */
+      schema = linkValueSchema(
+        Array.isArray(config.allowedKinds) ? (config.allowedKinds as LinkKind[]) : [],
+      );
       break;
 
     case 'block':

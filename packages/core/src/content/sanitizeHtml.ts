@@ -314,7 +314,15 @@ const URL_NOISE = /[\u0000-\u0020\u007F]/g;
  * past a test on the literal text. Those characters are then stripped from what is returned, so the
  * value that reaches the page is the value that was checked.
  */
-function safeUrl(value: string): string | null {
+/**
+ * The one answer to "is this safe to put in an `href`".
+ *
+ * Exported because the `link` field type validates an address on write and must not grow a second
+ * opinion about `javascript:` — a rule that exists twice is a rule that will disagree with itself
+ * once. Note it *does* admit `taproot:` references; a caller that only wants a real URL has to
+ * exclude them itself, which is what the link field's `url` variant does.
+ */
+export function safeUrl(value: string): string | null {
   const cleaned = value.replace(URL_NOISE, '');
   if (!cleaned) return null;
 

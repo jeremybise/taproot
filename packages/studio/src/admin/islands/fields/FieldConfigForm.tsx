@@ -437,6 +437,60 @@ const MediaConfig: ConfigForm = ({ config, onChange }) => {
   );
 };
 
+/**
+ * A link field's only choice: which of the three destinations the dialog offers.
+ *
+ * Phrased as an allowlist that is empty by default, matching `media`'s accept list — "leave all
+ * unchecked to allow anything" is a pattern this builder already teaches, and it means a field
+ * created without opening this form is the useful one rather than the useless one.
+ */
+const LinkConfig: ConfigForm = ({ config, onChange }) => {
+  const allowed = Array.isArray(config.allowedKinds) ? (config.allowedKinds as string[]) : [];
+  const kinds = [
+    { value: 'item', label: 'A page on this site' },
+    { value: 'media', label: 'A file from the media library' },
+    { value: 'url', label: 'A web address' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <fieldset>
+        <legend className="text-sm font-medium">Allowed destinations</legend>
+        <p className="mt-0.5 text-xs text-content-subtle">
+          Leave all unchecked to allow any of them.
+        </p>
+        <div className="mt-2 space-y-1.5">
+          {kinds.map((kind) => (
+            <div key={kind.value} className="flex items-center gap-2">
+              <input
+                id={`link-kind-${kind.value}`}
+                type="checkbox"
+                checked={allowed.includes(kind.value)}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    allowedKinds: e.target.checked
+                      ? [...allowed, kind.value]
+                      : allowed.filter((entry) => entry !== kind.value),
+                  })
+                }
+              />
+              <label htmlFor={`link-kind-${kind.value}`} className="text-sm">
+                {kind.label}
+              </label>
+            </div>
+          ))}
+        </div>
+      </fieldset>
+
+      <p className="text-xs text-content-subtle">
+        A link carries its own optional label, and whether it opens in a new tab. For a row of
+        buttons, put this field inside a repeater.
+      </p>
+    </div>
+  );
+};
+
 const RelationConfig: ConfigForm = ({ config, onChange, contentTypes, currentContentTypeId }) => {
   const targetId = useId();
   return (
@@ -820,6 +874,7 @@ export const fieldConfigForms: Record<FieldType, ConfigForm> = {
   media: MediaConfig,
   taxonomy: TaxonomyConfig,
   relation: RelationConfig,
+  link: LinkConfig,
   block: BlockConfig,
   repeater: RepeaterConfig,
 };

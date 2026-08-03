@@ -54,6 +54,25 @@ narrows as you type.
 If the target page also displays its incoming links, your page appears there automatically once you
 save. You do not have to make the link twice.
 
+## Link
+
+One destination, for a button or a "find out more". Choose **Choose a link** and the same dialog
+you already use for links in rich text opens: a page on this site, a file from the media library, or
+a web address. You can give it its own label, and say whether it opens in a new tab.
+
+This is the field to reach for when the destination is *sometimes* internal and sometimes not — a
+"Register" button that points at a page this term and an external booking system the next. "Link to
+other content" cannot express an outside address at all.
+
+Some link fields are restricted to one or two of the three kinds; you will only see the choices the
+field allows.
+
+Links to a page or a file follow their target. Rename or move the page and the link still works,
+with nobody editing the content that points at it.
+
+For a row of buttons, a site admin puts a link field inside a repeater — each row is then one
+button, free to carry its own heading or style alongside it.
+
 ## Blocks
 
 A list you build a page out of, choosing from the block types your site offers. See

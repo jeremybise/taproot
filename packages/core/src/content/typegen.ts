@@ -60,6 +60,14 @@ function isMultiple(field: DeliveryField): boolean {
   }
 }
 
+/**
+ * A repeater row whose sub-fields cannot be described — an empty or malformed `config.fields`.
+ *
+ * Still the envelope: the row is `{ id, data }` whatever is inside it, and widening `data` to
+ * `Record<string, unknown>` is honest where dropping the envelope would not be.
+ */
+const ROW_WITHOUT_FIELDS = '{ id: string; data: Record<string, unknown> }';
+
 function singleType(field: DeliveryField, blockTypeNames: Map<string, string>): string {
   switch (field.type) {
     case 'text':
@@ -101,6 +109,36 @@ function singleType(field: DeliveryField, blockTypeNames: Map<string, string>): 
       return 'ContentItemId';
     case 'taxonomy':
       return 'TermId';
+    /**
+     * A union discriminated by `kind`, exactly as it is stored.
+     *
+     * The item and media variants are ids, following the rule the two cases above state: the
+     * delivery response resolves them through `references` and `media`, so typing them as anything
+     * richer would describe a payload Taproot does not send. `newTab` and `noFollow` are not
+     * optional because their config defaults are `false` — validation fills them in, so a stored
+     * link always carries both.
+     */
+    case 'link': {
+      const configured = Array.isArray(field.config.allowedKinds)
+        ? (field.config.allowedKinds as string[])
+        : [];
+      const kinds = configured.length > 0 ? configured : ['item', 'media', 'url'];
+      const options = 'label?: string; newTab: boolean; noFollow: boolean';
+
+      const variants = kinds
+        .map((kind) =>
+          kind === 'url'
+            ? `{ kind: "url"; href: string; ${options} }`
+            : kind === 'media'
+              ? `{ kind: "media"; id: MediaId; ${options} }`
+              : `{ kind: "item"; id: ContentItemId; ${options} }`,
+        )
+        .join(' | ');
+
+      // Parenthesised so a `link` inside anything array-shaped later cannot bind `[]` to the last
+      // member of the union alone.
+      return kinds.length > 1 ? `(${variants})` : variants;
+    }
     case 'block':
       return blockTypeNames.size > 0
         ? `TaprootBlock`
@@ -117,7 +155,7 @@ function singleType(field: DeliveryField, blockTypeNames: Map<string, string>): 
       const sub = Array.isArray(field.config.fields)
         ? (field.config.fields as RepeaterSubFieldShape[])
         : [];
-      if (sub.length === 0) return 'Record<string, unknown>';
+      if (sub.length === 0) return ROW_WITHOUT_FIELDS;
 
       const members = sub
         .filter((child) => typeof child?.api_id === 'string')
@@ -131,11 +169,25 @@ function singleType(field: DeliveryField, blockTypeNames: Map<string, string>): 
             position: 0,
             config: child.config ?? {},
           };
-          return `    ${propertyName(child.api_id)}${asDelivery.required ? '' : '?'}: ${fieldType(asDelivery, blockTypeNames)};`;
+          return `      ${propertyName(child.api_id)}${asDelivery.required ? '' : '?'}: ${fieldType(asDelivery, blockTypeNames)};`;
         })
         .join('\n');
 
-      return members ? `{\n${members}\n  }` : 'Record<string, unknown>';
+      /**
+       * The row envelope, not the sub-fields alone.
+       *
+       * A repeater stores `{ id, data: { …sub-fields } }` per row — that is what `buildValueSchema`
+       * validates, what the editor writes, and what `resolveDelivery` sends. This emitted the inner
+       * shape flat, so a consumer typed `row.headline` against a payload that only ever carries
+       * `row.data.headline`, compiled, and rendered nothing. Exactly the failure the `media` and
+       * `relation` cases above are commented to prevent — a generated type describing a payload
+       * Taproot does not send — and the same one `block` avoids by keeping its own envelope.
+       *
+       * Flattening delivery instead was the other way to close the gap and is the wrong one: `data`
+       * has to keep the stored shape so the payload stays usable for a write, and `id` is the row's
+       * stable identity rather than noise.
+       */
+      return members ? `{\n    id: string;\n    data: {\n${members}\n    };\n  }` : ROW_WITHOUT_FIELDS;
     }
     default:
       return 'unknown';

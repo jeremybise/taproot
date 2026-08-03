@@ -198,7 +198,10 @@ export interface EventData {
   starts_at: string;                                       // required in the CMS
   audience?: 'prospective' | 'current' | 'staff' | 'alumni';   // select options as a union
   capacity?: number;
-  schedule?: { time: string; what: string; room?: string }[];  // a repeater
+  schedule?: {                                             // a repeater
+    id: string;
+    data: { time: string; what: string; room?: string };
+  }[];
   host_page?: ContentItemId;
 }
 ```
@@ -206,6 +209,33 @@ export interface EventData {
 Required fields are non-optional, because validation on write is a promise the CMS actually keeps.
 Select options become a union, so a typo is a compile error. `MediaId`, `ContentItemId`, and
 `TermId` are ids you look up in the response's maps — the types name them so it is obvious which map.
+
+**A repeater row is an envelope.** Each row is `{ id, data }` with the sub-field values under `data`,
+so it is `row.data.time`, never `row.time`. The `id` is the row's stable identity. Getting this wrong
+is silent — every row is still an object, so nothing throws and the right *number* of empty things
+renders.
+
+**A link is a union discriminated by `kind`**, and only one of the three is a URL:
+
+```ts
+type Cta =
+  | { kind: 'item'; id: ContentItemId; label?: string; newTab: boolean; noFollow: boolean }
+  | { kind: 'media'; id: MediaId; label?: string; newTab: boolean; noFollow: boolean }
+  | { kind: 'url'; href: string; label?: string; newTab: boolean; noFollow: boolean };
+```
+
+The first two are references, resolved through the same `references` and `media` maps as relation
+and media fields — which is what lets a page move without breaking the links aimed at it:
+
+```ts
+const href =
+  link.kind === 'item' ? references[link.id]?.path
+  : link.kind === 'media' ? media[link.id]?.url
+  : link.href;
+```
+
+A field restricted to fewer kinds generates only those members, so a `switch` over it stays
+exhaustive.
 
 Block types come back as a union discriminated by `type`:
 

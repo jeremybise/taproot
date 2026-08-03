@@ -9,6 +9,7 @@ import type {
 } from '../db/schema.js';
 import type { StorageAdapter } from '../storage/types.js';
 import { parseJson } from '../db/values.js';
+import { repeaterRowFields } from '../validation/fields.js';
 import { getContentType } from './types.js';
 import { getItemByPath, getRedirect, visibleToPublic, type ContentItem } from './items.js';
 import { resolveMenu, type ResolvedMenuItem } from './menus.js';
@@ -477,6 +478,22 @@ export function collectReferences(
       case 'taxonomy':
         for (const id of ids) if (typeof id === 'string') into.termIds.add(id);
         break;
+      /**
+       * A link's target is a reference when it names one, and nothing when it is an address.
+       *
+       * Missing this case would ship an id the consumer has no way to turn into a URL — the maps are
+       * the only route from `{ kind: 'item', id }` to a path, so a link field that never reached
+       * here would render as a dead button on a page nobody could see was broken.
+       */
+      case 'link':
+        for (const link of ids) {
+          if (typeof link !== 'object' || link === null) continue;
+          const { kind, id } = link as { kind?: unknown; id?: unknown };
+          if (typeof id !== 'string') continue;
+          if (kind === 'item') into.itemIds.add(id);
+          else if (kind === 'media') into.mediaIds.add(id);
+        }
+        break;
       case 'block':
         for (const block of ids) collectFromBlock(block, into);
         break;
@@ -526,11 +543,26 @@ function collectFromBlock(block: unknown, into: CollectedReferences): void {
 
 function collectFromRepeater(field: FieldRow, row: unknown, into: CollectedReferences): void {
   if (typeof row !== 'object' || row === null) return;
-  const config = parseJson<{ fields?: FieldRow[] }>(field.config, {});
-  // A repeater's sub-fields live in its own config rather than the `fields` table, so the
-  // definitions are right here and the walk stays definition-driven.
-  if (Array.isArray(config.fields)) {
-    collectReferences(config.fields, row as Record<string, unknown>, into);
+
+  /**
+   * The values are under `data`, not on the row.
+   *
+   * A row is `{ id, data }`, and this walked the envelope — so `data['shot']` was looked for at
+   * `row['shot']`, found nothing, and every media, relation and taxonomy id inside a repeater was
+   * left out of the lookup maps. The consumer then received a bare id with nothing to resolve it
+   * against, which renders as a missing image rather than as an error. The same envelope mistake
+   * `typegen` made, and invisible from inside a *block*, where `collectLoose` walks structurally and
+   * picks the id up regardless — so only a top-level repeater was affected.
+   */
+  const rowData = (row as { data?: unknown }).data;
+  if (typeof rowData !== 'object' || rowData === null) return;
+
+  // `repeaterRowFields` rather than the raw config: sub-fields are stored in the `repeaterSubField`
+  // shape, not as `FieldRow`s, and reading them as rows is what once emitted properties literally
+  // named `undefined` in the generated types.
+  const subFields = repeaterRowFields(field);
+  if (subFields.length > 0) {
+    collectReferences(subFields, rowData as Record<string, unknown>, into);
   }
 }
 

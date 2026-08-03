@@ -240,6 +240,28 @@ function walkField(field: FieldRow, value: unknown, context: A11yContext, state:
       return;
     }
 
+    /**
+     * A link's label is link text, and the rules for it already exist.
+     *
+     * "Read more" is exactly as useless on a button as it is in a paragraph — a screen reader can
+     * list a page's links on their own, and out of that list this one says nothing (WCAG 2.4.4). So
+     * this reuses `checkLinkText` rather than growing a second opinion about generic wording.
+     *
+     * A *missing* label is not reported. It is legitimate — a site may render the target's own
+     * title, which is what the slider case does — and a rule cannot tell that apart from an
+     * omission without knowing a template this CMS deliberately does not ship.
+     */
+    case 'link': {
+      if (typeof value !== 'object' || value === null) return;
+      const label = (value as { label?: unknown }).label;
+      if (typeof label !== 'string' || label.trim() === '') return;
+
+      for (const found of checkLinkText(label)) {
+        state.issues.push(toIssue(found, state, here));
+      }
+      return;
+    }
+
     // text, number, boolean, date, select, taxonomy, relation — nothing an accessibility rule
     // reads. Listed rather than defaulted so a new field type has to be considered here.
     case 'text':

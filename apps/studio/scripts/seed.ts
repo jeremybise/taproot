@@ -527,6 +527,22 @@ const event = await ensureType(
     },
     {
       /**
+       * A link field, seeded for the same reason as the two below it.
+       *
+       * "Register" is the case the field type exists for: it is sometimes a page on this site and
+       * sometimes an external booking system, which is precisely what a `relation` cannot express.
+       * No `allowedKinds`, so the demo shows all three panels of the dialog.
+       */
+      api_id: 'registration_link',
+      label: 'Registration',
+      type: 'link',
+      required: false,
+      localized: false,
+      help_text: 'Where people sign up — a page here, a file, or an external booking system.',
+      config: {},
+    },
+    {
+      /**
        * The relation field, seeded so the demo exercises it.
        *
        * It points from Event to Page rather than the other way round because Page is defined
@@ -1071,6 +1087,14 @@ await ensureItem(
         { id: newId(), data: { time: '11:30', what: 'Subject talks', room: 'Halloway Hall' } },
         { id: newId(), data: { time: '13:00', what: 'Lunch with current students', room: 'The Refectory' } },
       ],
+      // An external address, which is the half of `link` a relation field cannot express at all.
+      registration_link: {
+        kind: 'url',
+        href: 'https://example.edu/open-house/register',
+        label: 'Reserve your place',
+        newTab: true,
+        noFollow: false,
+      },
       // The relation, pointing at a page that exists — so the editor opens on a resolved title
       // rather than on an empty control that looks the same whether or not the feature works.
       host_page: admissionsId,
