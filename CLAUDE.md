@@ -38,11 +38,12 @@ form state, parked on the preview token. See the constraints below.
 content at a 320px viewport for four phases. The nav is now one element that slides off-canvas below
 `lg`, and `npm run a11y` gained a reflow-hazard check — see the accessibility section.
 
-**Phase 4.6 — the admin UI pass — is part done.** A is complete: one sticky action bar per screen,
-the status transitions behind a promoted action plus a menu, add-to-release moved into Publishing,
-a sidebar user menu, and a repair of two source files that had been shipping mojibake. **B (linking
-to content and media from rich text) and C (configurable accent, title and icon) are planned and not
-started** — the plan lives outside the repo, so what B and C are is recorded in SCOPE.
+**Phase 4.6 — the admin UI pass — is complete.** A: one sticky action bar per screen, the status
+transitions behind a promoted action plus a menu, add-to-release moved into Publishing, a sidebar
+user menu, and a repair of two source files that had been shipping mojibake. B: linking to content
+and media from rich text, through one dialog that also says where an existing link points. C:
+Settings → Branding — title, logo, and an accent per palette, with the readable tokens derived from
+it and the rest measured against WCAG and reported.
 
 The equivalence tests in `delivery.test.ts` compare the delivery layer against the *methods* the
 embedded route used (`getItemByPath`, `getChildren`, `ancestorPaths`, `resolveSeo`, `resolveMenu`)
@@ -65,7 +66,7 @@ declares it.
 | `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 1139 tests |
+| `npm test` | Vitest, 1169 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core + inert-label + reflow-hazard checks over every admin route, then the numeric contrast check. Needs `npm run dev` running |
@@ -704,7 +705,7 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-35 routes, 0 violations, 0 inert labels, 0 reflow hazards, and all 36 token pairs passing in both
+36 routes, 0 violations, 0 inert labels, 0 reflow hazards, and all 40 token pairs passing in both
 themes.
 
 **The admin is responsive, and WCAG 1.4.10 Reflow is why it has to be.** Reflow is Level **AA** —
@@ -800,7 +801,33 @@ the `@theme` blocks by hand — jsdom resolves no custom properties, so there is
 them — which means a token added to the CSS alone is simply unchecked. The same applies to a new
 *pairing* of existing tokens: `axe` runs with `color-contrast` disabled precisely because this
 script is the authority, so a colour put on a background it has never been checked against is
-unchecked no matter how many routes pass.
+unchecked no matter how many routes pass. The accent went four phases with two unchecked pairs for
+exactly that reason — it is the colour rich-text links are drawn in, and the token had only ever
+been thought of as a button background.
+
+**The accent is configurable, so `branding/color.ts` is a second hand-mirror of the same `@theme`
+block.** Two copies is one more than ideal and the alternative was checking the accent's pairs
+nowhere: the settings screen has to report contrast for a colour that does not exist until somebody
+types it, which no static script can do. `ADMIN_PALETTE` holds only the three tokens the accent is
+measured against. Change the CSS and change both. Four things follow:
+- **One colour is chosen and four are emitted.** Hover, the label on a solid button, and the subtle
+  tint are derived, because each is a question with a right answer — offering the button label as a
+  choice is offering a way to make Save unreadable. What is a property of the colour itself, whether
+  it is dark enough to be link text, is measured and reported instead. `accentContrast` marks which
+  is which, and the UI words a derived failure differently because it would be a bug here.
+- **Hover moves away from the *label*, not away from the surface.** Away-from-surface is the obvious
+  rule and it is wrong: for a pale accent the label is dark, so a darker hover walks the label's
+  contrast down until the button fails on hover while passing at rest. Found by sweeping the hue
+  circle in `branding.test.ts`, which is the test to extend rather than replace — a derivation
+  checked only on the default green is a derivation checked on the one input that cannot fail.
+- **The override is one unlayered `:root` rule, and unlayered is load-bearing.** Tailwind's `@theme`
+  compiles into `@layer theme`, and cascade layers beat specificity outright. Same lesson as the
+  preview-width rule in `admin.css`, and the same way to verify it: read the computed value, not the
+  HTML.
+- **The default accent is stored as null and emits nothing.** `oklch(52% 0.15 155)` is outside sRGB,
+  so `DEFAULT_ACCENT`'s hex is the nearest displayable colour rather than the same one; storing it
+  would round-trip the stylesheet's own value through a hex for no reason. Null also makes "has
+  anybody themed this?" a null check rather than a colour comparison.
 
 **Light, dark, and system are one `color-scheme` declaration, not a class.** Every colour token is
 a `light-dark()` pair in the single `@theme` block, so the entire switch is three rules in

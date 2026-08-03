@@ -1,0 +1,30 @@
+---
+import type { AdminBranding } from '../branding.js';
+
+/**
+ * The three branded things that belong in `<head>`, in one place.
+ *
+ * Six pages need them — the admin shell and the five unauthenticated screens — and each of those
+ * builds its own `<html>` because none of them shares a layout. Six copies of the accent override
+ * is six chances for the sign-in screen to render in a different green from the admin behind it,
+ * which is the most visible possible way to get this wrong.
+ *
+ * `title` arrives composed rather than being assembled here: "Sign in · Taproot" and "Set up
+ * Taproot" are different sentences, and a component that tried to own both would need a mode flag
+ * for something each caller can simply write.
+ */
+interface Props {
+  branding: AdminBranding;
+  title: string;
+}
+
+const { branding, title } = Astro.props;
+---
+
+<title>{title}</title>
+{/* The logo doubles as the tab icon. Nothing is emitted without one, so the browser keeps its own
+    default rather than being pointed at a URL that 404s. */}
+{branding.logo && <link rel="icon" href={branding.logo.url} />}
+{/* Unlayered, so it beats Tailwind's `@theme` block — see `accentCss` for why that matters.
+    `is:inline` stops Astro scoping it to this component, which would stop it applying at all. */}
+{branding.accentCss && <style is:inline set:html={branding.accentCss} />}

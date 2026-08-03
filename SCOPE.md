@@ -239,7 +239,7 @@ Four decisions worth keeping:
 - **A token stays a capability over one item.** The delivery route now applies the override only when the requested path is the token's own. It ignored `path` entirely before, which was invisible while the only caller was a redirect straight to `item.path` — and would have made every page render as the item being edited the moment a frame could follow a link.
 - **Zero consumer integration, with an optional upgrade.** A site that already forwards the token gets a working pane. Two lines (`<TaprootPreviewBridge />`) upgrade the refresh from a frame remount to a reload from inside, which is what keeps the scroll position. Requiring it would have made the first-run story a setup error.
 
-**Phase 4.6 — Admin UI pass** *(A and B complete; C next)*
+**Phase 4.6 — Admin UI pass** *(complete)*
 Seven things noticed from using the admin, split so each can be redirected between.
 
 **A — chrome** *(complete)*. One sticky action bar per screen (`PageHeader.astro`, except the item editor where the island owns it because Save is React state). Status transitions became a promoted named action plus a "More" disclosure — `primaryTransition` in core decides which is promoted, and `published` deliberately promotes nothing. Add-to-release moved from a banner into Publishing and now stays on the item instead of navigating away. The sidebar's user block became a menu with an avatar. Plus a repair: two files had been shipping cp1252 mojibake since `ff9af26`, and `sourceEncoding.test.ts` now guards it.
@@ -248,7 +248,13 @@ Seven things noticed from using the admin, split so each can be redirected betwe
 
 **Images in rich text were considered and refused**, which is why `img` is still absent from the allowlist. A reference-only `<img data-taproot-media>` resolved at delivery would have kept alt text in the library — but not the hotspot, because `set:html` cannot produce a `TaprootImage`, so an image in prose would be the only one on the site ignoring its focal point. An image in a paragraph is a block's job.
 
-**C — branding** *(after B)*. A configurable accent, CMS title and icon in a new settings table, with contrast derived rather than merely warned about. Status colours stay fixed: `--color-status-published` is byte-identical to `--color-accent` today by coincidence, and a free accent hue would put Published on top of Review.
+**C — branding** *(complete)*. A configurable accent, CMS title and logo, in a one-row `settings` table. Status colours stay fixed, as planned: `--color-status-published` is byte-identical to `--color-accent` today by coincidence, and a free accent hue would put Published on top of Review.
+
+Contrast is derived where it can be and reported where it cannot, and that split is the decision worth keeping. The hover shade, the label on a solid button, and the subtle tint all follow from the chosen colour, because each is a question with a right answer — offering the button label as a choice is offering a way to make Save unreadable. Whether the colour is dark enough to be *link text* is a property of the colour itself, so it is measured live and said plainly, with nothing blocked: an institution whose brand colour fails is better served by being told exactly what will be hard to read than by being refused.
+
+Two things fell out of building it that were not visible from the plan. Sweeping the hue circle rather than checking the default green found that moving the hover shade *away from the surface* — the obvious rule — walks a pale accent's dark label below 4.5:1 on hover while it passes at rest; hover moves away from the **label** instead. And the accent is link text inside the rich-text editor, a pair `a11y-contrast.mjs` had never checked in the four phases that token has existed.
+
+**B needed a second pass**, which was not planned and should have been. Linking worked, and its controls were a row of fields wrapped into the editor's toolbar strip: unusable at the ~400px the editor column becomes with the preview pane open, and unable to answer "where does this link currently point?", because a reference is correct and unreadable. One dialog now covers a page, a file, and a web address, opens on the kind already there, and names it. Two defects only a real browser could show — a modal takes focus and the selection goes with it, and React propagates events through a portal's React tree into the item editor's form, so Apply saved the page instead of linking. Every test passed, because they all rendered the editor on its own.
 
 **Phase 5 — Integrations**
 Webhooks, tracking script manager. (Redirects moved to Phase 1 — see URL structure section above. API keys moved to Phase 3.75, which cannot ship without them.)

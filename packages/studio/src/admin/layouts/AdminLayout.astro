@@ -3,6 +3,9 @@ import '../admin.css';
 import { listContentTypes, type User } from '@taprootcms/core';
 import { getTaproot, canEditContent, canManageSchema, canStageToRelease } from '../../runtime/guards.js';
 import UserMenu from '../components/UserMenu.astro';
+import BrandMark from '../components/BrandMark.astro';
+import BrandHead from '../components/BrandHead.astro';
+import { adminBranding } from '../branding.js';
 import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
 import {
   previewPaneAttribute,
@@ -53,6 +56,14 @@ const themeReturnPath = `${Astro.url.pathname}${Astro.url.search}`;
  */
 const taproot = getTaproot(Astro.locals);
 const contentTypes = await listContentTypes(taproot.db.db);
+
+/**
+ * What this CMS calls itself, and what colour it is.
+ *
+ * Read here for the same reason the theme cookie is: the accent has to be in the first HTML the
+ * browser parses or the admin repaints from green to whatever the site chose, on every page.
+ */
+const branding = await adminBranding(taproot.db.db, taproot.storage);
 
 const listable = contentTypes.filter((type) => type.kind !== 'singleton');
 const singletons = contentTypes.filter((type) => type.kind === 'singleton');
@@ -139,7 +150,7 @@ const navLinkClass = (current: boolean) =>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>{title} · Taproot</title>
+    <BrandHead branding={branding} title={`${title} · ${branding.resolvedTitle}`} />
   </head>
   <body class="min-h-screen bg-surface text-content">
     <!--
@@ -229,8 +240,8 @@ const navLinkClass = (current: boolean) =>
             </svg>
           </button>
           <a href="/admin" class="flex items-center gap-2 font-semibold tracking-tight">
-            <span aria-hidden="true" class="text-accent">◆</span>
-            Taproot
+            <BrandMark branding={branding} size="h-5" />
+            {branding.resolvedTitle}
           </a>
         </div>
 
@@ -249,8 +260,8 @@ const navLinkClass = (current: boolean) =>
           <div class="flex h-full flex-col">
           <div class="px-5 py-5">
             <a href="/admin" class="flex items-center gap-2 text-lg font-semibold tracking-tight">
-              <span aria-hidden="true" class="text-accent">◆</span>
-              Taproot
+              <BrandMark branding={branding} />
+              <span class="min-w-0 truncate">{branding.resolvedTitle}</span>
             </a>
           </div>
 

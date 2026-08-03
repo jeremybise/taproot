@@ -3,7 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 4.5 complete.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 4.6 complete.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
@@ -381,20 +381,49 @@ npm test
 
 ## What's next
 
-**Phase 4.6 — the admin UI pass — is most of the way through.** Part A shipped: one sticky action bar
-per screen, status transitions behind a promoted action plus a menu, add-to-release moved into the
-Publishing panel where it no longer throws away unsaved edits, and a sidebar user menu.
-
-Part B shipped too: **an editor links to a page by picking it, not by typing its address.** The
-reference is what gets stored, so renaming or moving that page updates every link to it across the
-site without anyone editing any content — and a link whose target is unpublished or deleted arrives
-as plain text rather than pointing at a 404. Files link the same way. Your site does nothing for any
-of it: the HTML it receives already has ordinary `href`s.
-
-Part C is next: a configurable accent, title and icon.
-
-**Phase 5 — integrations — follows.** Webhooks and a tracking script manager. API keys already
+**Phase 5 — integrations — is next.** Webhooks and a tracking script manager. API keys already
 shipped in 3.75, which could not be done without them.
+
+**Phase 4.6 — the admin UI pass — is done.** Part A: one sticky action bar per screen, status
+transitions behind a promoted action plus a menu, add-to-release moved into the Publishing panel
+where it no longer throws away unsaved edits, and a sidebar user menu.
+
+Part B: **an editor links to a page by picking it, not by typing its address.** The reference is what
+gets stored, so renaming or moving that page updates every link to it across the site without anyone
+editing any content — and a link whose target is unpublished or deleted arrives as plain text rather
+than pointing at a 404. Files link the same way. Your site does nothing for any of it: the HTML it
+receives already has ordinary `href`s.
+
+The controls for that started as a row of fields wrapped into the editor's toolbar strip, which at
+the ~400px the editor column becomes with the preview pane open was unusable — and which could not
+answer the first question anyone asks of an existing link, *where does this currently point?* A
+reference is correct and unreadable, so the id is now exchanged for a title. One dialog covers a
+page, a file, and a web address; it opens on the kind of link that is already there and names it,
+with a way to go and look at it and a way to remove it. Three things came out of building it:
+
+- **A modal is not free.** It takes focus, and the browser's selection inside the editor goes with
+  it, so the caret's range is captured on open and restored on apply — otherwise "select a phrase,
+  choose a page" silently becomes "insert a page title next to it".
+- **Radix portals to `document.body`, but React events propagate through the React tree.** Apply
+  submitted the item editor's form as well as the dialog's: the page saved, redirected, and the link
+  never landed. Every test passed, because they all render the editor on its own. There is now one
+  that renders it inside a form.
+- **`Ctrl/Cmd + K` did nothing**, and had been documented for as long as the handbook has existed.
+
+Part C: **the CMS wears your name.** Title, logo, and an accent per palette, in Settings → Branding —
+none of it reaching your website, all of it reaching the people who sign in. One colour is chosen and
+the hover shade, the label on a solid button, and the tint behind the current sidebar item are
+derived from it, because a button label is a question with a right answer and offering it as a choice
+is offering a way to make Save unreadable. What is genuinely the colour's own property — whether it
+is dark enough to be link text — is measured live against the WCAG thresholds and reported rather
+than blocked.
+
+The derivation is checked over the whole hue circle rather than on the one colour anybody would try,
+and that sweep found a real defect immediately: moving the hover shade *away from the surface* is the
+obvious rule and it is wrong. For a pale accent the label is dark, so a darker hover walks the
+label's contrast down until the button fails on hover while passing at rest. Hover moves away from
+the *label* instead. The audit also gained two pairs it had never checked — the accent is link text
+inside the rich-text editor, and that had only ever been thought of as a button background.
 
 **Phase 4.5 is done.** A live split-view preview: your site rendered beside the editor, following
 what you type, with no in-place editing and no bespoke integration. Four things about it:

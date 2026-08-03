@@ -1,5 +1,6 @@
 export * from './db/index.js';
 export * from './auth/index.js';
+export * from './branding/index.js';
 export * from './content/index.js';
 export * from './mail/index.js';
 export * from './storage/index.js';

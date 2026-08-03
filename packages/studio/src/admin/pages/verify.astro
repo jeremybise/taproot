@@ -4,6 +4,9 @@ import { resolveLoginChallenge } from '@taprootcms/core';
 import { getTaproot } from '../../runtime/guards.js';
 import { CHALLENGE_COOKIE } from '../../api/auth/challengeCookie.js';
 import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
+import { adminBranding } from '../branding.js';
+import BrandHead from '../components/BrandHead.astro';
+import BrandMark from '../components/BrandMark.astro';
 
 /**
  * The second factor, between a correct password and a session.
@@ -25,6 +28,7 @@ const next = Astro.url.searchParams.get('next') ?? '/admin';
 const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/admin';
 
 const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
+const branding = await adminBranding(taproot.db.db, taproot.storage);
 ---
 
 <html lang="en" data-theme={themeAttribute(theme)}>
@@ -32,13 +36,13 @@ const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Two-factor code · Taproot</title>
+    <BrandHead branding={branding} title={`Two-factor code · ${branding.resolvedTitle}`} />
   </head>
   <body class="min-h-screen bg-surface-sunken text-content">
     <main class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
       <div class="rounded-xl border border-border bg-surface-raised p-8 shadow-sm">
         <h1 class="flex items-center gap-2 text-xl font-semibold tracking-tight">
-          <span aria-hidden="true" class="text-accent">◆</span>
+          <BrandMark branding={branding} size="h-6" />
           Enter your code
         </h1>
         <p class="mt-2 text-sm text-content-muted">

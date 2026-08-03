@@ -614,6 +614,24 @@ export interface MenuItemsTable {
   updated_at: Timestamp;
 }
 
+/**
+ * Deployment-wide settings. Exactly one row, id `site` — see `0016_settings`.
+ *
+ * Every column is nullable and every null means "the built-in default", which is deliberately not
+ * the same as an empty string: clearing the title has to put "Taproot" back rather than leave the
+ * admin nameless.
+ */
+export interface SettingsTable {
+  id: string;
+  title: string | null;
+  logo_media_id: string | null;
+  /** Hex, one per palette. Null is the accent as written in `admin.css`. */
+  accent_light: string | null;
+  accent_dark: string | null;
+  updated_at: Timestamp;
+  updated_by: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
@@ -652,6 +670,7 @@ export interface Database {
   taxonomy_assignments: TaxonomyAssignmentsTable;
   menus: MenusTable;
   menu_items: MenuItemsTable;
+  settings: SettingsTable;
 }
 
 export type User = Selectable<UsersTable>;

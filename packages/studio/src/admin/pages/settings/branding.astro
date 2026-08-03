@@ -1,0 +1,57 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import BrandingEditor from '../../islands/BrandingEditor.tsx';
+import { getBranding } from '@taprootcms/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
+import { imageOptions } from '../../mediaOptions.js';
+
+/**
+ * Branding: the CMS's own name, mark, and colour.
+ *
+ * Under Settings rather than anywhere else because it configures the *system* rather than the site
+ * — nothing here reaches a visitor. A campus that runs Taproot behind its own name is the case this
+ * exists for, and until it did, five files hardcoded "Taproot" and a ◆.
+ *
+ * Admin only, the same bar as the content model: it changes what everybody who signs in sees.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+if (!canManageSchema(user)) {
+  return new Response('Branding is administrator-only.', { status: 403 });
+}
+
+// The raw row, not the resolved one: the form has to tell "nothing chosen" from "chosen, and it
+// happens to match the default", because that is the difference between a placeholder and a value.
+const branding = await getBranding(taproot.db.db);
+const images = await imageOptions(taproot.db.db, taproot.storage);
+---
+
+<AdminLayout
+  title="Branding"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Branding' }]}
+>
+  <PageHeader title="Branding" meta="Applies to the admin and the sign-in screen" />
+
+  <p class="mb-6 max-w-prose text-sm text-content-muted">
+    None of this reaches your website. It is what the CMS calls itself for the people who sign in to
+    it — the sidebar, the browser tab, and the sign-in screen.
+  </p>
+
+  {/*
+    An island because the contrast figures have to move as the colour does. A server-rendered
+    version would mean saving to find out whether the accent you picked is readable, which is
+    exactly the loop this screen exists to close.
+  */}
+  <BrandingEditor
+    client:load
+    title={branding.title}
+    logoMediaId={branding.logoMediaId}
+    accentLight={branding.accentLight}
+    accentDark={branding.accentDark}
+    images={images}
+  />
+</AdminLayout>

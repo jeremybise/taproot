@@ -97,7 +97,7 @@ export function findImage(images: MediaOption[], id: string | null): MediaOption
   return id ? (images.find((image) => image.id === id) ?? null) : null;
 }
 
-function toMediaOption(
+export function toMediaOption(
   row: {
     id: string;
     filename: string;

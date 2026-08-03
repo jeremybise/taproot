@@ -32,8 +32,8 @@ clicking one opens its editor directly.
 - **Taxonomies** — the tag and category vocabularies your site uses.
 - **Menus** — the site's navigation. Administrators only.
 
-**Settings** — administrators only. Content types, block types, redirects, people, API keys, the
-audit log, and system information.
+**Settings** — administrators only. Content types, block types, branding, redirects, people, API
+keys, the audit log, and system information.
 
 ## Things that are the same on every screen
 

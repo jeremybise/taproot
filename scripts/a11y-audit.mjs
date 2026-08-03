@@ -93,6 +93,7 @@ const ROUTES = [
   '/admin/taxonomies',
   '/admin/menus',
   '/admin/settings/redirects',
+  '/admin/settings/branding',
   '/admin/releases',
   '/admin/settings',
 ];

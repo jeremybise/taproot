@@ -21,6 +21,7 @@ const LIGHT = {
   'content-muted': [50, 0.012, 250],
   'content-subtle': [54, 0.012, 250],
   accent: [52, 0.15, 155],
+  'accent-hover': [46, 0.15, 155],
   'accent-content': [99, 0, 0],
   'accent-subtle': [95, 0.04, 155],
   danger: [52, 0.19, 25],
@@ -52,6 +53,7 @@ const DARK = {
   'content-muted': [74, 0.01, 250],
   'content-subtle': [64, 0.012, 250],
   accent: [70, 0.15, 155],
+  'accent-hover': [76, 0.15, 155],
   'accent-content': [18, 0.02, 155],
   'accent-subtle': [28, 0.05, 155],
   danger: [66, 0.18, 25],
@@ -87,6 +89,17 @@ const PAIRS = [
   ['content-muted', 'surface-sunken', 4.5, 'inactive nav links in the sidebar'],
   ['content-subtle', 'surface-sunken', 4.5, 'group headings in the sidebar'],
   ['accent-content', 'accent', 4.5, 'primary button label'],
+  ['accent-content', 'accent-hover', 4.5, 'primary button label, hovered'],
+  /*
+    The accent as *text*, not as a fill.
+
+    Rich-text links are drawn in it, which makes this SC 1.4.3 at 4.5:1 — and it went unchecked
+    for four phases because the token was only ever thought of as a button background. Phase 4.6c
+    makes the accent configurable, so the branding screen reports this same pair live; the two
+    have to agree, and the code behind that one lives in `packages/core/src/branding/color.ts`.
+  */
+  ['accent', 'surface', 4.5, 'links inside the rich-text editor'],
+  ['accent', 'surface-raised', 3, 'the accent as a selection ring or border'],
   ['content', 'accent-subtle', 4.5, 'text on the active nav item and flash messages'],
   ['content', 'danger-subtle', 4.5, 'text in error banners'],
   ['content', 'warning-subtle', 4.5, 'text in warning banners'],

@@ -1,0 +1,36 @@
+---
+import type { AdminBranding } from '../branding.js';
+
+/**
+ * The mark that stands in front of the CMS's name.
+ *
+ * The configured logo when there is one, the ◆ otherwise — and always decorative, because the name
+ * is written out beside it in every place this appears. An `alt` here would have a screen reader
+ * announce the title twice.
+ *
+ * Height rather than width: a logo is whatever proportions it is, and constraining the side that
+ * has to line up with text is what keeps a wide wordmark from pushing the sidebar out. `max-w` is
+ * the backstop for a very wide one.
+ */
+interface Props {
+  branding: AdminBranding;
+  /** Tailwind height class for the logo, matched to the text it sits beside. */
+  size?: string;
+}
+
+const { branding, size = 'h-6' } = Astro.props;
+---
+
+{
+  branding.logo ? (
+    <img
+      src={branding.logo.url}
+      alt=""
+      class={`${size} w-auto max-w-32 shrink-0 object-contain`}
+    />
+  ) : (
+    <span aria-hidden="true" class="text-accent">
+      ◆
+    </span>
+  )
+}
