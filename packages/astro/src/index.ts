@@ -76,6 +76,32 @@ export interface ListOptions {
 }
 
 export function createTaprootClient(options: TaprootClientOptions) {
+  /**
+   * A missing `url` is almost never a missing argument.
+   *
+   * It is an environment variable that was undefined at *runtime* — which the type system cannot
+   * see, because `url: string` describes what the caller believes it is passing. On Workers that is
+   * the ordinary outcome of two mistakes the handbook now documents: reading `import.meta.env`,
+   * which Astro substitutes at build time and Cloudflare has no `process.env` to backfill, and
+   * setting a value only in `.dev.vars`, which is never uploaded.
+   *
+   * Without this the failure is `options.url.replace` throwing `Cannot read properties of undefined`
+   * from inside a bundled chunk, at module scope, before a request is ever made — a stack that names
+   * neither the variable nor the fact that it is a configuration problem. Same reasoning as the 401
+   * message below: the person reading this is the person who can fix it, and they are only reading
+   * it because something did not say what was wrong.
+   *
+   * Only `url` is guarded. A missing `apiKey` is legitimate against a local studio, where a signed-in
+   * session reaches the delivery API too.
+   */
+  if (!options.url) {
+    throw new Error(
+      'createTaprootClient was given no `url`. This is usually an environment variable that is ' +
+        'undefined at runtime rather than a missing argument — see the handbook, Building a site → ' +
+        'Getting started.',
+    );
+  }
+
   const base = options.url.replace(/\/$/, '');
   const doFetch = options.fetch ?? globalThis.fetch;
 
