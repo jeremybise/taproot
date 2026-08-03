@@ -76,7 +76,15 @@ interface Props {
   referencedMedia?: MediaOption[];
   /** The content type's default social image, inherited when the item chooses none. */
   defaultOgImage?: MediaOption | null;
-  /** Where this item resolves publicly. Empty for a singleton, which has no path of its own. */
+  /**
+   * Where a visitor sees this item, from `previewPathFor` — **not** the row's `path`.
+   *
+   * For a page or collection the two are the same. For a singleton they are not: the row's path is
+   * the synthetic `/__singleton/{api_id}` and this is the address the site actually renders it at,
+   * which only the content type's preview path can say. Both readers below mean the public URL —
+   * the pane opens on it, and the SEO panel shows it under the snippet — so sending the row's path
+   * pointed both at a URL no visitor requests.
+   */
   path?: string;
   origin?: string;
   /**

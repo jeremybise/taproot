@@ -47,6 +47,17 @@ The site is useless without it, and you will need a key from it.
 4. **Set secrets** with `wrangler secret put`. Never in `wrangler.jsonc`, which is committed.
 5. **Deploy** — `npm run deploy`.
 
+:::note[A CMS with nothing configured has no secrets, and that is correct.]
+`npx wrangler secret list` returning `[]` is not a symptom on its own — it means nothing has ever
+been set with `wrangler secret put`, which is the normal state until you wire up email. The CMS
+holds no API key: it *issues* keys and stores only their SHA-256, so `TAPROOT_API_KEY` belongs to
+the **site**, a different deployment. `TAPROOT_CRON_SECRET` is not needed on Cloudflare either,
+because the sweep is a cron trigger on the Worker itself.
+
+Secrets and `vars` are also separate lists. `wrangler secret list` never shows a `vars` entry and
+never will, so an empty result says nothing about whether `TAPROOT_SITE_URL` is set.
+:::
+
 :::caution[Step 3 is a local `.env`. Step 4 is `wrangler secret put`. They are not the same thing.]
 The two steps sit next to each other and use different mechanisms, which is the most common way to
 get stuck here.
@@ -109,6 +120,26 @@ The site holds no database credentials, because it has no database.
 Back in the CMS, set `TAPROOT_SITE_URL` to the site's origin. That is what preview links are built
 from — without it, an editor pressing the preview button gets told the CMS does not know where to send
 them, which is a clearer failure than a redirect to a 404 on the wrong origin.
+
+**On Cloudflare it goes in `vars` in the CMS's `wrangler.jsonc`, not `wrangler secret put`:**
+
+```jsonc
+"vars": {
+  "NODE_ENV": "production",
+  "TAPROOT_SITE_URL": "https://www.example.edu"
+}
+```
+
+It is an origin, not a credential — there is nothing in it worth encrypting, and it is the address
+your visitors already type. Putting it in the committed file is also what makes it survive: `wrangler
+deploy` replaces the Worker's `vars` with exactly what that file holds, so a value typed into the
+Cloudflare dashboard is deleted by the next deploy, and the deploy that deletes it is usually about
+something else entirely. A secret would survive, but reaching for one here is solving the wrong
+problem — the file is the right home.
+
+Two symptoms of it being unset, both of which read as something else: the item editor shows an item's
+path as plain text instead of a link to the live site, and a singleton with a preview path still
+offers no pane.
 
 ### Deploy it
 

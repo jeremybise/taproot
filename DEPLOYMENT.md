@@ -405,6 +405,24 @@ Then, on the **CMS**, set `TAPROOT_SITE_URL` to the site's origin. That is what 
 built from, and what the item editor's live preview pane frames; without it an editor opening a
 preview is told the CMS does not know where to send them.
 
+On Cloudflare it belongs in `vars` in the CMS's `wrangler.jsonc`, **not** `wrangler secret put`:
+
+```jsonc
+"vars": {
+  "NODE_ENV": "production",
+  "TAPROOT_SITE_URL": "https://www.example.edu"
+}
+```
+
+An origin is not a credential, so there is nothing to encrypt — and committing it is what makes it
+survive, since `wrangler deploy` replaces the Worker's `vars` with exactly what that file holds and
+deletes anything added in the dashboard.
+
+Note that `npx wrangler secret list` returning `[]` on the CMS is normal and says nothing about this:
+secrets and `vars` are separate lists, and a CMS with no email webhook configured has no secrets at
+all. The CMS never holds `TAPROOT_API_KEY` — it issues keys and stores only their hash, so that one
+belongs to the site.
+
 One thing to check on the **site** if the preview pane comes up blank: nothing in Taproot or in
 Astro sends a framing header, but a WAF, CDN rule, or security-headers middleware in front of the
 site may add `X-Frame-Options: SAMEORIGIN`, which stops the CMS framing it. That has to be removed

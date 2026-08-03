@@ -313,7 +313,20 @@ const flash = error
     media={media}
     referencedMedia={referencedMedia}
     defaultOgImage={defaultOgImage}
-    path={item.path}
+    {/*
+      The address on the site, not the row's own `path`.
+
+      This feeds two things that both mean "where does a visitor see this": the preview pane's
+      opening address, and the URL the SEO panel renders under its snippet. Passing `item.path`
+      sent a configured singleton's pane to `/__singleton/{api_id}` — which *renders*, because the
+      token is a capability over exactly that path, so it looked like it worked while showing the
+      catch-all's generic output instead of the template the site uses for that page.
+
+      The mint endpoint returns `itemPath` too and the pane ignores it: the address bar exists
+      before the mint resolves, so the server-rendered prop is the one that decides. Two values for
+      one thing is why this was wrong in the first place — both now come from `previewPathFor`.
+    */}
+    path={publicPath ?? item.path}
     origin={Astro.url.origin}
     preview={previewPane}
   />

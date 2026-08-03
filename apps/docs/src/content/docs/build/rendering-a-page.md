@@ -273,7 +273,20 @@ that happens to sit at the root:
 
 ```astro
 ---
+// src/pages/index.astro
+import { PREVIEW_PARAM } from '@taprootcms/astro';
+import { taproot } from '../taproot.ts';
+
+export const prerender = false;
+
+// Read it here too. `index.astro` is a route like any other, and preview reaches it the same way
+// it reaches the catch-all — a token in the query string that you hand straight back.
+const previewToken = Astro.url.searchParams.get(PREVIEW_PARAM);
+
 const result = await taproot.resolve('/__singleton/homepage', { previewToken });
+if (result.kind !== 'item') {
+  return new Response('No homepage content', { status: 500 });
+}
 ---
 ```
 
@@ -286,6 +299,24 @@ to look at and a preview would show a page that content is not.
 Nothing about the fetch changes when you set it. Your route still asks `resolve` for
 `/__singleton/homepage`, because that is what the preview token is a capability over; the setting
 only tells the admin which URL to open. Taproot still has no opinion about how your site routes.
+
+:::caution[A route that does not read the token shows the published page, with no error.]
+This is the failure to expect, because nothing about it looks broken. The pane frames `/`, your
+`index.astro` fetches the singleton without a token, the delivery API answers with **published**
+content, and the editor sees their homepage rendered correctly — just without the edits they made a
+second ago. There is no warning, because from the CMS's side nothing went wrong.
+
+If the pane shows the right template but stale content, this line is what is missing:
+
+```astro
+const previewToken = Astro.url.searchParams.get(PREVIEW_PARAM);
+```
+
+The mirror-image symptom is the pane showing your *edits* under the **wrong template** — that means
+it is still framing `/__singleton/homepage`, which the catch-all serves generically because it is a
+real path the token covers. Set the content type's preview path, and check you are on
+`@taprootcms/studio` 0.1.8 or newer.
+:::
 
 ## Related content
 
