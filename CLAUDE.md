@@ -65,7 +65,7 @@ declares it.
 | `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 1134 tests |
+| `npm test` | Vitest, 1136 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core + inert-label + reflow-hazard checks over every admin route, then the numeric contrast check. Needs `npm run dev` running |
@@ -426,6 +426,30 @@ reference-only `<img data-taproot-media>` filled at delivery would have kept alt
 which is half the original reason — but not the hotspot, because `set:html` cannot produce a
 `TaprootImage`, so a picture in prose would be the one image on the site ignoring its focal point. An
 image in a paragraph is a block's job.
+
+**Three things break a link the editor appears to create, and none of them raise an error.** All
+three shipped at once, so the feature was inert while every test passed:
+- **TipTap validates hrefs against `Link.configure({ protocols })`.** `taproot` has to be on that
+  list — with `optionalSlashes`, since a reference has no `//` — or the mark is dropped between the
+  click and the document. Proven by removing it and watching two tests fail.
+- **`insertContent` with an HTML string escapes it.** `<a href=…>` arrived as visible text. Insert a
+  text node carrying a `link` mark instead.
+- **`HTMLAttributes` merges with TipTap's defaults rather than replacing them**, and its default
+  includes `target: '_blank'`. Overriding only `rel` left *every* link this editor has ever made
+  opening in a new tab, including internal ones. `target: null` is load-bearing.
+
+**A result list beside a rich-text editor acts on `click` and cancels `mousedown`.** The press is
+what moves focus out of the editor and collapses the selection, which silently turns "wrap this
+phrase in a link" into "insert a link at the cursor" — so `mousedown` is prevented. The *act* stays
+on `click`, because Enter and Space raise a click with no `mousedown` before it; acting on
+`mousedown` makes the control reachable by pointer and by nothing else.
+
+**Asserting a control exists is not asserting it works.** The link search had tests for its input,
+its label and its place in the toolbar's tab order, and shipped unable to create a single link. A
+test for a feature has to make the feature happen and inspect what came out —
+`RichTextEditor.test.tsx`'s "a chosen link actually becomes a link" block is the shape to copy.
+Where jsdom genuinely cannot help — it has no selection model, so wrapping a selection is unprovable
+there — say so in the test file and verify that branch in a browser.
 
 **The richtext toolbar's roving tabindex is derived, never counted by hand.** The unlink button only
 exists while the cursor is in a link, so every index after it moves; a literal index left a hole, and

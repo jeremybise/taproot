@@ -244,6 +244,77 @@ describe('linking to content and files', () => {
   });
 });
 
+describe('a chosen link actually becomes a link', () => {
+  /**
+   * The tests above check that the search input exists and that the toolbar can reach the file
+   * button. Neither of those notices that picking a result produces **nothing**, which is exactly
+   * what shipped: TipTap's Link extension validates hrefs against its `protocols` list, `taproot`
+   * was not on it, and every internal link was silently discarded between the click and the
+   * document. A control that is present and inert passes every test about its presence.
+   */
+  const PAGE = { id: '019fbe8e-ba01-7c65-a08f-e49bc783e1e3', title: 'About', path: '/about' };
+  const ASSET = {
+    id: '019fbe8e-b69b-71e4-a9de-8a895e8bd7e2',
+    filename: 'prospectus.pdf',
+    url: '/media/prospectus.pdf',
+    altText: null,
+    mimeType: 'application/pdf',
+    width: null,
+    height: null,
+  };
+
+  function stubSearch() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ items: [PAGE] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Selecting text inside ProseMirror is not something jsdom can be trusted to do — it has no real
+   * selection model — so the branch that wraps an existing selection is verified in a browser
+   * instead. What these prove is the part that was actually broken: that a `taproot:` href survives
+   * TipTap's own validation and reaches the document at all.
+   */
+  it('inserts the page title as the text when nothing is selected', async () => {
+    stubSearch();
+    const user = userEvent.setup();
+    const { onChange, bar } = await setupWithToolbar();
+
+    await user.click(within(bar).getByRole('button', { name: /link/i }));
+    await user.type(screen.getByLabelText('Or link to a page'), 'about');
+    await user.click(await screen.findByRole('button', { name: /About/ }));
+
+    await waitFor(() => {
+      const html = onChange.mock.calls.at(-1)?.[0] ?? '';
+      expect(html).toContain(`href="taproot:item:${PAGE.id}"`);
+      // The title, not an empty anchor — the bug that a stale state read would produce.
+      expect(html).toContain('>About<');
+    });
+  });
+
+  it('links to a file chosen from the library', async () => {
+    const user = userEvent.setup();
+    const { onChange, bar } = await setupWithToolbar({ media: [ASSET] });
+
+    await user.click(within(bar).getByRole('button', { name: 'Link to a file' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('option', { name: /prospectus/i }));
+    await user.click(within(dialog).getByRole('button', { name: /choose|insert|select/i }));
+
+    await waitFor(() => {
+      const html = onChange.mock.calls.at(-1)?.[0] ?? '';
+      expect(html).toContain(`href="taproot:media:${ASSET.id}"`);
+    });
+  });
+});
+
 describe('accessibility of the rendered widget', () => {
   it('has no axe violations once hydrated', async () => {
     const { container } = await setupWithToolbar();

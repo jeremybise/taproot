@@ -61,7 +61,13 @@ export function LinkTargetSearch({ id, onPick }: Props) {
   }, [query]);
 
   return (
-    <div className="min-w-0 flex-1">
+    /*
+      `relative`, because the results below are an overlay.
+
+      They used to be an ordinary block, so every keystroke grew the form and pushed the editor
+      down the page — the text an author was about to link moved while they were reading the list.
+    */
+    <div className="relative min-w-0 flex-1">
       <label htmlFor={id} className="block text-xs font-medium">
         Or link to a page
       </label>
@@ -86,14 +92,32 @@ export function LinkTargetSearch({ id, onPick }: Props) {
         {searching ? 'Searching' : results.length > 0 ? `${results.length} pages found` : ''}
       </div>
 
+      {/*
+        An overlay, so the form keeps its height while the list changes underneath the cursor.
+
+        `z-20` clears the toolbar it hangs over, and the list scrolls at eight-ish rows rather than
+        running off the bottom of a field that may itself be near the fold.
+      */}
       {results.length > 0 && (
-        <ul className="mt-1 max-h-40 overflow-y-auto rounded-md border border-border">
+        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-md border border-border bg-surface-raised shadow-lg">
           {results.map((item) => (
             <li key={item.id}>
               <button
                 type="button"
+                /*
+                  Two handlers, doing different jobs.
+
+                  `mousedown` only prevents its default, which is what stops the press moving focus
+                  out of the editor and collapsing the selection — the difference between "wrap this
+                  phrase in a link" and "insert a link at the cursor".
+
+                  The act stays on `click`, because that is the event a keyboard fires: Enter and
+                  Space raise a click with no mousedown before it. Acting on mousedown instead would
+                  have made this reachable by pointer and by nothing else.
+                */
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onPick(item)}
-                className="block w-full px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-sunken"
+                className="block w-full border-b border-border px-2.5 py-1.5 text-left text-sm transition-colors last:border-b-0 hover:bg-surface-sunken"
               >
                 <span className="block truncate font-medium">{item.title}</span>
                 <span className="block truncate font-mono text-xs text-content-subtle">

@@ -189,8 +189,6 @@ export function RichTextEditor({
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
   const [linkIsRef, setLinkIsRef] = useState(false);
-  /** The chosen page's title, used as the link text when nothing is selected. */
-  const [linkTargetTitle, setLinkTargetTitle] = useState('');
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -207,10 +205,34 @@ export function RichTextEditor({
       }),
       Link.configure({
         openOnClick: false,
-        // Belt and braces with the server-side sanitiser: this stops a pasted `javascript:` URL
-        // becoming a link in the editor at all, so an editor never sees one and thinks it worked.
-        protocols: ['http', 'https', 'mailto', 'tel'],
-        HTMLAttributes: { rel: 'noopener noreferrer' },
+        /**
+         * Belt and braces with the server-side sanitiser: this stops a pasted `javascript:` URL
+         * becoming a link in the editor at all, so an editor never sees one and thinks it worked.
+         *
+         * `taproot` has to be here or the whole internal-link feature is inert — TipTap validates
+         * every href against this list and silently drops the mark, so choosing a page produced a
+         * form that closed and no link. `optionalSlashes` because a reference is `taproot:item:{id}`
+         * with no `//`, which the default matcher requires.
+         */
+        protocols: [
+          'http',
+          'https',
+          'mailto',
+          'tel',
+          { scheme: 'taproot', optionalSlashes: true },
+        ],
+        /**
+         * `target: null` is doing real work here.
+         *
+         * TipTap's Link ships `target: '_blank'` in its own defaults and `HTMLAttributes` *merges*
+         * rather than replaces, so overriding only `rel` left every link this editor has ever made
+         * opening in a new tab — including a link from one page of the site to another. Nobody asked
+         * for that, and it is most obviously wrong on an internal reference.
+         *
+         * `rel` stays: the server adds it too whenever it emits `target="_blank"`, and matching here
+         * means what the editor shows is what gets stored.
+         */
+        HTMLAttributes: { target: null, rel: 'noopener noreferrer' },
       }),
     ],
     content: value,
@@ -308,16 +330,30 @@ export function RichTextEditor({
     setLinkOpen(true);
   }
 
-  /** Store the reference rather than the path, so the link follows the page. */
-  function applyTarget(href: string) {
+  /**
+   * Store the reference rather than the path, so the link follows the page.
+   *
+   * `label` is a parameter and not the state the caller just set: a `setState` before this call has
+   * not landed by the time it runs, so reading it here inserted an empty anchor the first time and
+   * the *previous* title every time after.
+   *
+   * With nothing selected there is no text to carry the link, so the label becomes the text — as a
+   * text node carrying the mark, not as an HTML string. `insertContent` with markup escaped it and
+   * put a literal `<a href=…>` into the prose.
+   */
+  function applyTarget(href: string, label: string) {
     if (!editor) return;
-    const chain = editor.chain().focus().extendMarkRange('link');
-    // With nothing selected there is no text to carry the link, so the title becomes the text.
+
     if (editor.state.selection.empty) {
-      chain.insertContent(`<a href="${href}">${linkTargetTitle}</a>`).run();
+      editor
+        .chain()
+        .focus()
+        .insertContent({ type: 'text', text: label, marks: [{ type: 'link', attrs: { href } }] })
+        .run();
     } else {
-      chain.setLink({ href }).run();
+      editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
     }
+
     setLinkOpen(false);
   }
 
@@ -450,8 +486,7 @@ export function RichTextEditor({
             const asset = assets[0];
             setFilePickerOpen(false);
             if (!asset) return;
-            setLinkTargetTitle(asset.filename);
-            applyTarget(`taproot:media:${asset.id}`);
+            applyTarget(`taproot:media:${asset.id}`, asset.filename);
           }}
         />
       )}
@@ -498,10 +533,7 @@ export function RichTextEditor({
 
           <LinkTargetSearch
             id={`${id}-link-search`}
-            onPick={(target: LinkTarget) => {
-              setLinkTargetTitle(target.title);
-              applyTarget(`taproot:item:${target.id}`);
-            }}
+            onPick={(target: LinkTarget) => applyTarget(`taproot:item:${target.id}`, target.title)}
           />
           <button
             type="submit"
