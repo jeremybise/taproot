@@ -101,6 +101,14 @@ link to each other and check it before any of it is live.
 The **paperclip** button links to a file in the media library the same way, so replacing the file
 does not break the link.
 
+Two checkboxes sit beside the address, and they apply however you chose the link:
+
+- **Open in a new tab.** Off by default — a link from one page of your site to another should not
+  open a tab, and that is most links. Taproot adds the `noopener noreferrer` protection to any
+  new-tab link automatically; there is no way to turn that off, and no reason to want to.
+- **Tell search engines not to follow.** Adds `rel="nofollow"`. Worth ticking on links you are
+  obliged to include but do not want to vouch for.
+
 Images are not inserted into rich text — use an image block, which keeps the focal point and the
 crop. See [Blocks](/content/blocks/).
 

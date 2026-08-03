@@ -65,7 +65,7 @@ declares it.
 | `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 1136 tests |
+| `npm test` | Vitest, 1139 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core + inert-label + reflow-hazard checks over every admin route, then the numeric contrast check. Needs `npm run dev` running |
@@ -426,6 +426,24 @@ reference-only `<img data-taproot-media>` filled at delivery would have kept alt
 which is half the original reason — but not the hotspot, because `set:html` cannot produce a
 `TaprootImage`, so a picture in prose would be the one image on the site ignoring its focal point. An
 image in a paragraph is a block's job.
+
+**TipTap 3 does not re-render on transactions, so anything read from the editor in a render body is
+frozen.** `editor.isActive(…)` straight in JSX was evaluated once: the H2 button stayed lit wherever
+the caret went, the list buttons never lit, and Unlink was offered on plain text. Nothing errors —
+the toolbar just stops telling the truth. `useEditorState` with a **flat, primitive-only** selector
+is the fix; anything nested defeats its equality check and re-renders on every keystroke anyway,
+which is the whole reason to prefer it over turning blanket re-rendering back on.
+
+**`rel` is author-controllable but only from a fixed set, and `noopener noreferrer` cannot be
+removed.** `ALLOWED_REL` is the list; a `target="_blank"` link always gets the protective pair added
+last, whatever the author sent. That is what makes "open in a new tab" and "nofollow" safe to expose
+as checkboxes.
+
+**Every path that applies a link has to handle a collapsed caret.** `setLink` marks the *selection*;
+with nothing selected it succeeds and produces nothing visible, which from the outside is exactly
+"I pressed apply and no link appeared". Typing an address, choosing a page, and choosing a file all
+route through one function that branches on `selection.empty` — three copies is three chances for one
+of them to miss it, and two of them already had.
 
 **Three things break a link the editor appears to create, and none of them raise an error.** All
 three shipped at once, so the feature was inert while every test passed:

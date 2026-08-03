@@ -59,7 +59,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   ul: [],
   ol: [],
   li: [],
-  a: ['href', 'title', 'target'],
+  a: ['href', 'title', 'target', 'rel'],
 };
 
 const VOID_TAGS = new Set(['br']);
@@ -254,12 +254,22 @@ function serializeAttributes(tag: string, raw: string): string {
 }
 
 /**
+ * Relationship tokens an author is allowed to set.
+ *
+ * A short list rather than free text: `rel` is a security-relevant attribute, and the useful
+ * editorial ones are few. Anything outside this set is discarded rather than passed through, so a
+ * pasted `rel` cannot carry something nobody vetted.
+ */
+const ALLOWED_REL = new Set(['nofollow', 'noopener', 'noreferrer', 'sponsored', 'ugc']);
+
+/**
  * Anchors, handled apart because their attributes constrain each other.
  *
  * A link opening in a new tab without `rel="noopener"` hands the opened page a reference back
  * through `window.opener`. Current browsers imply it for `target="_blank"`, older ones do not, and
- * being explicit costs nothing — so `target` is only ever emitted with the `rel` that protects it.
- * `rel` is therefore not author-controlled, which is why it is absent from the allowlist.
+ * being explicit costs nothing — so `noopener noreferrer` is **added** whenever `target="_blank"` is
+ * emitted, whatever the author asked for. An author can add `nofollow` and friends on top; they
+ * cannot take the protective pair away.
  */
 function serializeAnchor(attributes: Map<string, string>): string {
   const href = safeUrl(attributes.get('href') ?? '');
@@ -272,9 +282,20 @@ function serializeAnchor(attributes: Map<string, string>): string {
   const title = attributes.get('title');
   if (title) parts.push(` title="${escapeAttribute(title)}"`);
 
-  if (attributes.get('target') === '_blank') {
-    parts.push(' target="_blank"', ' rel="noopener noreferrer"');
+  const newTab = attributes.get('target') === '_blank';
+  if (newTab) parts.push(' target="_blank"');
+
+  const rel = new Set<string>();
+  for (const token of (attributes.get('rel') ?? '').split(/\s+/)) {
+    if (ALLOWED_REL.has(token.toLowerCase())) rel.add(token.toLowerCase());
   }
+  // Not negotiable, and added last so it cannot be omitted by an author who set `rel` themselves.
+  if (newTab) {
+    rel.add('noopener');
+    rel.add('noreferrer');
+  }
+
+  if (rel.size > 0) parts.push(` rel="${escapeAttribute([...rel].join(' '))}"`);
 
   return parts.join('');
 }

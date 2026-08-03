@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EditorContent, useEditor, type Editor } from '@tiptap/react';
+import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import {
@@ -189,6 +189,8 @@ export function RichTextEditor({
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
   const [linkIsRef, setLinkIsRef] = useState(false);
+  const [linkNewTab, setLinkNewTab] = useState(false);
+  const [linkNoFollow, setLinkNoFollow] = useState(false);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -269,6 +271,38 @@ export function RichTextEditor({
   const linkAllowed = !allowedTags || allowedTags.includes('a');
 
   /**
+   * What the cursor is currently inside, kept in step with the document.
+   *
+   * **TipTap 3 changed the default here and it is not obvious.** `useEditor` no longer re-renders on
+   * every transaction, so `editor.isActive(…)` read straight in the render body is evaluated once
+   * and then frozen: the H2 button stayed lit wherever the caret went, the list buttons never lit at
+   * all, and Unlink was offered on text that was not a link. Nothing errors — the toolbar simply
+   * stops telling the truth.
+   *
+   * `useEditorState` subscribes properly and re-renders only when one of these values changes, which
+   * is the point of it over turning blanket re-rendering back on: this runs on every keystroke.
+   *
+   * The selector returns **primitives only**, flat. Anything nested defeats the equality check that
+   * makes it worth using, and it would re-render on every transaction after all.
+   */
+  const live = useEditorState({
+    editor,
+    selector: ({ editor: current }) => {
+      if (!current) return null;
+      return {
+        // One character per button, in `items` order — a string so the comparison stays shallow.
+        activeMask: items.map((item) => (item.isActive(current) ? '1' : '0')).join(''),
+        isLink: current.isActive('link'),
+        linkHref: (current.getAttributes('link').href as string | undefined) ?? '',
+        linkTarget: (current.getAttributes('link').target as string | undefined) ?? '',
+        linkRel: (current.getAttributes('link').rel as string | undefined) ?? '',
+      };
+    },
+  });
+
+  const isLink = live?.isLink ?? false;
+
+  /**
    * Where each trailing button sits in the roving tabindex, derived rather than hardcoded.
    *
    * The unlink button only exists while the cursor is in a link, so anything after it moves. Writing
@@ -276,7 +310,7 @@ export function RichTextEditor({
    * leaving it out of `buttonCount` meant End and the arrow-key wrap could never reach it — the
    * toolbar pattern's whole promise is that every control is reachable from one tab stop.
    */
-  const linkButtons = linkAllowed ? (editor?.isActive('link') ? 2 : 1) : 0;
+  const linkButtons = linkAllowed ? (isLink ? 2 : 1) : 0;
   // A file link is a link: if `a` is not an allowed format, there is nothing for this to produce.
   const fileButtonShown = linkAllowed && media.length > 0;
   const fileButtonIndex = items.length + linkButtons;
@@ -327,7 +361,24 @@ export function RichTextEditor({
      * reference clears it and the note below says what the link actually points at.
      */
     setLinkIsRef(TAPROOT_REF.test(href));
+    // Seeded from the link the cursor is in, so opening the form on an existing link shows how it
+    // is currently set rather than resetting it to the defaults.
+    setLinkNewTab(editor.getAttributes('link').target === '_blank');
+    setLinkNoFollow(/nofollow/.test(editor.getAttributes('link').rel ?? ''));
     setLinkOpen(true);
+  }
+
+  /**
+   * The two options as link attributes.
+   *
+   * `rel` carries only what the author asked for; the server adds `noopener noreferrer` to anything
+   * opening in a new tab and will not let that be removed, so there is nothing to duplicate here.
+   */
+  function linkOptions() {
+    return {
+      target: linkNewTab ? '_blank' : null,
+      rel: linkNoFollow ? 'nofollow' : null,
+    };
   }
 
   /**
@@ -344,14 +395,31 @@ export function RichTextEditor({
   function applyTarget(href: string, label: string) {
     if (!editor) return;
 
+    /**
+     * Two branches, and both are needed however the link was chosen.
+     *
+     * `setLink` marks the current selection. With the caret collapsed there is no selection to mark,
+     * so it succeeds and produces nothing visible — which is what "I clicked apply and no link was
+     * created" looks like from the outside. When there is nothing selected the link has to bring its
+     * own text.
+     */
     if (editor.state.selection.empty) {
       editor
         .chain()
         .focus()
-        .insertContent({ type: 'text', text: label, marks: [{ type: 'link', attrs: { href } }] })
+        .insertContent({
+          type: 'text',
+          text: label,
+          marks: [{ type: 'link', attrs: { href, ...linkOptions() } }],
+        })
         .run();
     } else {
-      editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+      editor
+        .chain()
+        .focus()
+        .extendMarkRange('link')
+        .setLink({ href, ...linkOptions() })
+        .run();
     }
 
     setLinkOpen(false);
@@ -363,11 +431,13 @@ export function RichTextEditor({
 
     const href = linkValue.trim();
     if (href) {
-      editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
-    } else {
-      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+      // The address is the label: with nothing selected, a link has to show something, and the URL
+      // is the only thing this path knows about the destination.
+      applyTarget(href, href);
+      return;
     }
 
+    editor.chain().focus().extendMarkRange('link').unsetLink().run();
     setLinkOpen(false);
   }
 
@@ -394,7 +464,7 @@ export function RichTextEditor({
         className="flex flex-wrap items-center gap-0.5 border-b border-border bg-surface-sunken px-1.5 py-1"
       >
         {items.map((item, index) => {
-          const active = item.isActive(editor);
+          const active = live?.activeMask[index] === '1';
           const Icon = item.icon;
           return (
             <button
@@ -423,7 +493,7 @@ export function RichTextEditor({
             <button
               type="button"
               disabled={disabled}
-              aria-pressed={editor.isActive('link')}
+              aria-pressed={isLink}
               aria-label="Add or edit link"
               title="Add or edit link"
               aria-expanded={linkOpen}
@@ -431,13 +501,13 @@ export function RichTextEditor({
               onFocus={() => setFocusIndex(items.length)}
               onClick={openLinkForm}
               className={`rounded p-1.5 transition-colors disabled:opacity-40 ${
-                editor.isActive('link') ? 'bg-accent-subtle text-content' : 'hover:bg-surface'
+                isLink ? 'bg-accent-subtle text-content' : 'hover:bg-surface'
               }`}
             >
               <Link2 aria-hidden="true" size={16} />
             </button>
 
-            {editor.isActive('link') && (
+            {isLink && (
               <button
                 type="button"
                 disabled={disabled}
@@ -535,6 +605,34 @@ export function RichTextEditor({
             id={`${id}-link-search`}
             onPick={(target: LinkTarget) => applyTarget(`taproot:item:${target.id}`, target.title)}
           />
+          {/*
+            Both apply to whichever path sets the link — typing an address, or choosing a page — so
+            they sit outside the two, on the form itself.
+          */}
+          <fieldset className="flex shrink-0 flex-col gap-1 border-0 p-0">
+            <legend className="sr-only">Link options</legend>
+            <label className="flex items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={linkNewTab}
+                onChange={(e) => setLinkNewTab(e.target.checked)}
+              />
+              Open in a new tab
+            </label>
+            <label className="flex items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={linkNoFollow}
+                onChange={(e) => setLinkNoFollow(e.target.checked)}
+              />
+              {/*
+                Said as what it does rather than as `nofollow`, which means nothing to most of the
+                people writing here.
+              */}
+              Tell search engines not to follow
+            </label>
+          </fieldset>
+
           <button
             type="submit"
             className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-content"

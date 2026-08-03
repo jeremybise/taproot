@@ -315,6 +315,56 @@ describe('a chosen link actually becomes a link', () => {
   });
 });
 
+describe('link options', () => {
+  it('offers new-tab and nofollow, worded for a person', async () => {
+    const user = userEvent.setup();
+    const { bar } = await setupWithToolbar();
+    await user.click(within(bar).getByRole('button', { name: /link/i }));
+
+    expect(screen.getByLabelText('Open in a new tab')).toBeTruthy();
+    // Not "nofollow": the people writing here are not SEO consultants.
+    expect(screen.getByLabelText('Tell search engines not to follow')).toBeTruthy();
+  });
+
+  it('applies a typed address with the options ticked', async () => {
+    const user = userEvent.setup();
+    const { onChange, bar } = await setupWithToolbar();
+    await user.click(within(bar).getByRole('button', { name: /link/i }));
+
+    await user.type(screen.getByLabelText('Link address'), 'https://example.edu');
+    await user.click(screen.getByLabelText('Open in a new tab'));
+    await user.click(screen.getByLabelText('Tell search engines not to follow'));
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      const html = onChange.mock.calls.at(-1)?.[0] ?? '';
+      expect(html).toContain('href="https://example.edu"');
+      expect(html).toContain('target="_blank"');
+      expect(html).toContain('nofollow');
+    });
+  });
+
+  it('leaves target off when the box is not ticked', async () => {
+    /**
+     * The default has to be "same tab". TipTap ships `target: '_blank'` in the Link extension's own
+     * defaults and `HTMLAttributes` merges rather than replaces, so overriding only `rel` left every
+     * link opening in a new tab — including internal ones, where nobody would ever want it.
+     */
+    const user = userEvent.setup();
+    const { onChange, bar } = await setupWithToolbar();
+    await user.click(within(bar).getByRole('button', { name: /link/i }));
+
+    await user.type(screen.getByLabelText('Link address'), 'https://example.edu');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      const html = onChange.mock.calls.at(-1)?.[0] ?? '';
+      expect(html).toContain('href="https://example.edu"');
+      expect(html).not.toContain('target=');
+    });
+  });
+});
+
 describe('accessibility of the rendered widget', () => {
   it('has no axe violations once hydrated', async () => {
     const { container } = await setupWithToolbar();
