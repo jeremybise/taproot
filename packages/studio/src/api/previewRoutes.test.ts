@@ -122,32 +122,60 @@ describe('minting for the split-view pane', () => {
     expect(preview?.item.data).toEqual({ body: 'typing' });
   });
 
-  it('refuses a kind with no page of its own', async () => {
-    const singleton = await createContentType(h.db.db, {
-      api_id: 'banner',
+  /** A singleton with no preview path, which is the default and the settings-record case. */
+  async function singletonItem(apiId: string, previewPath: string | null) {
+    const type = await createContentType(h.db.db, {
+      api_id: apiId,
       name: 'Banner',
       name_plural: 'Banners',
       kind: 'singleton',
       description: null,
       icon: null,
       url_prefix: null,
+      preview_path: previewPath,
       title_field: 'title',
     });
-    const item = await createItem(h.db, singleton, [], {
-      contentTypeId: singleton.id,
+    return createItem(h.db, type, [], {
+      contentTypeId: type.id,
       title: 'Weather',
       status: 'published',
       data: {},
     });
+  }
+
+  it('refuses a singleton nobody has given a page', async () => {
+    const item = await singletonItem('banner', null);
     h.as(contributor);
 
     /**
-     * Not an over-cautious guard. The delivery route resolves the *token* rather than the path, so
-     * without this the pane would show a perfectly working preview of `/__singleton/banner` — a URL
-     * nobody will ever request.
+     * Not an over-cautious guard. The token is a capability over `/__singleton/banner`, and the
+     * delivery route would answer for it perfectly — so without this the pane frames a URL nobody
+     * will ever request and presents it as the site.
+     *
+     * This is also what keeps the feature honest now that a singleton *can* have a page: a settings
+     * record holding an address and social links has none, and the default is off.
      */
     const response = await previewPost(h.context({ method: 'POST', json: { item: item.id } }));
     expect(response.status).toBe(400);
+  });
+
+  it('previews a singleton at the path its content type declares', async () => {
+    // The homepage case: a singleton assembled from blocks that the site renders at `/`. The pane
+    // has to frame that address, not the item's synthetic `/__singleton/homepage`, which 404s.
+    const item = await singletonItem('homepage', '/');
+    h.as(contributor);
+
+    const response = await previewPost(h.context({ method: 'POST', json: { item: item.id } }));
+    expect(response.status).toBe(200);
+
+    const payload = await body<{ token: string; itemPath: string }>(response);
+    expect(payload.itemPath).toBe('/');
+
+    // The token still names the item, so the consumer's `resolve('/__singleton/homepage')` matches
+    // it. Nothing about the delivery contract moved — only the address the admin opens.
+    const preview = await resolvePreviewToken(h.db.db, payload.token);
+    expect(preview?.item.id).toBe(item.id);
+    expect(preview?.item.path).toBe('/__singleton/homepage');
   });
 
   it('says so when no site URL is configured', async () => {

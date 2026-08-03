@@ -22,8 +22,17 @@ creation**. Pick carefully: `event`, `staff_profile`.
 - **Page** — nests under a parent. `/admissions/apply`. For anything hierarchical.
 - **Collection** — flat, sharing a prefix you set. `/events/spring-open-house`. For lists of like
   things.
-- **Singleton** — exactly one item, ever. No create, no delete, just edit. For a site-wide
-  announcement banner or footer details.
+- **Singleton** — exactly one item, ever. No create, no delete, just edit. For a homepage assembled
+  from blocks, a site-wide announcement banner, or footer details.
+
+**Preview path** appears for singletons only, and is optional. A singleton has no URL of its own —
+it is edited through one fixed sidebar entry — so Taproot cannot know where your site shows it.
+Setting this to the address it renders at, usually `/` for a homepage, turns on the live preview
+pane for that singleton.
+
+Leave it empty for a singleton that is *not* a page: site-wide settings, an address, social links.
+There is nothing to look at, and a preview aimed anywhere else would show a page that content is not.
+That is why the default is off rather than on.
 
 **Default social image** is used by items of this type that set none of their own. It is *inherited*,
 not copied — change it later and every item that has not overridden it follows. Copying it onto items

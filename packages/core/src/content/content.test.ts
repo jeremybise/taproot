@@ -24,6 +24,7 @@ import {
   getContentType,
   listBlockTypes,
   listContentTypes,
+  updateContentType,
   updateField,
 } from './types.js';
 import {
@@ -36,6 +37,7 @@ import {
   itemDeleteImpact,
   itemsReferencing,
   listItems,
+  previewPathFor,
   updateItem,
 } from './items.js';
 import { createMenu, createMenuItem } from './menus.js';
@@ -474,6 +476,102 @@ describe('content items', () => {
    * the route is an `.astro` file with no way to render it under vitest — this is the invariant it
    * has to be built around, not a test of the route.
    */
+  /**
+   * `previewPathFor` is what the pane, both mint endpoints, and the editor's path link all ask.
+   *
+   * It replaced `kindHasPublicPath` at those call sites, which answered "no" for every singleton —
+   * right about `/__singleton/{api_id}` and wrong about singletons, since a homepage built from
+   * blocks is one. The null case is the one that must not regress: it is the whole reason a
+   * settings singleton does not get a preview pointed at somebody else's page.
+   */
+  describe('previewPathFor', () => {
+    const type = (
+      kind: ContentTypeRow['kind'],
+      preview_path: string | null = null,
+    ): Pick<ContentTypeRow, 'kind' | 'preview_path'> => ({ kind, preview_path });
+
+    it('answers a page or collection with the item path, ignoring the column', () => {
+      // Those items already know where they live; reading a second source is how the two drift.
+      expect(previewPathFor(type('page', '/ignored'), { path: '/apply' })).toBe('/apply');
+      expect(previewPathFor(type('collection', '/ignored'), { path: '/news/open-day' })).toBe(
+        '/news/open-day',
+      );
+    });
+
+    it('answers a singleton with its configured path', () => {
+      expect(previewPathFor(type('singleton', '/'), { path: '/__singleton/homepage' })).toBe('/');
+    });
+
+    it('answers null for a singleton nobody has configured, and for a block', () => {
+      expect(previewPathFor(type('singleton'), { path: '/__singleton/site_settings' })).toBeNull();
+      expect(previewPathFor(type('singleton', ''), { path: '/__singleton/x' })).toBeNull();
+      expect(previewPathFor(type('block'), { path: '/x' })).toBeNull();
+    });
+  });
+
+  it('keeps a preview path only for singletons, and clears it on request', async () => {
+    const singleton = await createContentType(handle.db, {
+      api_id: 'homepage',
+      name: 'Homepage',
+      name_plural: 'Homepage',
+      kind: 'singleton',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      preview_path: '/',
+      title_field: null,
+    });
+    expect(singleton.preview_path).toBe('/');
+
+    // `undefined` keeps it. `??` in the update path would collapse this with the clear below and
+    // silently ignore an editor turning preview off — the shape of bug a `.partial()` PATCH keeps
+    // producing, and the same one `publish_at` already had.
+    const untouched = await updateContentType(handle.db, singleton.id, { name: 'Front page' });
+    expect(untouched.preview_path).toBe('/');
+
+    const cleared = await updateContentType(handle.db, singleton.id, { preview_path: null });
+    expect(cleared.preview_path).toBeNull();
+
+    // A kind that derives its own address must not carry one, however the API was called — the
+    // column means one thing, the way `url_prefix` is nulled for everything but a collection.
+    const page = await createContentType(handle.db, {
+      api_id: 'article',
+      name: 'Article',
+      name_plural: 'Articles',
+      kind: 'page',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      preview_path: '/sneaky',
+      title_field: null,
+    });
+    expect(page.preview_path).toBeNull();
+  });
+
+  it('refuses a preview path that is not root-relative', () => {
+    const base = {
+      api_id: 'homepage',
+      name: 'Homepage',
+      name_plural: 'Homepage',
+      kind: 'singleton' as const,
+    };
+
+    // An absolute URL would point the pane at another origin, making "which site is this" a
+    // question with two answers — `TAPROOT_SITE_URL` is the one place that decides it.
+    expect(
+      contentTypeInputSchema.safeParse({ ...base, preview_path: 'https://elsewhere.test/' }).success,
+    ).toBe(false);
+    // A trailing slash would make `/about/` and `/about` two different settings.
+    expect(contentTypeInputSchema.safeParse({ ...base, preview_path: '/about/' }).success).toBe(
+      false,
+    );
+    expect(contentTypeInputSchema.safeParse({ ...base, preview_path: 'about' }).success).toBe(false);
+
+    expect(contentTypeInputSchema.safeParse({ ...base, preview_path: '/' }).success).toBe(true);
+    expect(contentTypeInputSchema.safeParse({ ...base, preview_path: '/about' }).success).toBe(true);
+    expect(contentTypeInputSchema.safeParse({ ...base, preview_path: null }).success).toBe(true);
+  });
+
   it('refuses an empty create against a type with a required field', async () => {
     const type = await createContentType(handle.db, {
       api_id: 'homepage',

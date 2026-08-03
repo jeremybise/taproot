@@ -19,9 +19,9 @@ import {
   getRelease,
   getStagedItem,
   itemDeleteImpact,
-  kindHasPublicPath,
   listItems,
   openReleasesForItem,
+  previewPathFor,
   previewSiteUrl,
   releasesAvailableFor,
 } from '@taprootcms/core';
@@ -130,24 +130,41 @@ const deleteImpact = canDelete
   : { blockers: [], warnings: [] };
 
 /**
- * The live preview pane, offered only where there is a page to point it at.
+ * Where this item is rendered on the site, and therefore what the pane frames and the header links.
  *
- * `kindHasPublicPath` rather than `kind !== 'singleton'` written out a second time — the preview
- * link in the header gates on the same function, and two copies is how the two end up disagreeing.
- * A singleton's `/__singleton/{api_id}` would in fact render, because the delivery route resolves
- * the *token* rather than the path, which is precisely why this has to be refused rather than left
- * to look like it works.
+ * `previewPathFor` rather than `kindHasPublicPath` written out again — the mint endpoints gate on
+ * the same function, and two copies is how a working link ends up beside a pane that refuses. It
+ * answers `item.path` for a page or collection, the configured path for a singleton, and null when
+ * a singleton has not been given one, which is the case a settings record stays in.
+ */
+const publicPath = previewPathFor(contentType, item);
+const siteUrl = previewSiteUrl(process.env);
+
+/**
+ * The live preview pane, offered only where there is a page to point it at.
  *
  * `siteConfigured` is passed rather than the URL itself: the pane needs to know whether to render
  * the configuration message, and the origin it frames comes back from the mint endpoint, which is
  * the one place that decides it.
  */
-const previewPane = kindHasPublicPath(contentType.kind)
+const previewPane = publicPath
   ? {
       open: resolvePreviewPane(Astro.cookies.get(PREVIEW_PANE_COOKIE_NAME)?.value) === 'open',
-      siteConfigured: Boolean(previewSiteUrl(process.env)),
+      siteConfigured: Boolean(siteUrl),
     }
   : null;
+
+/**
+ * The item's address on the live site, when there is one to link to.
+ *
+ * The header used to render `item.path` as a bare relative `<a href>`, which resolves against the
+ * **CMS's** origin — a deployment that serves the admin and the API and deliberately has no public
+ * catch-all. So every one of those links went to a 404 on the wrong host, and looked like the site
+ * was broken rather than the link. It is only a link when both halves exist: an address to go to,
+ * and a site URL to put it on. Otherwise the path is still shown, because knowing the URL an item
+ * will have is useful before the site is configured — it is just not somewhere to click.
+ */
+const liveUrl = publicPath && siteUrl ? new URL(publicPath, siteUrl).toString() : null;
 
 const saved = Astro.url.searchParams.get('saved') === '1';
 const updated = Astro.url.searchParams.get('updated') === '1';
@@ -189,12 +206,25 @@ const flash = error
       <p class="mt-1 text-sm text-content-muted">
         {contentType.name} ·
         {
-          item.status === 'published' ? (
-            <a href={item.path} class="break-all font-mono hover:underline">
-              {item.path}
+          /*
+            Linked only when it goes somewhere: published, with a page on the site, and a site URL
+            to reach it on. A draft has no live URL yet, and the pane is where you look at one.
+
+            `target="_blank"` because this leaves the admin for another origin, and doing that in
+            the same tab from a screen that may hold unsaved work is how an hour of typing goes
+            away. `rel` follows the same rule the rich-text editor enforces on every new-tab link.
+          */
+          item.status === 'published' && liveUrl ? (
+            <a
+              href={liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="break-all font-mono hover:underline"
+            >
+              {publicPath}
             </a>
           ) : (
-            <code class="break-all font-mono">{item.path}</code>
+            <code class="break-all font-mono">{publicPath ?? item.path}</code>
           )
         }
       </p>

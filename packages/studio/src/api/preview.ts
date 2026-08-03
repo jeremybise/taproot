@@ -2,9 +2,10 @@ import {
   NO_SITE_URL,
   PREVIEW_PARAM,
   createPreviewToken,
+  getContentType,
   getItem,
   getRelease,
-  kindHasPublicPath,
+  previewPathFor,
   previewSiteUrl,
   writePreviewDraft,
   type PreviewDraft,
@@ -30,6 +31,17 @@ import { apiError, handle, json, readJson } from './_shared.js';
  * `content-type: application/json` forces a preflight that a cross-origin page cannot satisfy.
  * Same posture as every other JSON route here.
  */
+
+/**
+ * Said the same way by both mints and by the pane's empty state.
+ *
+ * It names the setting, because the person reading it is the person who can fix it and "this kind
+ * of content has no page" gave them nowhere to go — which was true when no singleton could ever
+ * have one and became misleading the moment one could.
+ */
+export const NO_PREVIEW_PAGE =
+  'This content has no page on the site to preview. A singleton gets one by setting its preview ' +
+  'path under Settings → Content types.';
 
 /** Body shape shared by the mint's optional draft and the update. */
 const draftSchema = z.object({
@@ -84,13 +96,25 @@ export const GET = handle(
     const siteUrl = previewSiteUrl(process.env);
     if (!siteUrl) return apiError(503, NO_SITE_URL);
 
+    /**
+     * The address to open, which is not always the item's own path.
+     *
+     * A singleton is rendered wherever the site puts it, so `previewPathFor` reads the content
+     * type; null means nobody has said, and there is nothing to link to. Same gate as the pane
+     * below, from the same function, because a link that works and a pane that refuses would be
+     * two answers to one question.
+     */
+    const contentType = await getContentType(taproot.db.db, item.content_type_id);
+    const previewPath = contentType ? previewPathFor(contentType, item) : null;
+    if (!previewPath) return apiError(400, NO_PREVIEW_PAGE);
+
     const { token } = await createPreviewToken(taproot.db.db, {
       contentItemId: item.id,
       releaseId,
       userId: user.id,
     });
 
-    const target = new URL(item.path, siteUrl);
+    const target = new URL(previewPath, siteUrl);
     target.searchParams.set(PREVIEW_PARAM, token);
 
     /**
@@ -136,22 +160,19 @@ export const POST = handle(
     const item = await getItem(taproot.db.db, body.item);
     if (!item) return apiError(404, 'Content item not found.');
 
-    const contentType = await taproot.db.db
-      .selectFrom('content_types')
-      .select('kind')
-      .where('id', '=', item.content_type_id)
-      .executeTakeFirst();
-
     /**
-     * A kind with no public URL has nothing to frame.
+     * Content with no page on the site has nothing to frame.
      *
-     * The delivery API would happily answer for a singleton — its preview branch resolves the token
-     * rather than the path — so without this the pane would show a working preview of a URL nobody
-     * will ever request, which is exactly the trap `resolveSeo` living in core exists to avoid.
+     * This used to refuse every singleton on the reasoning that `/__singleton/{api_id}` is a URL
+     * nobody will ever request — correct about that path, and wrong about singletons, which are
+     * frequently the one page a site cares most about. `previewPathFor` asks the question that was
+     * actually meant: not "what kind is this" but "is there an address to open". A singleton with
+     * no preview path configured is still refused, which is what keeps a settings record from
+     * framing the front page and calling it itself.
      */
-    if (contentType && !kindHasPublicPath(contentType.kind)) {
-      return apiError(400, 'This kind of content has no page of its own to preview.');
-    }
+    const contentType = await getContentType(taproot.db.db, item.content_type_id);
+    const previewPath = contentType ? previewPathFor(contentType, item) : null;
+    if (!previewPath) return apiError(400, NO_PREVIEW_PAGE);
 
     if (body.release && !(await getRelease(taproot.db.db, body.release))) {
       return apiError(404, 'Release not found.');
@@ -178,8 +199,15 @@ export const POST = handle(
       if (written.ok) expiry = written.expiresAt;
     }
 
+    /**
+     * `itemPath` is the address to frame, which for a singleton is not the item's own path.
+     *
+     * The pane uses it as the starting value of its address bar, so sending `/__singleton/homepage`
+     * here would open the one URL on the site guaranteed to 404 — and the editor would have to know
+     * to type over it.
+     */
     return json(
-      { token, expiresAt: expiry.toISOString(), siteUrl, itemPath: item.path },
+      { token, expiresAt: expiry.toISOString(), siteUrl, itemPath: previewPath },
       { headers: { 'cache-control': 'no-store' } },
     );
   },

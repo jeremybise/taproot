@@ -125,6 +125,20 @@ const { contentTypes } = await typesResponse.json();
 if (contentTypes?.[0]) ROUTES.push(`/admin/settings/types/${contentTypes[0].id}`);
 
 /**
+ * A singleton's settings screen too, because parts of that form exist only for one kind.
+ *
+ * `contentTypes[0]` is whatever sorts first, and the screen renders a different set of controls per
+ * kind — a collection gets the URL prefix, a singleton gets the preview path. Auditing only the
+ * first type means whichever kind happens to sort second is never checked, and the run still
+ * reports zero. The same mistake as taking `items[0]` for the item editor, one screen along.
+ *
+ * Skipped silently when the seed has no singleton: a missing route is not a violation, and pushing
+ * a URL that 404s would fail the run for the wrong reason.
+ */
+const singletonType = (contentTypes ?? []).find((type) => type.kind === 'singleton');
+if (singletonType) ROUTES.push(`/admin/settings/types/${singletonType.id}`);
+
+/**
  * The item editor is audited on the item with the *most* fields, not the first one returned.
  *
  * Taking `items[0]` meant taking the alphabetically-first path, which was the weather-banner

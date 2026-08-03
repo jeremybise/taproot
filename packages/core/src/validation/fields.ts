@@ -738,6 +738,23 @@ export const contentTypeInputSchema = z.object({
     .string()
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Must be a lowercase, hyphenated URL segment.')
     .nullish(),
+  /**
+   * Where a singleton renders on the public site, so the admin knows what to preview.
+   *
+   * A root-relative path and nothing else. An absolute URL is refused rather than accepted and
+   * ignored, because it would silently point the preview pane at another origin — the site URL is
+   * `TAPROOT_SITE_URL`'s job, and letting a content type override it per type would make "which
+   * site is this" answerable in two places. A trailing slash is refused for the same reason
+   * `normalizePath` strips one: `/about/` and `/about` must not be two settings.
+   */
+  preview_path: z
+    .string()
+    .regex(
+      /^\/(?:[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*)?$/,
+      'Must be a root-relative path such as / or /about, with no origin and no trailing slash.',
+    )
+    .max(255)
+    .nullish(),
   title_field: z.string().nullish(),
   /** Social-card image for items of this type that have not chosen one. */
   default_og_image_id: z.string().nullish(),

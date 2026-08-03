@@ -184,6 +184,10 @@ export async function createContentType(
     icon: input.icon ?? null,
     // Only collection types are type-prefixed; page and singleton types have no prefix.
     url_prefix: input.kind === 'collection' ? (input.url_prefix ?? input.api_id) : null,
+    // Only a singleton can have one — every other kind derives its address from the item, and
+    // `previewPathFor` never reads the column for them. Nulled here rather than trusted from the
+    // input, matching `url_prefix`, so the column means one thing whatever the API was sent.
+    preview_path: input.kind === 'singleton' ? (input.preview_path ?? null) : null,
     title_field: input.title_field ?? null,
     default_og_image_id: input.default_og_image_id ?? null,
     // Appended to the end of the sidebar rather than dropped at 0, so creating a type does not
@@ -236,6 +240,19 @@ export async function updateContentType(
     url_prefix:
       kind === 'collection'
         ? (input.url_prefix ?? existing.url_prefix ?? existing.api_id)
+        : null,
+    /**
+     * `undefined` keeps it, `null` clears it — the distinction `publish_at` already turns on.
+     *
+     * `??` would collapse the two and silently ignore an editor turning preview back off, which is
+     * the shape of bug a `.partial()` PATCH schema keeps producing. Nulled outright for any kind
+     * that is not a singleton, so changing a type's kind cannot strand a path nothing reads.
+     */
+    preview_path:
+      kind === 'singleton'
+        ? input.preview_path === undefined
+          ? existing.preview_path
+          : (input.preview_path ?? null)
         : null,
     title_field: input.title_field === undefined ? existing.title_field : (input.title_field ?? null),
     default_og_image_id:

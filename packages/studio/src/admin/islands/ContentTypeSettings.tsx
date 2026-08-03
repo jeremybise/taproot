@@ -27,6 +27,7 @@ export default function ContentTypeSettings({
   const [description, setDescription] = useState(contentType.description ?? '');
   const [titleField, setTitleField] = useState(contentType.title_field ?? '');
   const [urlPrefix, setUrlPrefix] = useState(contentType.url_prefix ?? '');
+  const [previewPath, setPreviewPath] = useState(contentType.preview_path ?? '');
   const [ogImageId, setOgImageId] = useState(contentType.default_og_image_id ?? '');
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -48,6 +49,12 @@ export default function ContentTypeSettings({
           title_field: titleField || null,
           default_og_image_id: ogImageId || null,
           ...(contentType.kind === 'collection' ? { url_prefix: urlPrefix.trim() || null } : {}),
+          // `null` rather than omitted when blank, so clearing the box turns preview back off.
+          // Omitting it would read as "not provided" and keep the old value — the `undefined`/`null`
+          // distinction `updateContentType` makes, from the side that has to send it.
+          ...(contentType.kind === 'singleton'
+            ? { preview_path: previewPath.trim() || null }
+            : {}),
         }),
       });
 
@@ -191,6 +198,29 @@ export default function ContentTypeSettings({
             pattern="[a-z0-9]+(-[a-z0-9]+)*"
             aria-describedby="ct-url-prefix-hint"
             onChange={(e) => setUrlPrefix(e.target.value)}
+            className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+          />
+        </div>
+      )}
+
+      {contentType.kind === 'singleton' && (
+        <div>
+          <label htmlFor="ct-preview-path" className="block text-sm font-medium">
+            Preview path <span className="font-normal text-content-subtle">(optional)</span>
+          </label>
+          <p id="ct-preview-path-hint" className="mt-0.5 text-xs text-content-subtle">
+            Where your site renders this on the web — <code className="font-mono">/</code> for a
+            homepage. Setting it turns on the live preview pane for this singleton. Leave it empty
+            for a singleton that is not a page, like site-wide settings or contact details: there
+            is nothing to look at, and pointing a preview somewhere else would show you a page this
+            content is not.
+          </p>
+          <input
+            id="ct-preview-path"
+            value={previewPath}
+            placeholder="/"
+            aria-describedby="ct-preview-path-hint"
+            onChange={(e) => setPreviewPath(e.target.value)}
             className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
           />
         </div>

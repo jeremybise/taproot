@@ -55,8 +55,12 @@ think of Pages and Events as different places. `/admin/content/type/{api_id}` ra
 `/admin/content/{api_id}`, because `/admin/content/{id}` already means a content item and one
 segment cannot mean both. `/admin/content` survives as "All content" for searching across types.
 
-Singletons get `/admin/singleton/{api_id}`, which resolves to the one item's editor and creates it
-on first visit. The indirection buys a stable sidebar URL that cannot break if the item is deleted.
+Singletons get `/admin/singleton/{api_id}`, which resolves to the one item's editor, or to the form
+that creates it. The indirection buys a stable sidebar URL that cannot break if the item is deleted.
+It **does not write the row itself** — it used to call `createItem` with no `data`, which validates
+only when every field is optional, so one required field made a singleton's own sidebar link 500
+from a screen with no form on it. Same rule a reusable block follows: a row is only ever written
+validated, and there is no "empty entry, fill it in later" path.
 
 Sidebar order comes from `content_types.position`, reorderable in Settings. Settings is a hub over
 Content types, Redirects, Users & access, and System — configuration that shapes the site rather
@@ -238,6 +242,31 @@ moment a frame can follow a link or an editor can type an address: every page on
 render as the item being edited. It also stops a token being a site-wide key to unpublished content.
 A token-bearing URL is answered `no-store` even when it falls through to published content, because
 the URL is a cache key carrying a credential.
+
+**"Can this be previewed" is `previewPathFor`, not a question about `kind`.** The pane, both mint
+endpoints, and the editor's path link all ask it, and it answers `item.path` for a page or
+collection and `content_types.preview_path` for a singleton. `kindHasPublicPath` used to stand in
+for it and refused every singleton — right about `/__singleton/{api_id}` being a URL nobody
+requests, wrong about singletons, since a homepage assembled from blocks is one and is often the
+page a site cares most about. Three things hold it up:
+- **Null is the default and means no preview.** A settings singleton holding an address and social
+  links has no page, and a preview framing the front page while claiming to be that record is the
+  same failure `resolveSeo` living in core exists to prevent, one level up.
+- **Nothing about delivery moved.** The consumer still asks `resolve` for `/__singleton/{api_id}`,
+  which is what the token is a capability over, so the path check below still matches. The column
+  says only which address the *admin* opens. Making it a delivery route would be Taproot asserting
+  how a site routes, which is what the `termHref` callback exists to avoid.
+- **The column is nulled for every kind that is not a singleton**, in both write paths, exactly as
+  `url_prefix` is nulled for everything that is not a collection — so changing a type's kind cannot
+  strand a path nothing reads, and `previewPathFor` never consults it for a page.
+
+**The editor's path is a link only when it goes somewhere.** It was a bare relative `<a href>` on
+`item.path`, which resolves against the **CMS's** origin — the deployment that serves the admin and
+the API and deliberately has no public catch-all — so every one of those links landed on a 404 on
+the wrong host and read as a broken site rather than a broken link. It now needs both halves, an
+address (`previewPathFor`) and a `TAPROOT_SITE_URL` to put it on, and renders the path as plain
+`<code>` otherwise: knowing the URL an item *will* have is useful before a site exists, it is just
+not somewhere to click.
 
 **The preview pane goes after `<form>` in the DOM, and that is not a layout preference.** An
 `<iframe>` puts everything inside it into the sequential tab order and **no attribute takes it back
@@ -692,7 +721,10 @@ are about the audit scripts at the repo root rather than the admin itself:
   — the weather-banner singleton, three plain inputs — and left the densest screen in the admin the
   one route never audited. Seven inert labels sat there through four phases as a result. Note that
   `/api/taproot/content-types` returns types *without* their fields, so a count derived from that
-  list is zero for everything and quietly restores the bug.
+  list is zero for everything and quietly restores the bug. The same trap one screen along: the
+  content type settings form renders a different control per kind, so it audits `contentTypes[0]`
+  **and** the first singleton — auditing only the first type leaves whichever kind sorts second
+  unchecked while the run still reports zero.
 - **A new colour token or a new *pairing* of existing tokens is not done until it has a pair in
   `a11y-contrast.mjs`.** `axe` runs with `color-contrast` disabled precisely because that script is
   the authority, so a colour put on a background it has never been checked against is unchecked no
@@ -735,7 +767,7 @@ many), *Block*, *Reusable Block*, *Content Type*.
   item has just filled: the table has always documented them as "never GC'd", and keeping them is
   safe because the catch-all resolves an item before it consults the redirect table.
 - **Content type `kind`** is `page` (nests under a parent), `collection` (flat, `url_prefix`-based),
-  or `singleton` (exactly one item, no create/delete).
+  or `singleton` (exactly one item, no create/delete, optional `preview_path`).
 - **Richtext is sanitised on write, inside `validateItemData`.** It is stored as HTML and rendered
   with `set:html`, so an unsanitised value is stored XSS against every visitor and every editor.
   **The editor is not the boundary — the REST API is**, because it accepts richtext from any client

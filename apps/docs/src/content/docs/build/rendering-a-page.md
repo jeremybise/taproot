@@ -271,9 +271,21 @@ that happens to sit at the root:
 - It is excluded from `taproot.items()`, so it never appears in a navigation list built from one.
 - The editor gets a stable sidebar entry instead of hunting for one page among many.
 
-The cost is the live preview pane, which singletons do not get — there is no public page to point it
-at. That is the trade: a `page` keeps the split view and needs the redirect; a singleton needs
-nothing and gives up the pane.
+```astro
+---
+const result = await taproot.resolve('/__singleton/homepage', { previewToken });
+---
+```
+
+**Set the singleton's preview path so editors get the pane.** Under Settings → Content types, a
+singleton has a **Preview path** field: put `/` there and the editor's split view frames your front
+page. Leave it empty and the singleton gets no preview at all, which is the right answer for the
+other kind of singleton — site-wide settings, contact details, social links — where there is no page
+to look at and a preview would show a page that content is not.
+
+Nothing about the fetch changes when you set it. Your route still asks `resolve` for
+`/__singleton/homepage`, because that is what the preview token is a capability over; the setting
+only tells the admin which URL to open. Taproot still has no opinion about how your site routes.
 
 ## Related content
 

@@ -153,8 +153,12 @@ Worth knowing before you conclude something is broken:
   seeing a change in context, or for previewing a reusable block on a page that places it — but
   pointing it elsewhere shows the live published site. That is deliberate: a preview token is a
   capability over one item, not a key to every unpublished page.
-- **Singletons have no page of their own**, so they get no pane. Their path is the synthetic
-  `/__singleton/{api_id}`, which is an addressing convenience rather than a route.
+- **A singleton gets a pane only once you say where it renders.** Its own path is the synthetic
+  `/__singleton/{api_id}`, an addressing convenience rather than a route, so Taproot cannot work out
+  the address on its own — set **Preview path** on the content type (Settings → Content types) to the
+  URL your site serves it at, such as `/`. Left empty there is no pane, which is deliberate: a
+  settings singleton has no page, and framing the front page for it would show something that
+  content is not.
 - **A new item cannot be previewed until it is saved once**, because the token has to name a row.
 - **Cookies behave differently inside the frame.** A `SameSite=Lax` cookie your site sets is not
   sent in a cross-site framed context, so a consent banner or an A/B cookie may act differently in

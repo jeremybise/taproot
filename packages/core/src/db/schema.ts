@@ -262,6 +262,16 @@ export interface ContentTypesTable {
    * Kept separate from `api_id` so the public URL can be renamed without breaking the API.
    */
   url_prefix: string | null;
+  /**
+   * Where a `singleton` renders on the public site, for preview. Null for every other kind.
+   *
+   * A singleton's `path` is the synthetic `/__singleton/{api_id}`, so it cannot say where it is
+   * shown — a homepage built from blocks lives at `/`, and only the site knows that. Null means
+   * "this singleton has no page", which is the right answer for a settings record and the reason
+   * the default is off rather than on. Read through `previewPathFor`, never directly, so the
+   * preview pane and the mint endpoint cannot disagree about which address to frame.
+   */
+  preview_path: string | null;
   /** Field `api_id` whose value is shown as the item's label in admin lists. */
   title_field: string | null;
   /** Order in the admin sidebar, where each content type is its own entry. Ties break by name. */

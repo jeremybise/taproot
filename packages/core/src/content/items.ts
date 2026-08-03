@@ -142,6 +142,35 @@ export function kindHasPublicPath(kind: ContentTypeKind): boolean {
   return kind === 'page' || kind === 'collection';
 }
 
+/**
+ * The address on the public site where this item is rendered, or null if there is none.
+ *
+ * This is the question the preview pane, the mint endpoints, and the editor's path link all
+ * actually have — `kindHasPublicPath` was standing in for it, and answered "no" for every
+ * singleton because a singleton's own `path` cannot say where it is shown. That was right about
+ * `/__singleton/{api_id}` and wrong about singletons: a homepage assembled from blocks is rendered
+ * at `/`, and `content_types.preview_path` is how a site says so.
+ *
+ * Null is returned for a singleton nobody has configured, and that stays the default deliberately.
+ * A settings record holding an address and social links has no page, and a preview that framed the
+ * site's front page while claiming to show that record is worse than no preview at all — the same
+ * failure `resolveSeo` living in core exists to prevent, one level up.
+ *
+ * A `page` or `collection` answers with `item.path`, ignoring the column entirely: those items
+ * already know where they live, and reading a second source for it is how the two drift.
+ *
+ * **This is not a delivery route.** The consumer still asks `resolve` for `item.path`, which is
+ * what a preview token is a capability over. This only says which URL to open.
+ */
+export function previewPathFor(
+  contentType: Pick<ContentTypeRow, 'kind' | 'preview_path'>,
+  item: Pick<ContentItem, 'path'>,
+): string | null {
+  if (kindHasPublicPath(contentType.kind)) return item.path;
+  if (contentType.kind === 'singleton') return contentType.preview_path || null;
+  return null;
+}
+
 type ItemQuery = SelectQueryBuilder<Database, 'content_items', {}>;
 
 /**
