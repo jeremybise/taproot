@@ -1,6 +1,7 @@
-import { sql, type Kysely } from 'kysely';
+import { sql, type Kysely, type RawBuilder } from 'kysely';
 
 import type { Database, User, UsersTable } from '../db/schema.js';
+import { batchWrite, type BatchStatement, type BatchTarget } from '../db/batch.js';
 import { fromBool, now } from '../db/values.js';
 import { DEFAULT_ITERATIONS, hashPassword, needsRehash, verifyPassword } from './password.js';
 import { newId } from '../ids.js';
@@ -207,33 +208,61 @@ export async function listUsers(db: Kysely<Database>): Promise<User[]> {
  * The check and the insert are one statement. A `count()` followed by an `insert` is a race with a
  * window wide enough to matter here: the screen is reachable by anyone who finds the URL in the
  * seconds after a deploy, and two requests arriving together would both read zero and both create
- * an admin — one of them an attacker's. `INSERT ... SELECT ... WHERE NOT EXISTS` cannot do that,
- * and the row count tells the loser it lost.
+ * an admin — one of them an attacker's. `INSERT ... SELECT ... WHERE NOT EXISTS` cannot do that.
+ * The loser learns it lost by reading back: its own id is absent, because the insert was
+ * conditional on the table being empty and somebody else had already filled it. (It used to read
+ * the affected-row count, which a batch does not report — the guarantee is unchanged, only how the
+ * answer is obtained.)
  *
  * Raw SQL rather than the query builder because this shape has no Kysely spelling that stays
  * readable, and it is identical on SQLite, D1, and Postgres.
  */
 export async function createFirstAdmin(
-  db: Kysely<Database>,
+  target: BatchTarget,
   input: { email: string; name: string; password: string },
 ): Promise<User | undefined> {
   const id = newId();
   const email = normalizeEmail(input.email);
   const timestamp = now();
 
-  const result = await sql`
-    INSERT INTO users (id, email, name, avatar_url, role, is_active, created_at, updated_at)
-    SELECT ${id}, ${email}, ${input.name}, NULL, 'admin', ${fromBool(true)}, ${timestamp}, ${timestamp}
-    WHERE NOT EXISTS (SELECT 1 FROM users)
-  `.execute(db);
+  // Hash before anything is written, and write the user and the credential as one atomic batch.
+  //
+  // This used to insert the user, then call `setPassword` as a separate statement — and the
+  // failure that exposed it was not a failed setup but an **unrecoverable** one. workerd refused
+  // the iteration count, so the hash threw *after* the user row had landed, and the deployment was
+  // left with an administrator who has no credential: login cannot verify a password that was
+  // never stored, and the setup screen refuses to help because a user now exists. There is no
+  // screen anywhere that fixes that, which is the same trap `assertNotLastAdmin` exists to avoid.
+  //
+  // So: everything that can fail happens before the first write, and what remains cannot land by
+  // halves. The second statement is conditional on the first having won, because a batch runs in
+  // order and cannot branch on an intermediate result.
+  const passwordHash = await hashPassword(input.password);
 
-  // Zero rows means somebody else got there first, which is a refusal rather than an error: the
-  // caller's job is to stop offering the screen, not to retry.
-  if (Number(result.numAffectedRows ?? 0) === 0) return undefined;
+  const raw = (query: RawBuilder<unknown>): BatchStatement => ({
+    // `sql` templates need an executor to compile, unlike a query builder. Both statements are
+    // raw because neither is expressible as one: an INSERT guarded by NOT EXISTS is what makes
+    // this a single statement rather than a check with a gap after it.
+    compile: () => query.compile(target.db),
+  });
 
-  await setPassword(db, id, input.password);
+  await batchWrite(target, [
+    raw(sql`
+      INSERT INTO users (id, email, name, avatar_url, role, is_active, created_at, updated_at)
+      SELECT ${id}, ${email}, ${input.name}, NULL, 'admin', ${fromBool(true)}, ${timestamp}, ${timestamp}
+      WHERE NOT EXISTS (SELECT 1 FROM users)
+    `),
+    raw(sql`
+      INSERT INTO user_credentials (user_id, password_hash, created_at, updated_at)
+      SELECT ${id}, ${passwordHash}, ${timestamp}, ${timestamp}
+      WHERE EXISTS (SELECT 1 FROM users WHERE id = ${id})
+    `),
+  ]);
 
-  return findUserById(db, id);
+  // `undefined` still means somebody else got there first — a refusal rather than an error, so the
+  // caller stops offering the screen instead of retrying. Our id is present only if our own
+  // conditional insert is the one that filled an empty table.
+  return findUserById(target.db, id);
 }
 
 /**

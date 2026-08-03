@@ -76,7 +76,7 @@ export async function POST(context: APIContext): Promise<Response> {
       return back(error.message);
     }
 
-    const user = await createFirstAdmin(taproot.db.db, parsed.data);
+    const user = await createFirstAdmin(taproot.db, parsed.data);
     if (!user) {
       // Lost the race. Somebody else set this up between the check above and now.
       return isForm

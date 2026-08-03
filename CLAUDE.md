@@ -136,7 +136,13 @@ something. Things that follow, none of them optional now that this is the front 
 - **The first-run setup screen is the only unauthenticated write in the admin.** `createFirstAdmin`
   does its check and its insert in **one statement** (`INSERT ... SELECT ... WHERE NOT EXISTS`); a
   `count()` then `insert()` is a race, and the losing request must be told it lost rather than
-  retried.
+  retried. **The password is hashed before that write, and the credential rides in the same atomic
+  batch.** Hashing afterwards is what turned a runtime refusing the iteration count into an
+  unrecoverable install: the user row landed, `setPassword` threw, and the deployment held an
+  administrator with no credential — login cannot verify a password that was never stored, and the
+  setup screen refuses to help because a user now exists. There is no screen that repairs that, so
+  the rule is the same one `assertNotLastAdmin` protects: never leave a deployment in a state its
+  own UI cannot reach. `firstAdmin.test.ts` mocks a failing hash and asserts nothing is written.
 - **The last active administrator cannot be demoted or deactivated.** A CMS with no admin cannot be
   administered back into having one — every screen that could fix it is behind the role that just
   went away, and the setup screen refuses because users exist.

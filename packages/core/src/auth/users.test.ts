@@ -38,7 +38,7 @@ const FIRST = { email: 'first@campus.edu', name: 'First', password: 'a long enou
 
 describe('createFirstAdmin', () => {
   it('creates an admin who can sign in', async () => {
-    const user = await createFirstAdmin(handle.db, FIRST);
+    const user = await createFirstAdmin(handle, FIRST);
 
     expect(user?.role).toBe('admin');
     expect(await verifyCredentials(handle.db, FIRST.email, FIRST.password)).toBeDefined();
@@ -49,7 +49,7 @@ describe('createFirstAdmin', () => {
 
     // Any user at all, not just an admin: a deployment with a viewer in it has been set up, and
     // the screen must stop offering to create an administrator to whoever asks.
-    expect(await createFirstAdmin(handle.db, FIRST)).toBeUndefined();
+    expect(await createFirstAdmin(handle, FIRST)).toBeUndefined();
     expect(await countUsers(handle.db)).toBe(1);
   });
 
@@ -62,8 +62,8 @@ describe('createFirstAdmin', () => {
      * them somebody else's. `INSERT ... SELECT ... WHERE NOT EXISTS` cannot do that.
      */
     const [a, b] = await Promise.all([
-      createFirstAdmin(handle.db, FIRST),
-      createFirstAdmin(handle.db, { ...FIRST, email: 'second@campus.edu', name: 'Second' }),
+      createFirstAdmin(handle, FIRST),
+      createFirstAdmin(handle, { ...FIRST, email: 'second@campus.edu', name: 'Second' }),
     ]);
 
     expect([a, b].filter(Boolean)).toHaveLength(1);
@@ -74,7 +74,7 @@ describe('createFirstAdmin', () => {
     // The loser must write nothing at all — a half-created account would occupy the address and
     // then be unable to sign in.
     await createUser(handle.db, { email: 'someone@campus.edu', name: 'Someone' });
-    await createFirstAdmin(handle.db, FIRST);
+    await createFirstAdmin(handle, FIRST);
 
     expect(await listUsers(handle.db)).toHaveLength(1);
     expect(
@@ -83,7 +83,7 @@ describe('createFirstAdmin', () => {
   });
 
   it('normalises the email', async () => {
-    const user = await createFirstAdmin(handle.db, { ...FIRST, email: '  Admin@Campus.EDU ' });
+    const user = await createFirstAdmin(handle, { ...FIRST, email: '  Admin@Campus.EDU ' });
     expect(user?.email).toBe('admin@campus.edu');
   });
 });
