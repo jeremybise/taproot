@@ -323,7 +323,14 @@ follow:
 **There is one preview control, not two.** The header's old "Preview page" link opened the site in a
 new tab against the *saved* row; the pane offers the same thing from its toolbar with the unsaved
 draft applied. Two buttons with nearly the same name doing nearly the same thing is how somebody
-learns to trust neither.
+learns to trust neither. The pane's **"Back to editing"** is not a second one and must not be
+removed by citing this rule: below `xl` the form and the pane *swap*, and the eye icon lives in the
+editor's sticky bar — inside the form — so opening a preview on a phone hid its own off switch and
+Save along with it, leaving a frame of the site and no route back short of navigating away and
+losing the edit. It is `xl:hidden` against the same breakpoint that hides the form, so at every
+width exactly one of the two is reachable (measured, not asserted from the class). The general rule
+it stands for is worth more than the button: **a control that is the only way out of a state must
+not live inside what that state hides.**
 
 **The preview pane's "cannot reach your site" warning is a `no-cors` probe, not a timer and not
 `onLoad`.** It has been wrong in both directions. A timer never learned the frame had loaded, so it

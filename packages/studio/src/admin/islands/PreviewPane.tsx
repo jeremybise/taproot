@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { PREVIEW_MESSAGE, type SeoData } from '@taprootcms/core';
 
 /**
@@ -37,6 +38,13 @@ interface Props {
    * state for the two to disagree about.
    */
   open: boolean;
+  /**
+   * Closes the pane. Rendered below `xl` only — see the button itself for why it has to exist.
+   *
+   * A callback rather than this component writing the attribute, so `writePreviewPaneState` keeps
+   * exactly one caller per screen and the pane goes on taking `open` as a prop it never owns.
+   */
+  onClose: () => void;
 }
 
 /**
@@ -70,6 +78,7 @@ export default function PreviewPane({
   itemPath,
   siteConfigured,
   open,
+  onClose,
 }: Props) {
   const paneId = useId();
   const [session, setSession] = useState<Session | null>(null);
@@ -263,6 +272,36 @@ export default function PreviewPane({
       <h2 id={`${paneId}-heading`} className="sr-only">
         Live preview
       </h2>
+
+      {/*
+        The way back, and below `xl` it is the only one.
+
+        The two halves swap at that breakpoint rather than sitting side by side, and the eye icon
+        that opened this lives in the editor's sticky bar — inside the form. So opening the preview
+        on a phone hid its own off switch, and Save with it: every field, every action and the toggle
+        itself went off screen at once, leaving a frame of the site and no route back to the editor.
+
+        Not a second preview control. From `xl` up both halves are on screen and this is hidden, so
+        at no width are there two ways to toggle one thing — and the words differ from the eye's
+        because the acts differ: one shows the preview, this one leaves it.
+
+        First in the pane, and that matters more here than it looks. Everything after it is either
+        the toolbar or the `<iframe>`, which puts the whole previewed site into the tab order ahead
+        of anything placed below — the same reason the pane itself comes last in the editor's DOM.
+
+        Outside the `siteConfigured` branch on purpose: an unconfigured site renders an explanation
+        instead of a frame, and stranding somebody on *that* is the same bug with less to look at.
+      */}
+      {open && (
+        <button
+          type="button"
+          onClick={onClose}
+          className="mb-3 inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken xl:hidden"
+        >
+          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+          Back to editing
+        </button>
+      )}
 
       <div>
         {!open ? null : !siteConfigured ? (

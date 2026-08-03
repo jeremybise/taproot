@@ -220,7 +220,15 @@ export default function ItemEditor({
     // under the form on every screen that never opens a preview.
     : '';
 
-  // Hidden below `xl` while the preview has the screen; always shown from `xl` up, where both fit.
+  /**
+   * Hidden below `xl` while the preview has the screen; always shown from `xl` up, where both fit.
+   *
+   * **What goes with the form is the sticky bar, and the eye icon is in it.** Hiding this therefore
+   * hides the control that would put it back — which for two phases left a phone with an open
+   * preview and no way out of it short of navigating away and losing the edit. `PreviewPane` renders
+   * its own "Back to editing" below `xl` for exactly that reason; anything else that becomes the
+   * only route out of a state must not be inside the thing that state hides.
+   */
   const formHiddenClass = splitting ? 'hidden xl:block' : '';
 
   /**
@@ -894,6 +902,7 @@ export default function ItemEditor({
           itemPath={path}
           siteConfigured={preview.siteConfigured}
           open={previewOpen}
+          onClose={() => writePreviewPaneState(false)}
         />
       )}
     </div>

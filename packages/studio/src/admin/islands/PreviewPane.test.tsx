@@ -28,6 +28,7 @@ const PROPS = {
   itemPath: '/admissions',
   siteConfigured: true,
   open: true,
+  onClose: () => {},
 };
 
 function mockMint() {
@@ -343,6 +344,50 @@ describe('the unreachable-site warning', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(warning(container)).toBeUndefined();
+  });
+});
+
+/**
+ * The exit, which below `xl` is the only one.
+ *
+ * The editor swaps the form for the pane at that width, and the eye icon that toggles it is inside
+ * the form — so an open preview on a phone hid its own off switch and Save along with it. jsdom
+ * computes no layout and loads no stylesheet, so `xl:hidden` is an inert string here and *that* half
+ * is unprovable: what this block pins is that the control exists in every state the form is hidden
+ * in, that it reports the toggle, and where it sits in the DOM. Whether it disappears at desktop is
+ * a browser check.
+ */
+describe('the small-screen way back', () => {
+  it('closes the pane', async () => {
+    const onClose = vi.fn();
+    await renderOpen({ onClose });
+
+    await userEvent.click(screen.getByRole('button', { name: /back to editing/i }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('is offered even when there is no site to frame', async () => {
+    // The unconfigured branch renders an explanation instead of an iframe, and the form is hidden
+    // just the same — stranding somebody there is the same bug with less to look at.
+    render(<PreviewPane {...PROPS} siteConfigured={false} />);
+
+    expect(screen.getByRole('button', { name: /back to editing/i })).toBeTruthy();
+  });
+
+  it('is not there when the pane is closed', async () => {
+    render(<PreviewPane {...PROPS} open={false} />);
+
+    expect(screen.queryByRole('button', { name: /back to editing/i })).toBeNull();
+  });
+
+  it('comes before the frame, which swallows the tab order whole', async () => {
+    const { container } = await renderOpen();
+
+    // Anything placed after the `<iframe>` is reached by tabbing through the previewed site first —
+    // the same reason the pane itself is last in the editor's DOM.
+    const first = container.querySelector('button, a, input, iframe');
+    expect(first?.textContent).toMatch(/back to editing/i);
   });
 });
 
