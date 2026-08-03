@@ -4,6 +4,7 @@ import ItemEditor from '../../islands/ItemEditor.tsx';
 import RevisionHistory from '../../components/RevisionHistory.astro';
 import ReferencedBy from '../../components/ReferencedBy.astro';
 import DangerZone from '../../components/DangerZone.astro';
+import Sheet from '../../components/Sheet.astro';
 import { termOptionsForFields } from '../../termOptions.js';
 import { relationTargetsForFields } from '../../relationOptions.js';
 import {
@@ -18,10 +19,13 @@ import {
   getRelease,
   getStagedItem,
   itemDeleteImpact,
+  kindHasPublicPath,
   listItems,
   openReleasesForItem,
+  previewSiteUrl,
   releasesAvailableFor,
 } from '@taprootcms/core';
+import { resolvePreviewPane, PREVIEW_PANE_COOKIE_NAME } from '../../previewPane.js';
 import {
   getTaproot,
   loginRedirect,
@@ -125,6 +129,26 @@ const deleteImpact = canDelete
   ? await itemDeleteImpact(taproot.db.db, item.id)
   : { blockers: [], warnings: [] };
 
+/**
+ * The live preview pane, offered only where there is a page to point it at.
+ *
+ * `kindHasPublicPath` rather than `kind !== 'singleton'` written out a second time — the preview
+ * link in the header gates on the same function, and two copies is how the two end up disagreeing.
+ * A singleton's `/__singleton/{api_id}` would in fact render, because the delivery route resolves
+ * the *token* rather than the path, which is precisely why this has to be refused rather than left
+ * to look like it works.
+ *
+ * `siteConfigured` is passed rather than the URL itself: the pane needs to know whether to render
+ * the configuration message, and the origin it frames comes back from the mint endpoint, which is
+ * the one place that decides it.
+ */
+const previewPane = kindHasPublicPath(contentType.kind)
+  ? {
+      open: resolvePreviewPane(Astro.cookies.get(PREVIEW_PANE_COOKIE_NAME)?.value) === 'open',
+      siteConfigured: Boolean(previewSiteUrl(process.env)),
+    }
+  : null;
+
 const saved = Astro.url.searchParams.get('saved') === '1';
 const updated = Astro.url.searchParams.get('updated') === '1';
 const restored = Astro.url.searchParams.get('restored');
@@ -154,42 +178,28 @@ const flash = error
   breadcrumbs={[{ label: 'Content', href: '/admin/content' }, { label: item.title }]}
   flash={flash}
 >
-  <header class="mb-6 flex flex-wrap items-start justify-between gap-3">
+  {/*
+    Plain, not `PageHeader`. This screen's floating bar is the island's — it has to carry Save, and
+    Save is React state a server-rendered header cannot drive. Two sticky bars on one screen is
+    worse than a title that scrolls away.
+  */}
+  <header class="mb-6">
     <div>
       <h1 class="text-2xl font-semibold tracking-tight">{item.title}</h1>
       <p class="mt-1 text-sm text-content-muted">
         {contentType.name} ·
         {
           item.status === 'published' ? (
-            <a href={item.path} class="font-mono hover:underline">
+            <a href={item.path} class="break-all font-mono hover:underline">
               {item.path}
             </a>
           ) : (
-            <code class="font-mono">{item.path}</code>
+            <code class="break-all font-mono">{item.path}</code>
           )
         }
       </p>
     </div>
 
-    {
-      /*
-        Singletons have no routable path of their own, so there is nothing to preview.
-        The site is a separate deployment now, so its origin never sees this session. This mints a
-        short-lived token instead and redirects to the site carrying it — the same mechanism whether
-        the target is a draft or a release's staged version, because two of them would drift.
-      */
-      contentType.kind !== 'singleton' && (
-        <a
-          href={`/api/taproot/preview?item=${item.id}${releaseMode ? `&release=${releaseMode.id}` : ''}`}
-          target="_blank"
-          rel="noopener"
-          class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
-        >
-          {releaseMode ? 'Preview staged version' : 'Preview page'}
-          <span class="sr-only-focusable"> (opens in a new tab)</span>
-        </a>
-      )
-    }
   </header>
 
   {
@@ -238,57 +248,6 @@ const flash = error
     )
   }
 
-  {
-    /*
-      Adding to a release is a plain form, not a dialog.
-
-      It is a one-field decision made rarely, and the admin is server-rendered so that every screen
-      works without JavaScript. Only `open` releases are offered — `releasesAvailableFor` filters
-      both by status and by what this item is already in, so the control cannot offer something the
-      API would then refuse.
-    */
-    !releaseMode && addableReleases.length > 0 && (
-      <section
-        aria-labelledby="add-to-release"
-        class="mb-6 rounded-lg border border-border bg-surface-raised px-4 py-3"
-      >
-        <h2 id="add-to-release" class="text-sm font-medium">
-          Add this item to a release
-        </h2>
-        <p class="mt-0.5 max-w-prose text-xs text-content-subtle">
-          Takes a copy of the content as it is now. You then edit that copy without the live page
-          changing.
-        </p>
-
-        {/*
-          A submit button per release, using `formaction`, rather than a `<select>` that a script
-          retargets the form with. The release id belongs in the path, and the only way to put a
-          chosen value there without JavaScript is to let the chosen control carry the URL — which
-          is exactly what `formaction` is for. The admin is server-rendered so that every screen
-          keeps working with scripting off, and a select whose `onchange` rewrote the action would
-          have silently posted every item to whichever release sorted first.
-
-          The cost is a row per open release. That is bounded by how many launches a site is
-          assembling at once, which is small, and each button reads as the act it performs.
-        */}
-        <form method="post" class="mt-2 flex flex-wrap gap-2">
-          <input type="hidden" name="_method" value="stage" />
-          <input type="hidden" name="contentItemId" value={item.id} />
-
-          {addableReleases.map((entry) => (
-            <button
-              type="submit"
-              formaction={`/api/taproot/releases/${entry.id}/items`}
-              class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
-            >
-              Add to {entry.name}
-            </button>
-          ))}
-        </form>
-      </section>
-    )
-  }
-
   <ItemEditor
     client:load
     itemId={item.id}
@@ -311,34 +270,68 @@ const flash = error
     blockTypes={blockTypes}
     reusableBlocks={reusableBlocks}
     canPublish={canPublishContent(user)}
+    releases={{
+      addable: addableReleases,
+      canCreate: canPublishContent(user),
+    }}
+    actions={{
+      previewable: Boolean(previewPane),
+      showReferences: true,
+      showDelete: canDelete,
+    }}
     isHierarchical={contentType.kind === 'page'}
     media={media}
     referencedMedia={referencedMedia}
     defaultOgImage={defaultOgImage}
     path={item.path}
     origin={Astro.url.origin}
+    preview={previewPane}
   />
 
-  <ReferencedBy db={taproot.db.db} itemId={item.id} />
+  {/*
+    The three panels, now in sheets rather than stacked below the form.
 
-  <RevisionHistory
-    db={taproot.db.db}
-    itemId={item.id}
-    fields={contentType.fields}
-    canEdit={canEditContent(user)}
-  />
+    Their contents are unchanged and still server-rendered: `Sheet` is a native `<dialog>`, so the
+    restore and delete forms inside remain real POSTs that work before hydration. That is the whole
+    reason this is not a React dialog — see the component.
+
+    Rendered whether or not they are open, which is what keeps the markup in the page for the
+    accessibility audit to see and what makes each trigger's target resolve.
+  */}
+  <Sheet
+    id="sheet-history"
+    title="Revision history"
+    description="Every save, and what changed. Restoring writes a new revision rather than rewinding."
+  >
+    <RevisionHistory
+      db={taproot.db.db}
+      itemId={item.id}
+      fields={contentType.fields}
+      canEdit={canEditContent(user)}
+    />
+  </Sheet>
+
+  <Sheet
+    id="sheet-references"
+    title="What links here"
+    description="Content pointing at this item through a relation field."
+  >
+    <ReferencedBy db={taproot.db.db} itemId={item.id} />
+  </Sheet>
 
   {
     canDelete && (
-      <DangerZone
-        noun="content item"
-        confirmToken={item.slug}
-        action={`/api/taproot/items/${item.id}`}
-        blockers={deleteImpact.blockers}
-        warnings={deleteImpact.warnings}
-        blockedIntro="This item cannot be deleted yet:"
-        allowedIntro="Deleting this item removes its content and its revision history. This cannot be undone."
-      />
+      <Sheet id="sheet-delete" title="Delete this item">
+        <DangerZone
+          noun="content item"
+          confirmToken={item.slug}
+          action={`/api/taproot/items/${item.id}`}
+          blockers={deleteImpact.blockers}
+          warnings={deleteImpact.warnings}
+          blockedIntro="This item cannot be deleted yet:"
+          allowedIntro="Deleting this item removes its content and its revision history. This cannot be undone."
+        />
+      </Sheet>
     )
   }
 </AdminLayout>

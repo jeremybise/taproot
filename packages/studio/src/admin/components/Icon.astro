@@ -1,0 +1,67 @@
+---
+/**
+ * The handful of icons the server-rendered screens need.
+ *
+ * The islands use `lucide-react`, which is a React component library and therefore unavailable in an
+ * `.astro` file. Rather than add a second icon dependency, these are the same Lucide glyphs
+ * transcribed — identical geometry, identical 24×24 viewBox and 2px stroke — so an icon in the
+ * editor's header and the same icon inside a field control cannot drift into two different marks.
+ *
+ * Keep this list short. It exists because a few Astro components need icons, not as a general icon
+ * system; anything with more than a handful of glyphs belongs in an island where Lucide is available.
+ */
+interface Props {
+  name: 'eye' | 'history' | 'link' | 'trash' | 'close';
+  class?: string;
+}
+
+const { name, class: className = 'h-4 w-4' } = Astro.props;
+
+/** Lucide path data, verbatim. */
+const PATHS: Record<Props['name'], string[]> = {
+  // eye
+  eye: [
+    'M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0',
+    'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6',
+  ],
+  // history
+  history: [
+    'M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8',
+    'M3 3v5h5',
+    'M12 7v5l4 2',
+  ],
+  // link-2
+  link: ['M9 17H7A5 5 0 0 1 7 7h2', 'M15 7h2a5 5 0 1 1 0 10h-2', 'M8 12h8'],
+  // trash-2
+  trash: [
+    'M3 6h18',
+    'M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6',
+    'M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2',
+    'M10 11v6',
+    'M14 11v6',
+  ],
+  // x
+  close: ['M18 6 6 18', 'M6 6l12 12'],
+};
+---
+
+{/*
+  `aria-hidden` in every case, without exception.
+
+  Each of these sits inside a control that carries its own accessible name — an `aria-label` on the
+  button, or visible text beside it. An icon that also announced itself would make a screen reader
+  read the same control twice, which is the usual way a decorative SVG becomes a defect.
+*/}
+<svg
+  class={className}
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  aria-hidden="true"
+  focusable="false"
+>
+  {PATHS[name].map((d) => <path d={d} />)}
+</svg>

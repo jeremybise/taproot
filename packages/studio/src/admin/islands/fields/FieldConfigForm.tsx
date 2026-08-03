@@ -36,8 +36,19 @@ type ConfigForm = (props: ConfigFormProps) => React.ReactElement | null;
 const inputClass =
   'mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm';
 
+/**
+ * Two columns when the *panel* is wide enough, not when the window is.
+ *
+ * `@container` on the row itself: the field config renders in the builder's right pane and, in the
+ * item editor, inside a 26rem rail while the viewport is ≥1280px. A viewport-keyed `sm:` fires in
+ * both, which is how a 416px column ends up with two 190px inputs side by side.
+ */
 function Row({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-4 sm:grid-cols-2">{children}</div>;
+  return (
+    <div className="@container">
+      <div className="grid gap-4 @sm:grid-cols-2">{children}</div>
+    </div>
+  );
 }
 
 function NumberInput({

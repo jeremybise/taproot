@@ -226,7 +226,7 @@ export function MediaPicker({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
         <Dialog.Content
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-[min(60rem,92vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-surface-raised shadow-xl"
+          className="fixed left-1/2 top-1/2 z-50 flex max-h-[85dvh] w-[min(60rem,92vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-surface-raised shadow-xl"
           aria-describedby={`${id}-description`}
         >
           <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">

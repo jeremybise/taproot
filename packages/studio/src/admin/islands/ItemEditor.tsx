@@ -1,5 +1,7 @@
-import { useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import {
+  primaryTransition,
   slugify,
   transitionLabel,
   transitionsFrom,
@@ -11,10 +13,13 @@ import {
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
 import AccessibilityPanel from './AccessibilityPanel.js';
+import PreviewPane from './PreviewPane.js';
 import SeoPanel from './SeoPanel.js';
 import type { MediaOption } from '../mediaOptions.js';
 import type { RelationTarget } from '../relationOptions.js';
 import { STATUS_META } from '../status.js';
+import { useDismissable } from './useDismissable.js';
+import EditorActionIcons, { writePreviewPaneState } from './EditorActionIcons.js';
 
 /**
  * The content item editor.
@@ -88,6 +93,27 @@ interface Props {
    * status here would be a route to a transition `canChangeStatus` never saw.
    */
   release?: { id: string; name: string } | null;
+  /**
+   * The live preview pane, when this item has a page to preview.
+   *
+   * Absent for a singleton or a brand-new item — the first has only the synthetic
+   * `/__singleton/{api_id}`, which is an addressing convenience rather than a route, and the second
+   * has no id for a token to name. `open` comes from a cookie the server read, so the pane's state
+   * survives the full-page navigation `save()` performs.
+   */
+  preview?: { open: boolean; siteConfigured: boolean } | null;
+  /**
+   * Open releases this item is not already in, and whether this role may create one.
+   *
+   * Staging is contributor and creating is editor, so the two halves are gated separately — the
+   * select is offered to anyone who can stage, and only an editor sees "New release…".
+   */
+  releases?: { addable: { id: string; name: string }[]; canCreate: boolean } | null;
+  /**
+   * The icon actions in the sticky bar. Absent on the create screen, which has no item to preview,
+   * no revisions, nothing linking to it and nothing to delete.
+   */
+  actions?: { previewable: boolean; showReferences: boolean; showDelete: boolean } | null;
 }
 
 export default function ItemEditor({
@@ -109,6 +135,9 @@ export default function ItemEditor({
   path = '/',
   origin = '',
   release = null,
+  preview = null,
+  releases = null,
+  actions = null,
 }: Props) {
   const [title, setTitle] = useState(initial.title);
   const [slug, setSlug] = useState(initial.slug);
@@ -136,6 +165,55 @@ export default function ItemEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const formId = useId();
+  const [previewOpen, setPreviewOpen] = useState(preview?.open ?? false);
+
+  /**
+   * The pane's open state is read from `<html>`, not owned here.
+   *
+   * The control that toggles it is the icon in the page header, which is server-rendered Astro and
+   * therefore outside this island. Rather than invent a channel between the two, both use the
+   * attribute the layout already stamps from the cookie: the button writes it, this observes it, and
+   * the CSS that widens the container reads the same thing. One value, one writer.
+   *
+   * An observer rather than a click handler because there is no element here to bind to — and it
+   * survives anything else that comes to set the attribute later.
+   */
+  useEffect(() => {
+    if (!preview) return;
+
+    const root = document.documentElement;
+    const sync = () => setPreviewOpen(root.dataset.preview === 'open');
+    sync();
+
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ['data-preview'] });
+    return () => observer.disconnect();
+  }, [preview]);
+
+  /**
+   * Split at `xl`, swap below it.
+   *
+   * A field column and a live preview genuinely need two columns; at 375px there is room for one.
+   * So below `xl` the same control becomes a switch — preview open means the form is hidden and the
+   * pane has the screen, and vice versa — rather than stacking a preview under a long form where it
+   * would update off-screen, out of sight of the person typing.
+   *
+   * `hidden` (`display: none`), never off-screen positioning: a form that is merely moved keeps
+   * every one of its inputs in the tab order behind the preview.
+   *
+   * Class strings are written out whole rather than assembled, because Tailwind 4 finds classes by
+   * scanning source text.
+   */
+  const splitting = Boolean(preview) && previewOpen;
+  const layoutClass = splitting
+    ? 'grid gap-8 xl:grid-cols-[26rem_minmax(0,1fr)] xl:items-start'
+    // Not a grid when closed. The pane still renders — its `id` has to stay resolvable for the
+    // header button's `aria-controls` — and an empty grid row would leave `gap-8` of dead space
+    // under the form on every screen that never opens a preview.
+    : '';
+
+  // Hidden below `xl` while the preview has the screen; always shown from `xl` up, where both fit.
+  const formHiddenClass = splitting ? 'hidden xl:block' : '';
 
   /**
    * What can be done from where the item *is*, not from what the form currently shows.
@@ -145,6 +223,38 @@ export default function ItemEditor({
    * a single jump. One save is one transition.
    */
   const transitions = transitionsFrom(initial.status);
+
+  /**
+   * Split into the one promoted button and everything else.
+   *
+   * `primaryTransition` may answer `undefined` — a published page has no forward move worth
+   * promoting — in which case every transition is in the menu and its trigger says "Change status…"
+   * rather than "More…".
+   */
+  const primaryTo = primaryTransition(initial.status, canPublish);
+  const primary = transitions.find((transition) => transition.to === primaryTo);
+  const others = transitions.filter((transition) => transition.to !== primaryTo);
+
+  /**
+   * Adding to a release, from the sidebar rather than a banner at the top of the page.
+   *
+   * It used to be a no-JS form of one submit button per open release, which is why the comment it
+   * replaced argued for `formaction`. That argument was about the *page*, and this screen's page
+   * already cannot be used without JavaScript — the whole editor is an island, and Save is in it. So
+   * the trade here is placement against a no-JS path that this particular screen never had.
+   *
+   * The gain is not only placement: the old buttons posted a form and redirected to the release
+   * screen, discarding whatever was unsaved. This is a fetch, so you stay on the item.
+   */
+  const [releaseTarget, setReleaseTarget] = useState('');
+  const [newReleaseName, setNewReleaseName] = useState('');
+  const [releaseBusy, setReleaseBusy] = useState(false);
+  const [releaseNote, setReleaseNote] = useState<string | null>(null);
+
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const statusMenuRef = useRef<HTMLDivElement>(null);
+  const closeStatusMenu = useCallback(() => setStatusMenuOpen(false), []);
+  useDismissable(statusMenuRef, statusMenuOpen, closeStatusMenu);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -232,12 +342,110 @@ export default function ItemEditor({
     }
   }
 
+  async function addToRelease() {
+    if (!itemId || !releaseTarget) return;
+    setReleaseBusy(true);
+    setReleaseNote(null);
+
+    try {
+      let releaseId = releaseTarget;
+      let releaseName = releases?.addable.find((entry) => entry.id === releaseTarget)?.name ?? '';
+
+      if (releaseTarget === '__new') {
+        const created = await fetch('/api/taproot/releases', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: newReleaseName.trim() }),
+        });
+        if (!created.ok) {
+          setReleaseNote('Could not create that release.');
+          return;
+        }
+        // Two calls rather than a new endpoint: create, then stage into what was created.
+        const body = (await created.json()) as { release: { id: string; name: string } };
+        releaseId = body.release.id;
+        releaseName = body.release.name;
+      }
+
+      const staged = await fetch(`/api/taproot/releases/${releaseId}/items`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ contentItemId: itemId }),
+      });
+
+      setReleaseNote(
+        staged.ok
+          ? `Added to ${releaseName}. Your unsaved edits here are untouched.`
+          : 'Could not add this item to that release.',
+      );
+      if (staged.ok) {
+        setReleaseTarget('');
+        setNewReleaseName('');
+      }
+    } catch {
+      setReleaseNote('Could not reach the server.');
+    } finally {
+      setReleaseBusy(false);
+    }
+  }
+
   function setValue(apiId: string, value: unknown) {
     setData((current) => ({ ...current, [apiId]: value }));
   }
 
   return (
-    <form onSubmit={save} className="grid gap-8 lg:grid-cols-[1fr_18rem]">
+    <div className={layoutClass}>
+      {/*
+        `@container` on the rail so the field controls inside can size against *this column* rather
+        than the viewport. In split mode the rail is 26rem while the viewport is ≥1280px, so a
+        viewport-keyed `sm:grid-cols-2` inside a field config would fire on a 416px column — the
+        breakpoint measuring the wrong box, which is the one place that mismatch actually bites.
+      */}
+      <form onSubmit={save} className={`@container min-w-0 ${formHiddenClass}`}>
+        {/*
+          One bar, always, and it spans both columns.
+
+          It used to appear only in split mode, where the sidebar stacks below the fields and Save
+          would otherwise sit past every one of them. The same is true of a long form in any mode, so
+          it is unconditional now — and because it must span, the form is a column with the bar first
+          and the two-column grid inside it, rather than the bar being one cell of that grid.
+
+          Offset by `--admin-topbar-h` rather than pinned at `top: 0`: below `lg` the shell's own
+          sticky bar is already there. `z-10` keeps it under every overlay and under `PageHeader`'s
+          20 — see the note in `PreviewPane`, which sits at `xl:z-0` specifically to stay out of the
+          stacking context this bar's `backdrop-blur` creates.
+        */}
+        <div
+          className="sticky z-10 -mx-1 mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface/95 px-1 py-2 backdrop-blur"
+          style={{ top: 'var(--admin-topbar-h)' }}
+        >
+          <span
+            className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_META[status].badgeClass}`}
+          >
+            {STATUS_META[status].label}
+          </span>
+
+          <div className="flex items-center gap-2">
+            {actions && (
+              <EditorActionIcons
+                previewable={actions.previewable}
+                previewOpen={previewOpen}
+                onTogglePreview={(open) => writePreviewPaneState(open)}
+                showReferences={actions.showReferences}
+                showDelete={actions.showDelete}
+              />
+            )}
+            <button
+              type="submit"
+              disabled={busy}
+              className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover disabled:opacity-60"
+            >
+              {busy ? 'Saving…' : release ? 'Save to release' : itemId ? 'Save changes' : 'Create item'}
+            </button>
+          </div>
+        </div>
+
+        <div className={splitting ? 'space-y-6' : 'grid gap-8 lg:grid-cols-[1fr_18rem]'}>
       <div className="min-w-0 space-y-6">
         <div role="alert" aria-live="assertive">
           {message && (
@@ -323,7 +531,14 @@ export default function ItemEditor({
       </div>
 
       {/* Sidebar ---------------------------------------------------------- */}
-      <aside className="space-y-6">
+      {/*
+        `min-w-0` is not decoration. A grid item defaults to `min-width: auto`, which refuses to
+        shrink below its content's min-content width — so this column sized itself to its widest
+        child and pushed the whole page sideways at 320px. Every other flex and grid child in this
+        admin already carries it; this one was missed because it never had a narrow viewport to fail
+        in.
+      */}
+      <aside className="min-w-0 space-y-6">
         {release ? (
           <div className="rounded-lg border border-status-scheduled bg-status-scheduled-subtle p-4">
             <h2 className="text-sm font-semibold">Staged in a release</h2>
@@ -385,57 +600,111 @@ export default function ItemEditor({
               </span>
             </div>
             {/*
-              Named actions rather than a status dropdown.
+              One named action, and the rest behind "More".
 
-              A `<select>` of statuses asks an editor to know that "in_review" is how you submit
-              something and that archived pages come back as drafts — the workflow was in the
-              model and nowhere in the interface. Buttons named after the act put the graph on the
-              screen: what you can do from here, and what each one is called.
+              Named acts rather than a status dropdown, still: a `<select>` of statuses asks an
+              editor to know that "in_review" is how you submit something and that archived pages
+              come back as drafts — the workflow was in the model and nowhere in the interface. That
+              argument is about the *labels*, and the labels are unchanged. What changed is that four
+              full-width buttons were most of this sidebar, and on any given edit three of them are
+              rare. Which one is promoted comes from `primaryTransition` in core, beside the table it
+              reads, rather than from whichever key this loop reaches first.
 
               Offered from the same table the API enforces, filtered to legal moves and then to the
               ones this role may make, so the screen cannot offer something the boundary refuses.
             */}
-            <ul aria-labelledby={`${formId}-status-label`} className="mt-2 space-y-1.5">
-              {transitions.map(({ to, role }) => {
-                const blocked = !canPublish && role === 'editor';
-                return (
-                  <li key={to}>
-                    <button
-                      type="button"
-                      disabled={blocked || busy}
-                      aria-describedby={blocked ? `${formId}-role-note` : undefined}
-                      onClick={() => setStatus(to)}
-                      className={`w-full rounded-md border px-3 py-2 text-left text-sm font-medium transition-colors disabled:opacity-50 ${
-                        status === to
-                          ? 'border-accent bg-accent-subtle'
-                          : 'border-border-strong hover:bg-surface-sunken'
-                      }`}
-                    >
-                      {transitionLabel(initial.status, to)}
-                      {status === to && initial.status !== to && (
-                        // The button is a staged intent, not the act — nothing moves until Save,
-                        // and saying so is what stops someone leaving the page thinking it did.
-                        <span className="ml-1 font-normal text-content-muted">
-                          — on save
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
+            {/*
+              `role="group"` + `aria-labelledby`, so "Status" still names these controls now that
+              they are no longer a `<ul>`. The span cannot become a `<label for>` — a group is not a
+              labelable element, and `scripts/a11y-audit.mjs` checks exactly that.
+            */}
+            <div
+              role="group"
+              aria-labelledby={`${formId}-status-label`}
+              className="mt-2 space-y-1.5"
+            >
+              {primary && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setStatus(primary.to)}
+                  className={`w-full rounded-md border px-3 py-2 text-left text-sm font-medium transition-colors disabled:opacity-50 ${
+                    status === primary.to
+                      ? 'border-accent bg-accent-subtle'
+                      : 'border-border-strong hover:bg-surface-sunken'
+                  }`}
+                >
+                  {transitionLabel(initial.status, primary.to)}
+                  {status === primary.to && initial.status !== primary.to && (
+                    // A staged intent, not the act — nothing moves until Save, and saying so is what
+                    // stops someone leaving the page thinking it did.
+                    <span className="ml-1 font-normal text-content-muted">— on save</span>
+                  )}
+                </button>
+              )}
 
-              {status !== initial.status && (
-                <li>
+              {others.length > 0 && (
+                <div ref={statusMenuRef} className="relative">
                   <button
                     type="button"
-                    onClick={() => setStatus(initial.status)}
-                    className="w-full rounded-md px-3 py-1.5 text-left text-sm text-content-muted transition-colors hover:bg-surface-sunken"
+                    disabled={busy}
+                    aria-expanded={statusMenuOpen}
+                    aria-controls={`${formId}-status-menu`}
+                    onClick={() => setStatusMenuOpen((wasOpen) => !wasOpen)}
+                    className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-1.5 text-left text-sm text-content-muted transition-colors hover:bg-surface-sunken disabled:opacity-50"
                   >
-                    Keep as {STATUS_META[initial.status].label.toLowerCase()}
+                    {primary ? 'More…' : 'Change status…'}
+                    <ChevronDown aria-hidden="true" className="h-4 w-4" />
                   </button>
-                </li>
+
+                  {/*
+                    Rendered only when open, unlike the Astro menus which toggle `hidden`. React
+                    controls this subtree, so there is no server-rendered state for the audit to
+                    find either way — `ItemEditor.test.tsx` covers it instead.
+                  */}
+                  {statusMenuOpen && (
+                    <ul
+                      id={`${formId}-status-menu`}
+                      className="absolute left-0 right-0 top-full z-30 mt-1 space-y-0.5 rounded-lg border border-border bg-surface-raised p-1 shadow-lg"
+                    >
+                      {others.map(({ to, role }) => {
+                        const blocked = !canPublish && role === 'editor';
+                        return (
+                          <li key={to}>
+                            <button
+                              type="button"
+                              disabled={blocked || busy}
+                              aria-describedby={blocked ? `${formId}-role-note` : undefined}
+                              onClick={() => {
+                                setStatus(to);
+                                setStatusMenuOpen(false);
+                              }}
+                              className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 ${
+                                status === to
+                                  ? 'bg-accent-subtle font-medium'
+                                  : 'hover:bg-surface-sunken'
+                              }`}
+                            >
+                              {transitionLabel(initial.status, to)}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
               )}
-            </ul>
+
+              {status !== initial.status && (
+                <button
+                  type="button"
+                  onClick={() => setStatus(initial.status)}
+                  className="w-full rounded-md px-3 py-1.5 text-left text-sm text-content-muted transition-colors hover:bg-surface-sunken"
+                >
+                  Keep as {STATUS_META[initial.status].label.toLowerCase()}
+                </button>
+              )}
+            </div>
 
             {status === 'scheduled' && (
               <div className="mt-3">
@@ -492,6 +761,65 @@ export default function ItemEditor({
             </div>
           )}
 
+          {itemId && releases && (releases.addable.length > 0 || releases.canCreate) && (
+            <div className="mt-4 border-t border-border pt-4">
+              <label htmlFor={`${formId}-release`} className="block text-sm font-medium">
+                Add to a release
+              </label>
+              <p className="mt-0.5 text-xs text-content-subtle">
+                Takes a copy of the content as it is now. You then edit that copy without the live
+                page changing.
+              </p>
+
+              <select
+                id={`${formId}-release`}
+                value={releaseTarget}
+                onChange={(event) => setReleaseTarget(event.target.value)}
+                className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+              >
+                <option value="">— Choose a release —</option>
+                {releases.addable.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </option>
+                ))}
+                {/* Creating is editor-only; staging is not. Two gates, because they are two acts. */}
+                {releases.canCreate && <option value="__new">New release…</option>}
+              </select>
+
+              {releaseTarget === '__new' && (
+                <input
+                  aria-label="New release name"
+                  placeholder="Name the release"
+                  value={newReleaseName}
+                  onChange={(event) => setNewReleaseName(event.target.value)}
+                  className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+                />
+              )}
+
+              <button
+                type="button"
+                disabled={
+                  releaseBusy ||
+                  !releaseTarget ||
+                  (releaseTarget === '__new' && newReleaseName.trim().length === 0)
+                }
+                onClick={() => void addToRelease()}
+                className="mt-2 w-full rounded-md border border-border-strong px-3 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken disabled:opacity-50"
+              >
+                {releaseBusy ? 'Adding…' : 'Add to release'}
+              </button>
+
+              {/*
+                Polite, and it stays on the page. The old buttons redirected to the release screen,
+                which is also why this editor's `?staged=` flash could never actually appear.
+              */}
+              <p role="status" aria-live="polite" className="mt-1.5 text-xs text-content-muted">
+                {releaseNote}
+              </p>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={busy}
@@ -535,7 +863,32 @@ export default function ItemEditor({
           defaultOgImage={defaultOgImage}
         />
       </aside>
-    </form>
+        </div>
+      </form>
+
+      {/*
+        After the form, and that is a hard requirement rather than a layout preference.
+
+        An `<iframe>` puts everything inside it into the sequential tab order, and **no attribute
+        takes it back out** — `tabindex="-1"` removes the element, not its contents. With the pane
+        between the fields and the sidebar, an editor tabbing out of the Title input lands in the
+        previewed site's own navigation. Last in the DOM and placed to the right by the grid is the
+        only arrangement where "edit, then look" is also the focus order.
+      */}
+      {preview && itemId && (
+        <PreviewPane
+          itemId={itemId}
+          releaseId={release?.id ?? null}
+          title={title}
+          slug={slug}
+          data={data}
+          seo={pruneSeo(seo)}
+          itemPath={path}
+          siteConfigured={preview.siteConfigured}
+          open={previewOpen}
+        />
+      )}
+    </div>
   );
 }
 

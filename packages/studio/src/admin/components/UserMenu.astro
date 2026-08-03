@@ -1,0 +1,213 @@
+---
+import type { User } from '@taprootcms/core';
+import ThemeSwitcher from './ThemeSwitcher.astro';
+import type { ThemeChoice } from '../theme.js';
+
+/**
+ * The signed-in person, and everything that belongs to them, behind one control.
+ *
+ * It replaces a stack of three unrelated things in the sidebar footer — a name block linking to the
+ * account screen, a bare "Sign out" button, and the theme switcher — which between them took most of
+ * the footer and read as a list of leftovers.
+ *
+ * **A disclosure, not a `role="menu"`.** What is inside is a link, a group of theme buttons, and a
+ * form submit; a menu role would promise arrow-key semantics that a form control inside it breaks.
+ * The pattern here is the same one `Sheet.astro` argues for: use the plain thing, and let the
+ * platform do as much as possible.
+ *
+ * It opens **upward**. The footer sits at the bottom of a `h-dvh` column, so a panel below it would
+ * be off-screen.
+ */
+interface Props {
+  user: User;
+  theme: ThemeChoice;
+  themeReturnPath: string;
+  /** Marks the account link as current, matching how the nav links above behave. */
+  path: string;
+}
+
+const { user, theme, themeReturnPath, path } = Astro.props;
+
+/**
+ * Initials are the normal case, not the fallback.
+ *
+ * `avatar_url` has been on the users table since the first migration and is filled in by the Google
+ * and GitHub callbacks — but password sign-in is the primary method here, and Microsoft hardcodes
+ * null, so most deployments have an avatar for nobody.
+ */
+const initials = user.name
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((part) => part[0]!.toUpperCase())
+  .join('');
+---
+
+<div class="relative border-t border-border px-3 py-3" data-menu>
+  <button
+    type="button"
+    data-menu-trigger
+    aria-expanded="false"
+    aria-controls="user-menu-panel"
+    class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-raised"
+  >
+    {
+      user.avatar_url ? (
+        /*
+          Decorative: the name is right beside it, so a description here would be the same words
+          twice. `no-referrer` because the URL is somebody else's origin — Google's or GitHub's —
+          and there is no reason to tell them which admin screen is open.
+        */
+        <img
+          src={user.avatar_url}
+          alt=""
+          referrerpolicy="no-referrer"
+          class="h-8 w-8 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs font-semibold"
+        >
+          {initials}
+        </span>
+      )
+    }
+
+    <span class="min-w-0 flex-1">
+      <span class="block truncate text-sm font-medium">{user.name}</span>
+      <span class="block truncate text-xs capitalize text-content-subtle">{user.role}</span>
+    </span>
+
+    <svg
+      class="h-4 w-4 shrink-0 text-content-subtle"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="m7 15 5 5 5-5" />
+      <path d="m7 9 5-5 5 5" />
+    </svg>
+  </button>
+
+  {/*
+    `hidden` rather than a CSS-only hide, so the panel is genuinely out of the accessibility tree
+    and out of the tab order when shut — and so it is shut with no CSS at all, which is the state
+    `scripts/a11y-audit.mjs` fetches. The audit opens it explicitly, the way it opens the sheets.
+  */}
+  <div
+    id="user-menu-panel"
+    data-menu-panel
+    hidden
+    class="absolute bottom-full left-3 right-3 z-40 mb-1 rounded-lg border border-border bg-surface-raised p-1 shadow-lg"
+  >
+    <p class="truncate px-3 pb-1 pt-2 text-xs text-content-subtle">{user.email}</p>
+
+    <a
+      href="/admin/account"
+      aria-current={path === '/admin/account' ? 'page' : undefined}
+      class={`block rounded-md px-3 py-2 text-sm transition-colors hover:bg-surface-sunken ${
+        path === '/admin/account' ? 'bg-accent-subtle font-medium' : ''
+      }`}
+    >
+      Account settings
+    </a>
+
+    <div class="my-1 border-t border-border"></div>
+
+    <ThemeSwitcher current={theme} redirectTo={themeReturnPath} />
+
+    <div class="my-1 border-t border-border"></div>
+
+    {/*
+      Still a form, and it has to be: the logout endpoint is POST-only and invalidates the session
+      server-side. A link here would be a GET that does nothing.
+    */}
+    <form method="post" action="/api/taproot/auth/logout">
+      <button
+        type="submit"
+        class="w-full rounded-md px-3 py-2 text-left text-sm text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+      >
+        Sign out
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+  /**
+   * Every `[data-menu]` disclosure on the page, by delegation.
+   *
+   * Delegated rather than bound per element for the same reason `Sheet.astro`'s triggers are: a
+   * listener attached at load cannot see markup that arrives later, and the item editor's status
+   * menu is rendered by React after hydration.
+   *
+   * **This drives Astro-rendered menus only.** React owns the DOM it renders, so a script setting
+   * `hidden` on a React-rendered panel loses the attribute on the next re-render — a race with no
+   * good fix. The React menu keeps its open state in React and shares this behaviour through a hook
+   * instead. Two implementations of one contract: `aria-expanded`, Escape, click-outside, and focus
+   * back to the trigger. Change one, change the other.
+   */
+  function panelOf(menu: Element) {
+    return menu.querySelector<HTMLElement>('[data-menu-panel]');
+  }
+
+  function setOpen(menu: Element, open: boolean) {
+    const trigger = menu.querySelector<HTMLElement>('[data-menu-trigger]');
+    const panel = panelOf(menu);
+    if (!trigger || !panel) return;
+
+    panel.hidden = !open;
+    trigger.setAttribute('aria-expanded', String(open));
+    if (!open) trigger.focus();
+  }
+
+  function closeAll(except?: Element) {
+    for (const menu of document.querySelectorAll('[data-menu]')) {
+      if (menu === except) continue;
+      const panel = panelOf(menu);
+      if (panel && !panel.hidden) setOpen(menu, false);
+    }
+  }
+
+  document.addEventListener('click', (event) => {
+    const target = event.target as Element | null;
+    const trigger = target?.closest('[data-menu-trigger]');
+    const menu = trigger?.closest('[data-menu]');
+
+    if (menu && trigger) {
+      const panel = panelOf(menu);
+      const willOpen = Boolean(panel?.hidden);
+      closeAll(menu);
+      setOpen(menu, willOpen);
+      return;
+    }
+
+    // A click anywhere else closes — except inside an open panel, where it is somebody using it.
+    if (!target?.closest('[data-menu-panel]')) closeAll();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    /**
+     * Only when something is actually open.
+     *
+     * The navigation drawer has its own Escape listener on this same document. Both check their own
+     * state before acting, so whichever is open handles it and the other does nothing — rather than
+     * one closing the other's thing.
+     */
+    const open = [...document.querySelectorAll('[data-menu]')].find((menu) => {
+      const panel = panelOf(menu);
+      return panel && !panel.hidden;
+    });
+    if (open) {
+      event.stopPropagation();
+      setOpen(open, false);
+    }
+  });
+</script>

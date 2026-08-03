@@ -2,8 +2,13 @@
 import '../admin.css';
 import { listContentTypes, type User } from '@taprootcms/core';
 import { getTaproot, canEditContent, canManageSchema, canStageToRelease } from '../../runtime/guards.js';
-import ThemeSwitcher from '../components/ThemeSwitcher.astro';
+import UserMenu from '../components/UserMenu.astro';
 import { resolveTheme, themeAttribute, THEME_COOKIE_NAME } from '../theme.js';
+import {
+  previewPaneAttribute,
+  resolvePreviewPane,
+  PREVIEW_PANE_COOKIE_NAME,
+} from '../previewPane.js';
 
 interface Props {
   title: string;
@@ -23,6 +28,13 @@ const path = Astro.url.pathname;
  * runs is the flash of the wrong palette that every such implementation spends effort hiding.
  */
 const theme = resolveTheme(Astro.cookies.get(THEME_COOKIE_NAME)?.value);
+
+/**
+ * Same mechanism, same reason: the item editor's container is wider when its live preview pane is
+ * open, and a width chosen after hydration is a visible jump on every load. Read here rather than in
+ * the editor page so `<html>` carries it before the first byte of CSS.
+ */
+const previewPane = resolvePreviewPane(Astro.cookies.get(PREVIEW_PANE_COOKIE_NAME)?.value);
 
 // The query string comes too: switching theme from a filtered content list must not silently
 // discard the filters.
@@ -122,7 +134,7 @@ const navLinkClass = (current: boolean) =>
   ].join(' ');
 ---
 
-<html lang="en" data-theme={themeAttribute(theme)}>
+<html lang="en" data-theme={themeAttribute(theme)} data-preview={previewPaneAttribute(previewPane)}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -141,16 +153,100 @@ const navLinkClass = (current: boolean) =>
       Skip to main content
     </a>
 
-    <div class="flex min-h-screen">
+    <!--
+      The drawer's backdrop. Only ever visible below `lg` with the drawer open; clicking it closes.
+      Not focusable and `aria-hidden`, because Escape and the close path are the real affordances
+      and a focusable backdrop is a tab stop that announces nothing.
+    -->
+    <div id="nav-backdrop" aria-hidden="true" class="taproot-nav-backdrop"></div>
+
+    <div class="min-h-screen lg:flex">
       <!--
-        Sidebar.
+        Sidebar — and, below `lg`, the same element slid off-canvas as a drawer.
+
+        **One element, not two.** A separate desktop sidebar plus a duplicate mobile drawer would
+        put two `<nav aria-label="Main">` landmarks in the DOM, and `scripts/a11y-audit.mjs` loads
+        no CSS — so `hidden lg:block` is invisible to it and axe's `landmark-unique` rule would fire
+        on every route. It is also the "which copy did you edit" problem, which is the reason this
+        codebase keeps one of things.
+
+        **Not a `<dialog>`**, though that would hand us a focus trap for free. A dialog forced
+        visible at desktop keeps its implicit `role="dialog"`, so the ordinary sidebar would
+        announce itself as a dialog on every page; giving it `role="navigation"` fixes that and
+        breaks the mobile reading, where the dialog role is what tells a screen-reader user they are
+        in a modal Escape will close. `Sheet.astro` stays a native dialog because it is only ever a
+        dialog. This is a sidebar that is sometimes a drawer, and the script below pays for the
+        difference with `inert` and about thirty lines.
 
         A <header> rather than a <div>: it is the banner landmark, which is what puts the brand
         link and the account block inside a landmark. With a plain div, axe's `region` rule flags
         them — content outside any landmark is content a screen-reader user cannot jump to.
       -->
-      <header class="w-60 shrink-0 border-r border-border bg-surface-sunken">
-        <div class="sticky top-0 flex h-screen flex-col">
+      <header
+        data-reflow-ok="width is lg: only; below it the banner is a full-width bar"
+        class="lg:w-60 lg:shrink-0 lg:border-r lg:border-border lg:bg-surface-sunken"
+      >
+        <!--
+          The small-screen top bar, inside the banner rather than beside it.
+
+          It was a top-level `<div>` for exactly one run of `npm run a11y`, which failed 29 routes on
+          axe's `region` rule — content outside every landmark, which is content a screen-reader user
+          cannot jump to. The comment on this element already warned about that. It cannot be a
+          second `<header>` either: two banner landmarks is its own violation, and the audit sees
+          both because it loads no CSS and `lg:hidden` means nothing to it. So the banner wraps both
+          the bar and the panel, and only the panel slides.
+        -->
+        {/*
+          `fixed`, not `sticky`, and the class carries the positioning — see `admin.css`.
+
+          It was `sticky top-0` and scrolled away on every long page: a sticky element travels only
+          within its containing block, and below `lg` this bar's parent is the banner, which is
+          exactly as tall as the bar. Same shape as the bug the sidebar had. `#admin-content` gets
+          matching top padding so nothing hides underneath it.
+        */}
+        <div class="taproot-topbar flex items-center gap-2 border-b border-border bg-surface px-4 py-2.5 lg:hidden">
+          <button
+            type="button"
+            id="nav-toggle"
+            aria-controls="admin-nav"
+            aria-expanded="false"
+            aria-label="Main menu"
+            class="rounded-md border border-border-strong p-2 transition-colors hover:bg-surface-sunken"
+          >
+            <svg
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M4 6h16" />
+              <path d="M4 12h16" />
+              <path d="M4 18h16" />
+            </svg>
+          </button>
+          <a href="/admin" class="flex items-center gap-2 font-semibold tracking-tight">
+            <span aria-hidden="true" class="text-accent">◆</span>
+            Taproot
+          </a>
+        </div>
+
+        <!--
+          The sticky lives on *this* element, not on the inner column.
+
+          It used to be on the child, which worked while that child was a direct flex item of the
+          shell and therefore stretched to the whole page height. Wrapping it in this panel broke it
+          silently: a sticky element can only travel inside its containing block, and this wrapper is
+          exactly as tall as the child, so there was nowhere to go and the sidebar scrolled away on
+          any long page.
+
+          `lg:` only. Below it, `.taproot-nav` is `position: fixed`, which this must not fight.
+        -->
+        <div id="admin-nav" class="taproot-nav bg-surface-sunken lg:sticky lg:top-0 lg:h-dvh">
+          <div class="flex h-full flex-col">
           <div class="px-5 py-5">
             <a href="/admin" class="flex items-center gap-2 text-lg font-semibold tracking-tight">
               <span aria-hidden="true" class="text-accent">◆</span>
@@ -222,41 +318,14 @@ const navLinkClass = (current: boolean) =>
             </ul>
           </nav>
 
-          <div class="border-t border-border px-3 py-3">
-            {/*
-              A link rather than a static block now that there is somewhere to go: changing your
-              own password is available to every role, so it cannot live under Settings, which is
-              admin-only.
-            */}
-            <a
-              href="/admin/account"
-              aria-current={path === '/admin/account' ? 'page' : undefined}
-              class={`block rounded-md px-2 py-1.5 transition-colors hover:bg-surface-raised ${
-                path === '/admin/account' ? 'bg-accent-subtle' : ''
-              }`}
-            >
-              <span class="block truncate text-sm font-medium">{user.name}</span>
-              <span class="block truncate text-xs text-content-subtle">
-                {user.email} · <span class="capitalize">{user.role}</span>
-              </span>
-            </a>
-            <form method="post" action="/api/taproot/auth/logout">
-              <button
-                type="submit"
-                class="mt-1 w-full rounded-md px-3 py-2 text-left text-sm text-content-muted transition-colors hover:bg-surface-raised hover:text-content"
-              >
-                Sign out
-              </button>
-            </form>
-
-            <ThemeSwitcher current={theme} redirectTo={themeReturnPath} />
+          <UserMenu user={user} theme={theme} themeReturnPath={themeReturnPath} path={path} />
           </div>
         </div>
       </header>
 
       <!-- Main ---------------------------------------------------------- -->
-      <div class="min-w-0 flex-1">
-        <main id="main" class="mx-auto max-w-5xl px-8 py-8">
+      <div id="admin-content" class="min-w-0 flex-1">
+        <main id="main" class="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           {
             breadcrumbs.length > 0 && (
               <nav aria-label="Breadcrumb" class="mb-4">
@@ -301,5 +370,63 @@ const navLinkClass = (current: boolean) =>
         </main>
       </div>
     </div>
+
+    <script>
+      /**
+       * The navigation drawer, below `lg`.
+       *
+       * `data-nav` on `<html>` is the state — the third use of that pattern after `data-theme` and
+       * `data-preview`, so the CSS reads the same way as the other two. **No cookie**, unlike those:
+       * every link in this admin is a real page load, so a drawer that remembered being open would
+       * reopen itself on arrival at the page you had just navigated to. Closing on navigation is
+       * what a drawer is supposed to do, and here it is free.
+       *
+       * `inert` on the content column is the part that has to be hand-written and must not be
+       * dropped. Without it, tabbing past the last nav link walks invisibly through the page behind
+       * the drawer — the exact failure a modal `<dialog>` would have prevented for free, and the
+       * price of not being able to use one here.
+       */
+      const toggle = document.getElementById('nav-toggle');
+      const backdrop = document.getElementById('nav-backdrop');
+      const content = document.getElementById('admin-content');
+      const nav = document.getElementById('admin-nav');
+      const root = document.documentElement;
+
+      function setNav(open: boolean) {
+        if (open) root.dataset.nav = 'open';
+        else delete root.dataset.nav;
+
+        toggle?.setAttribute('aria-expanded', String(open));
+        // The top bar sits outside `#admin-content`, so the toggle stays reachable to close it.
+        if (content) content.inert = open;
+
+        if (open) {
+          // Into the drawer rather than merely near it: opening a menu and landing nowhere is the
+          // usual way a hand-built drawer fails a keyboard user.
+          nav?.querySelector<HTMLElement>('a, button')?.focus();
+        } else {
+          toggle?.focus();
+        }
+      }
+
+      toggle?.addEventListener('click', () => setNav(root.dataset.nav !== 'open'));
+      backdrop?.addEventListener('click', () => setNav(false));
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && root.dataset.nav === 'open') setNav(false);
+      });
+
+      /**
+       * Dropped when the viewport grows past the breakpoint.
+       *
+       * The drawer's CSS stops applying at `lg`, so a stale `data-nav` would leave `inert` on the
+       * content column of a perfectly ordinary desktop layout — every control dead, nothing on
+       * screen explaining why.
+       */
+      const wide = window.matchMedia('(min-width: 64rem)');
+      wide.addEventListener('change', (event) => {
+        if (event.matches && root.dataset.nav === 'open') setNav(false);
+      });
+    </script>
   </body>
 </html>

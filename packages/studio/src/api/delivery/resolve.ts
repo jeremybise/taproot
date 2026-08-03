@@ -1,6 +1,7 @@
 import {
   PREVIEW_PARAM,
   buildItemPayload,
+  normalizePath,
   resolveDelivery,
   resolvePreviewToken,
 } from '@taprootcms/core';
@@ -45,7 +46,19 @@ export const GET = handleScoped(
       url.searchParams.get(PREVIEW_PARAM),
     );
 
-    if (preview) {
+    /**
+     * The override applies to the page the token was minted for, and to no other.
+     *
+     * This branch used to ignore `path` entirely and answer with the token's item whatever was
+     * asked for. That was invisible while the only caller was a 302 straight to `item.path` — but
+     * the split-view pane can be pointed at any address on the site, and following a link inside
+     * that frame would make every page render as the item being edited.
+     *
+     * It is also the security property, stated: a preview token is a capability over **one** item,
+     * not a site-wide key to unpublished content. Any other address falls through to the ordinary
+     * published-only resolution below.
+     */
+    if (preview && normalizePath(path) === preview.item.path) {
       const payload = await buildItemPayload(taproot.db.db, preview.item, {
         origin: url.origin,
         storage: taproot.storage,
@@ -65,28 +78,42 @@ export const GET = handleScoped(
       /**
        * Published only, with no way to ask otherwise.
        *
-       * Cross-origin preview is Phase 3.75b and needs a signed token — until it exists, there is
-       * deliberately no parameter here that could turn drafts on. An `includeUnpublished` flag
-       * driven by the query string would be exactly the mistake `?preview=1` avoided by checking
-       * the session rather than the parameter.
+       * A valid token reaching this line means it was minted for a *different* page — the pane's
+       * address box pointed elsewhere, or somebody followed a link inside the frame. It buys
+       * nothing here: an `includeUnpublished` flag the query string could turn on would be exactly
+       * the mistake `?preview=1` avoided by checking the session rather than the parameter, and it
+       * would quietly widen a one-item capability into a site-wide one.
        */
     });
+
+    /**
+     * A token-bearing URL is never cached, even when the answer is published content.
+     *
+     * The response is public, so this is not about the body — it is that the URL is a cache key and
+     * this one carries a credential. A shared cache holding entries under it is a credential
+     * sitting in infrastructure that has no reason to hold one.
+     */
+    const noStore = Boolean(preview);
 
     if (result.kind === 'not_found') {
       return json({ kind: 'not_found' }, { status: 404 });
     }
 
     if (result.kind === 'redirect') {
-      // Not cached: a redirect is rewritten whenever content moves again, and the collapse of a
-      // redirect chain has to reach visitors promptly or a moved page keeps a stale hop.
-      return json(result, { headers: { 'cache-control': 'public, max-age=0, s-maxage=30' } });
+      // Not cached for long: a redirect is rewritten whenever content moves again, and the collapse
+      // of a redirect chain has to reach visitors promptly or a moved page keeps a stale hop.
+      return json(result, {
+        headers: { 'cache-control': noStore ? 'no-store' : 'public, max-age=0, s-maxage=30' },
+      });
     }
 
     const cache = deliveryCache(result.item.updatedAt, result.item.id);
     const unchanged = notModified(context.request, cache.etag);
-    if (unchanged) return unchanged;
+    if (unchanged && !noStore) return unchanged;
 
-    return json(result, { headers: cache.headers });
+    return json(result, {
+      headers: noStore ? { ...cache.headers, 'cache-control': 'no-store' } : cache.headers,
+    });
   },
   { scope: 'content:read' },
 );

@@ -1,0 +1,126 @@
+---
+import Icon from './Icon.astro';
+
+/**
+ * A panel that slides in from the right, holding server-rendered content.
+ *
+ * **A native `<dialog>`, not a React one, and that is what makes this possible at all.** The things
+ * that go in these sheets — revision history, incoming references, the danger zone — are Astro
+ * components whose contents are links, tables, and real form POSTs. `RevisionHistory` says so in its
+ * own comment: keeping it out of an island means restore is a form submission that works before
+ * hydration and needs no hand-built focus management. Wrapping that in a React dialog would have
+ * meant re-implementing all three in TSX, or portalling server HTML into a client tree.
+ *
+ * `showModal()` supplies the focus trap, the Escape key, the inert background, and top-layer
+ * stacking — every laborious part of a dialog, from the platform, correct by default. What is added
+ * here is roughly twenty lines: open it, close it, and restore focus to the trigger afterwards.
+ *
+ * The trigger lives outside this component — see `EditorActionIcons.tsx` — and is matched by `id`,
+ * so a sheet can be opened from anywhere on the page without threading state through, and by markup
+ * that did not exist when this script ran.
+ */
+interface Props {
+  id: string;
+  title: string;
+  /** Rendered under the title. Use it to say what the panel is for, not to repeat the title. */
+  description?: string;
+}
+
+const { id, title, description } = Astro.props;
+---
+
+<dialog id={id} class="taproot-sheet" aria-labelledby={`${id}-title`}>
+  <div class="flex h-full flex-col">
+    <header class="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
+      <div>
+        <h2 id={`${id}-title`} class="text-lg font-semibold">{title}</h2>
+        {description && <p class="mt-0.5 text-sm text-content-muted">{description}</p>}
+      </div>
+      {/*
+        A real button rather than the backdrop alone. Clicking outside is a convenience some people
+        know about; a visible, focusable control is the one everybody can find, and it is what a
+        keyboard user reaches after tabbing through the panel.
+      */}
+      <button
+        type="button"
+        data-sheet-close
+        aria-label={`Close ${title.toLowerCase()}`}
+        class="-mr-2 -mt-1 rounded-md p-2 text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+      >
+        <Icon name="close" />
+      </button>
+    </header>
+
+    {/* The panel scrolls, not the page behind it — `showModal` already makes that inert. */}
+    <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+      <slot />
+    </div>
+  </div>
+</dialog>
+
+<script>
+  /**
+   * Wiring for every sheet on the page, bound once — and genuinely delegated.
+   *
+   * It used to say "delegated" while actually iterating `[data-sheet-open]` at load and binding each
+   * one, which works only for triggers that exist by then. The item editor's action bar is rendered
+   * by React after hydration, so its history and delete icons were dead on arrival. One listener on
+   * the document matching upward fixes that, and means a trigger works wherever it comes from and
+   * whenever it appears.
+   */
+  document.addEventListener('click', (event) => {
+    const trigger = (event.target as Element | null)?.closest('[data-sheet-open]');
+    if (!trigger) return;
+
+    const id = trigger.getAttribute('data-sheet-open');
+    const sheet = id ? document.getElementById(id) : null;
+    if (sheet instanceof HTMLDialogElement) {
+      /**
+       * `showModal`, never `show`.
+       *
+       * `show()` opens a non-modal dialog: no focus trap, no inert background, no Escape key.
+       * Everything this component relies on the platform for comes from `showModal` specifically.
+       */
+      sheet.showModal();
+    }
+  });
+
+  for (const sheet of document.querySelectorAll<HTMLDialogElement>('dialog.taproot-sheet')) {
+    // Delegated within the sheet for the same reason as above: its contents are server-rendered
+    // today, but nothing should depend on that staying true.
+    sheet.addEventListener('click', (event) => {
+      if ((event.target as Element | null)?.closest('[data-sheet-close]')) sheet.close();
+    });
+
+    /**
+     * Clicking the backdrop closes it.
+     *
+     * The backdrop is not an element, so there is nothing to listen on directly — but a click that
+     * lands on the `<dialog>` itself rather than on any of its children is one that hit the padding
+     * around the panel, which is the backdrop as far as a user is concerned.
+     */
+    sheet.addEventListener('click', (event) => {
+      if (event.target === sheet) sheet.close();
+    });
+
+    /**
+     * Focus returns to whatever opened it.
+     *
+     * The platform does this for `showModal` in current browsers, but only when the trigger is still
+     * in the document — and it says nothing about which of several triggers. Restoring explicitly
+     * means closing a sheet always lands a keyboard user back on the icon they pressed rather than
+     * at the top of the page.
+     */
+    sheet.addEventListener('close', () => {
+      const opener = document.querySelector<HTMLElement>(`[data-sheet-open="${sheet.id}"]`);
+      /**
+       * Deferred a frame, because the platform is also restoring focus and runs after this handler.
+       *
+       * Closing by clicking the sheet's own X left focus on that X — an element inside a dialog that
+       * is now `display: none`, so the keyboard user was nowhere. Focusing on the next frame lands
+       * after the browser has had its say.
+       */
+      requestAnimationFrame(() => opener?.focus());
+    });
+  }
+</script>

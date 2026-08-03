@@ -3,8 +3,8 @@ title: Revision history
 description: Every save is kept. How to see what changed and how to go back.
 ---
 
-Taproot snapshots a content item every time you save it. The history is at the bottom of the item
-editor, newest first.
+Taproot snapshots a content item every time you save it. Open the **history** icon in the editor's
+action bar — which stays in view as you scroll — and the list slides in from the right, newest first.
 
 Each entry shows who saved it, when, and which fields changed by name — "Title, Body, Social image"
 rather than a wall of markup.

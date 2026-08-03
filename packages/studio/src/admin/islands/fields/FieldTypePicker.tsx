@@ -34,7 +34,8 @@ export function FieldTypePicker({
         </p>
       )}
 
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+      <div className="@container mt-2">
+        <div className="grid gap-2 @sm:grid-cols-2">
         {FIELD_TYPES.map((type) => {
           const meta = FIELD_TYPE_META[type];
           const id = `${name}-${type}`;
@@ -78,6 +79,7 @@ export function FieldTypePicker({
             </div>
           );
         })}
+        </div>
       </div>
     </fieldset>
   );

@@ -32,6 +32,26 @@ export * from './content/menuHrefs.js';
  */
 export const PREVIEW_PARAM = 'taproot_preview';
 
+/**
+ * The postMessage vocabulary the split-view preview pane and the consumer's bridge share.
+ *
+ * Here for the same reason `PREVIEW_PARAM` is: the pane reads it through the main barrel and the
+ * bridge through `/pure`, so there is exactly one spelling of each name. Two hand-kept copies is how
+ * a handshake starts failing silently in one direction — and silently is the only way it can fail,
+ * because the pane's fallback is to reload the frame anyway.
+ *
+ * The child never posts to `'*'`. It learns the CMS's origin from `event.origin` of the hello, which
+ * is why nothing here needs configuring and why a hostile framer gets no reply.
+ */
+export const PREVIEW_MESSAGE = {
+  /** CMS → site, once the frame has loaded. */
+  hello: 'taproot:preview:hello',
+  /** Site → CMS, answering a hello. Its arrival is what tells the pane a bridge is present. */
+  ready: 'taproot:preview:ready',
+  /** CMS → site. Reloading from *inside* the frame is what keeps the scroll position. */
+  refresh: 'taproot:preview:refresh',
+} as const;
+
 export type {
   DeliveryField,
   DeliveryItem,

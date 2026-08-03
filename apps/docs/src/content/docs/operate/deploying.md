@@ -88,7 +88,7 @@ The site holds no database credentials, because it has no database.
 ### Tell the CMS where the site is
 
 Back in the CMS, set `TAPROOT_SITE_URL` to the site's origin. That is what preview links are built
-from — without it, an editor pressing **Preview page** gets told the CMS does not know where to send
+from — without it, an editor pressing the preview button gets told the CMS does not know where to send
 them, which is a clearer failure than a redirect to a 404 on the wrong origin.
 
 ### Deploy it

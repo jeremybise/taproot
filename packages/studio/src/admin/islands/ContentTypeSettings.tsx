@@ -83,7 +83,8 @@ export default function ContentTypeSettings({
         )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="@container">
+        <div className="grid gap-4 @sm:grid-cols-2">
         <div>
           <label htmlFor="ct-name" className="block text-sm font-medium">
             Name
@@ -108,6 +109,7 @@ export default function ContentTypeSettings({
             onChange={(e) => setNamePlural(e.target.value)}
             className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
           />
+        </div>
         </div>
       </div>
 

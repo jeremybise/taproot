@@ -10,7 +10,7 @@
  * Usage: node scripts/a11y-contrast.mjs
  */
 
-// Mirrors the @theme blocks in packages/astro/src/admin/admin.css.
+// Mirrors the @theme blocks in packages/studio/src/admin/admin.css.
 const LIGHT = {
   surface: [99, 0, 0],
   'surface-raised': [100, 0, 0],

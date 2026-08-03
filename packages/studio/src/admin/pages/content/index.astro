@@ -1,5 +1,6 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
 import StatusBadge from '../../components/StatusBadge.astro';
 import Timestamp from '../../components/Timestamp.astro';
 import {
@@ -112,16 +113,14 @@ const filtered = Boolean(search || typeFilter || statusFilter || termFilter);
       </section>
     )
   }
-  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">Content</h1>
-      <p class="mt-1 text-sm text-content-muted">
-        {total} {total === 1 ? 'item' : 'items'}{filtered ? ' matching this filter' : ''}
-      </p>
-    </div>
+  <PageHeader
+    title="Content"
+    meta={`${total} ${total === 1 ? 'item' : 'items'}${filtered ? ' matching this filter' : ''}`}
+  >
     {
       canEditContent(user) && contentTypes.length > 0 && (
         <a
+          slot="actions"
           href="/admin/content/new"
           class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
         >
@@ -129,7 +128,7 @@ const filtered = Boolean(search || typeFilter || statusFilter || termFilter);
         </a>
       )
     }
-  </header>
+  </PageHeader>
 
   <form method="get" class="mb-6 flex flex-wrap items-end gap-3">
     <div class="min-w-48 flex-1">

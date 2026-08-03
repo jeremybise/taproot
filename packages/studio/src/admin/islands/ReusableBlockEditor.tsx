@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import type { FieldRow } from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
@@ -133,7 +133,7 @@ export default function ReusableBlockEditor({
           Name
         </label>
         <p id="rb-name-hint" className="mt-0.5 text-xs text-content-subtle">
-          How editors find it in the library. Renaming is safe â€” pages reference it by id.
+          How editors find it in the library. Renaming is safe — pages reference it by id.
         </p>
         <input
           id="rb-name"
@@ -200,7 +200,7 @@ export default function ReusableBlockEditor({
           disabled={busy}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover disabled:opacity-60"
         >
-          {busy ? 'Savingâ€¦' : 'Save'}
+          {busy ? 'Saving…' : 'Save'}
         </button>
       )}
     </form>

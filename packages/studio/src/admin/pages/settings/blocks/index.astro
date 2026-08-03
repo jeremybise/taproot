@@ -1,5 +1,6 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
 import { listBlockTypes, countBlockUsage } from '@taprootcms/core';
 import { getTaproot, loginRedirect, canManageSchema } from '../../../../runtime/guards.js';
 
@@ -45,22 +46,20 @@ const deleted = Astro.url.searchParams.get('deleted');
   breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Block types' }]}
   flash={deleted ? `Deleted the ${deleted} block type.` : null}
 >
-  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">Block types</h1>
-      <p class="mt-1 max-w-prose text-sm text-content-muted">
-        The pieces a page is composed from. A block type has fields exactly like a content type
-        does; the difference is that its content lives inside a page rather than at a URL of its
-        own.
-      </p>
-    </div>
+  <PageHeader title="Block types">
     <a
+      slot="actions"
       href="/admin/settings/blocks/new"
       class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
     >
       New block type
     </a>
-  </header>
+  </PageHeader>
+
+  <p class="mb-6 max-w-prose text-sm text-content-muted">
+    The pieces a page is composed from. A block type has fields exactly like a content type does; the
+    difference is that its content lives inside a page rather than at a URL of its own.
+  </p>
 
   <div role="alert" aria-live="assertive">
     {

@@ -122,10 +122,24 @@ export interface ItemFilters {
    * The delivery listing is the caller: a singleton's `path` is the synthetic
    * `/__singleton/{api_id}`, which is not a URL anybody can link to, so offering one to a consumer
    * building an index hands them a broken link. Expressed as kinds rather than "exclude singletons"
-   * because `page` and `collection` are exactly the kinds that *have* public URLs, which is the
-   * property the caller actually wants.
+   * because `page` and `collection` are exactly the kinds that *have* public URLs — which is the
+   * property the caller actually wants, and the one `kindHasPublicPath` names.
    */
   contentTypeKinds?: ContentTypeKind[];
+}
+
+/**
+ * Whether items of this kind have a URL a visitor can request.
+ *
+ * `page` and `collection` do. A `singleton` gets the synthetic `/__singleton/{api_id}`, which is an
+ * addressing convenience rather than a route, and a `block` type has no items at all.
+ *
+ * Asked as a question about the kind rather than as `kind !== 'singleton'` written out at each call
+ * site — the preview link and the split-view pane both gate on it, and two copies is how they end
+ * up disagreeing about the same page.
+ */
+export function kindHasPublicPath(kind: ContentTypeKind): boolean {
+  return kind === 'page' || kind === 'collection';
 }
 
 type ItemQuery = SelectQueryBuilder<Database, 'content_items', {}>;

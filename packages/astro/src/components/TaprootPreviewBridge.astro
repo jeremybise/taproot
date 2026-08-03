@@ -1,0 +1,61 @@
+---
+import { PREVIEW_MESSAGE } from '@taprootcms/core/pure';
+
+/**
+ * Two lines of integration that turn the CMS's split-view preview from usable into good.
+ *
+ * The preview pane can refresh without this — it remounts the iframe — but a remount reloads the
+ * page from the *outside*, which starts it at the top. `location.reload()` called from *inside* the
+ * frame keeps the scroll position, because the browser restores it for a reload and does not for a
+ * navigation. That is the whole of what this buys, and on a long page it is the difference between
+ * a live preview somebody uses and one they close.
+ *
+ * Render it only when a preview token is present:
+ *
+ * ```astro
+ * {previewToken && <TaprootPreviewBridge />}
+ * ```
+ *
+ * Rendering it unconditionally would put a message listener on every page a visitor loads, for a
+ * handshake that can never happen.
+ *
+ * The frontmatter import is erased at build and `define:vars` puts the names in as JSON literals,
+ * so nothing from `@taprootcms/core` reaches the browser — the same argument that put
+ * `PREVIEW_PARAM` in `pure.ts` in the first place. One consequence worth knowing: `define:vars`
+ * requires `is:inline`, so a site with a strict script CSP needs a hash or a nonce for this tag.
+ */
+---
+
+<script is:inline define:vars={{ MSG: PREVIEW_MESSAGE }}>
+  (() => {
+    // Not framed: nothing to talk to, and no listener worth installing.
+    if (window.parent === window) return;
+
+    /**
+     * The CMS's origin is learned, not configured.
+     *
+     * `event.origin` on this side of a postMessage is the framer's origin, so the hello tells us
+     * exactly who to answer. That means no prop to pass, no environment variable to keep in step
+     * with the CMS's own, and no `'*'` target broadcasting to any page that happens to frame this
+     * one.
+     */
+    let cms = null;
+
+    window.addEventListener('message', (event) => {
+      if (!event.data || typeof event.data !== 'object') return;
+
+      if (event.data.type === MSG.hello) {
+        cms = event.origin;
+        event.source?.postMessage({ type: MSG.ready }, event.origin);
+        return;
+      }
+
+      // Only the origin that said hello may ask for a reload. A reload is harmless either way —
+      // it is the page the viewer is already on — but there is no reason to accept one from
+      // anywhere else.
+      if (event.data.type === MSG.refresh && event.origin === cms) {
+        window.location.reload();
+      }
+    });
+  })();
+</script>

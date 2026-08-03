@@ -355,8 +355,14 @@ Create the key in the admin under **Settings → API keys**, with the `content:r
 shown exactly once — `id` is its hash, so there is nothing to read it back from.
 
 Then, on the **CMS**, set `TAPROOT_SITE_URL` to the site's origin. That is what preview links are
-built from; without it an editor pressing **Preview page** is told the CMS does not know where to
-send them.
+built from, and what the item editor's live preview pane frames; without it an editor opening a
+preview is told the CMS does not know where to send them.
+
+One thing to check on the **site** if the preview pane comes up blank: nothing in Taproot or in
+Astro sends a framing header, but a WAF, CDN rule, or security-headers middleware in front of the
+site may add `X-Frame-Options: SAMEORIGIN`, which stops the CMS framing it. That has to be removed
+where it is added — a `Content-Security-Policy` from the app cannot loosen it. `apps/web` sets
+`frame-ancestors` explicitly under preview as the worked example.
 
 ```bash
 npm run build --workspace=@taprootcms/web

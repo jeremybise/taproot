@@ -182,7 +182,13 @@ export type TaprootClient = ReturnType<typeof createTaprootClient>;
  * own preview and a consumer's rendering cannot disagree — which was the bug `TaprootImage` was
  * written to fix in the first place.
  */
-export { PREVIEW_PARAM, applyTermHrefs, resolveCrop, cropFrame } from '@taprootcms/core/pure';
+export {
+  PREVIEW_PARAM,
+  PREVIEW_MESSAGE,
+  applyTermHrefs,
+  resolveCrop,
+  cropFrame,
+} from '@taprootcms/core/pure';
 
 export type {
   DeliveryField,

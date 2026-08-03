@@ -65,15 +65,36 @@ location automatically. You do not have to do anything about the old links. See
 
 ## Previewing
 
-**Preview page** at the top right opens the page as it will look, including unpublished content.
-Only signed-in people with permission see it; the link is not a way to show a draft to the public.
+The **eye** icon in the editor's action bar opens a live preview beside the editor: your real site, with your
+real design, updating as you type — including changes you have not saved yet. It stays put while you
+scroll the fields.
 
-Singletons have no preview because they have no address.
+On a narrow screen there is not room for both, so the same icon switches between editing and
+previewing rather than showing them side by side.
+
+It is a preview of what the page *will* be, not what visitors see now. Only signed-in people with
+permission can open it, and the link it uses expires; it is not a way to show a draft to the public.
+
+Two things it deliberately does not do. **Navigation and listings show published content only**, so a
+draft page previews correctly without appearing in its own menu. And the address box shows you any
+page on the site, but your *unsaved* changes only appear on this item's own page.
+
+Use **Open in a new tab** inside the preview to get a full-width window with the same content.
+
+Singletons have no preview, because they have no address of their own.
+
+## Adding it to a release
+
+Under **Publishing** in the sidebar. Choose an open release and press **Add to release** — it takes a
+copy of the content as it is now, and you edit that copy without the live page changing. Editors can
+also create a release from the same control.
+
+You stay on the item, so anything you have typed and not saved is still there.
 
 ## Deleting
 
-At the bottom of the editor. You have to type the item's slug to confirm, and it is checked on the
-server — you cannot get past it by turning JavaScript off.
+The **bin** icon in the editor's action bar, set apart from the others. You have to type the item's slug to
+confirm, and it is checked on the server — you cannot get past it by turning JavaScript off.
 
 Taproot refuses the delete outright when it would break something:
 

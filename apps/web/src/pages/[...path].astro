@@ -1,6 +1,6 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
-import { BlockRenderer, TaprootImage } from '@taprootcms/astro/components';
+import { BlockRenderer, TaprootImage, TaprootPreviewBridge } from '@taprootcms/astro/components';
 import { PREVIEW_PARAM } from '@taprootcms/astro';
 import { taproot, PUBLIC_TERM_TAXONOMIES } from '../taproot.ts';
 import { BLOCK_COMPONENTS } from '../blocks/index.ts';
@@ -131,6 +131,30 @@ const canonical = item && !previewToken ? new URL(item.path, Astro.url.origin).t
 if (previewToken) {
   Astro.response.headers.set('cache-control', 'no-store');
   Astro.response.headers.set('x-robots-tag', 'noindex, nofollow');
+
+  /**
+   * Framable by the CMS, and by nothing else.
+   *
+   * Nothing here needs this to *work* — Astro sends no framing headers and neither does Cloudflare,
+   * so the split-view pane already frames this page. It is set anyway because "no header" and "only
+   * the CMS" are different promises, and the second is the one worth making about a document
+   * showing unpublished content.
+   *
+   * `frame-ancestors` rather than `X-Frame-Options`, which has no origin-list form at all:
+   * `ALLOW-FROM` was never implemented in Chrome and is gone from the rest. Note the direction that
+   * runs in — if a WAF or CDN in front of this app adds `X-Frame-Options`, it has to be removed
+   * *there*, because a CSP here cannot loosen it. That is the usual reason a preview pane is blank.
+   *
+   * A site with a CSP of its own should add this directive to it rather than replacing the header;
+   * `set` is right here only because this app sends none.
+   */
+  const cms = import.meta.env.TAPROOT_API_URL ?? process.env.TAPROOT_API_URL;
+  if (cms) {
+    Astro.response.headers.set(
+      'content-security-policy',
+      `frame-ancestors 'self' ${new URL(cms).origin}`,
+    );
+  }
 } else {
   Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
 }
@@ -145,6 +169,17 @@ if (previewToken) {
   canonical={canonical}
   noIndex={Boolean(previewToken) || item?.seo.noIndex === true}
 >
+  {
+    /*
+      Two lines, and entirely optional.
+
+      Without it the CMS's split-view pane still updates — it remounts the iframe — but a remount
+      reloads from the outside and starts the page at the top. This lets the pane ask *this* page to
+      reload itself, which keeps the scroll position. Conditional on the token, so a visitor never
+      ships a message listener for a handshake that cannot happen.
+    */
+    previewToken && <TaprootPreviewBridge />
+  }
   {
     previewToken && item && item.status !== 'published' && (
       <p class="preview-note" role="status">

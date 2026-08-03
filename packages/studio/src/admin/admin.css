@@ -246,3 +246,198 @@
     border-width: 0;
   }
 }
+
+/*
+ * Deliberately unlayered — do not move this into `@layer base` with its neighbours.
+ *
+ * `#main` carries Tailwind's `max-w-5xl`, which lives in the `utilities` layer. Cascade layers beat
+ * specificity outright, and Tailwind's order is `theme, base, components, utilities`, so a rule in
+ * `base` loses to that utility no matter how specific it is. This rule sat in `base` for exactly one
+ * commit and did nothing at all: the attribute was on `<html>`, the selector matched, and the width
+ * never changed. Unlayered styles outrank every layer, which is what makes this one apply.
+ *
+ * What it is for: `#main` is 64rem because that is a comfortable measure for a form, and a split
+ * view inside 64rem leaves the preview around 400px — narrower than the phone it is meant to be
+ * previewing. The attribute is stamped on `<html>` by the server from a cookie, exactly as
+ * `data-theme` is, so the width is right in the first HTML the browser parses and there is no jump.
+ *
+ * No attribute is the closed state, so an admin that has never opened the pane is untouched.
+ */
+html[data-preview='open'] #main {
+  /* Plain, not `min(…, 100vw - …)`: `#main` sits inside a `min-w-0 flex-1` column that already
+     constrains it, and `100vw` counts the scrollbar, which is how a max-width meant to prevent
+     overflow causes one. */
+  max-width: 110rem;
+}
+
+/*
+ * The right-hand sheets: history, referenced by, and the danger zone.
+ *
+ * A native `<dialog>` rather than a React dialog, and that is the whole reason this works. The three
+ * panels are server-rendered Astro whose contents are links, tables, and form POSTs — `restore`,
+ * `delete` — and `RevisionHistory`'s own comment says why it is not an island: a real form
+ * submission works before hydration and needs no hand-built focus management. Wrapping that markup
+ * in a React component would have meant either re-implementing it in TSX or portalling server HTML
+ * into a client tree.
+ *
+ * `showModal()` gives the focus trap, the Escape key, the inert background, and the top-layer
+ * stacking from the platform — all the parts of a dialog that are laborious to hand-build and easy
+ * to get subtly wrong. The only thing added here is that it slides in from the right.
+ */
+dialog.taproot-sheet {
+  margin: 0 0 0 auto;
+  height: 100%;
+  max-height: 100%;
+  width: min(46rem, 100vw);
+  max-width: 100vw;
+  padding: 0;
+  border: none;
+  border-left: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  color: var(--color-content);
+}
+
+dialog.taproot-sheet::backdrop {
+  /* Not a token: `::backdrop` is outside the document, so `var()` on an inherited custom property
+     does not resolve there. A literal is the honest form rather than a token that silently fails. */
+  background-color: rgb(0 0 0 / 0.45);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.taproot-sheet[open] {
+    animation: taproot-sheet-in 160ms ease-out;
+  }
+
+  @keyframes taproot-sheet-in {
+    from {
+      transform: translateX(1.5rem);
+      opacity: 0;
+    }
+  }
+}
+
+/*
+ * The navigation drawer, below `lg`.
+ *
+ * Unlayered for the same reason the preview width rule is: it competes with Tailwind utilities on
+ * the same element (`w-60 shrink-0`), and a rule in `@layer base` loses to a utility however
+ * specific it is.
+ *
+ * One element does both jobs — the static sidebar at `lg` and up, this off-canvas drawer below —
+ * because two would mean two `<nav aria-label="Main">` landmarks in the DOM. See the comment in
+ * AdminLayout.astro.
+ */
+@media (max-width: 63.999rem) {
+  .taproot-nav {
+    position: fixed;
+    inset-block: 0;
+    left: 0;
+    z-index: 40;
+    width: min(17rem, 85vw);
+    transform: translateX(-100%);
+  }
+
+  html[data-nav='open'] .taproot-nav {
+    transform: none;
+  }
+
+  .taproot-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background-color: rgb(0 0 0 / 0.45);
+    /* `visibility` as well as opacity, or the backdrop keeps swallowing clicks while invisible. */
+    visibility: hidden;
+    opacity: 0;
+  }
+
+  html[data-nav='open'] .taproot-nav-backdrop {
+    visibility: visible;
+    opacity: 1;
+  }
+}
+
+@media (max-width: 63.999rem) and (prefers-reduced-motion: no-preference) {
+  .taproot-nav {
+    transition: transform 160ms ease-out;
+  }
+
+  .taproot-nav-backdrop {
+    transition: opacity 160ms ease-out, visibility 160ms;
+  }
+}
+
+/*
+ * Above `lg` the drawer's chrome must not exist at all — no stray fixed positioning, and no
+ * backdrop element sitting invisibly over the page waiting to eat a click.
+ */
+@media (min-width: 64rem) {
+  .taproot-nav-backdrop {
+    display: none;
+  }
+}
+
+/*
+ * A horizontal scroll container must also be a containing block.
+ *
+ * Found by measuring, and invisible by inspection: `.sr-only-focusable` hides text with
+ * `position: absolute` + `clip`, and an absolutely positioned element whose containing block is the
+ * viewport is **not** clipped by an intervening `overflow-x: auto` ancestor. So every visually
+ * hidden `<span>` and `<caption>` inside a wide table — the "(opens in a new tab)" notes, the table
+ * captions — laid out at its *static* position inside the 753px table and escaped the scroller,
+ * leaving a 1px element at x=741 that dragged the whole document 437px sideways at a 320px
+ * viewport. The table was scrolling correctly the entire time; the page scrolled too, which is the
+ * WCAG 1.4.10 failure.
+ *
+ * `position: relative` on the scroller makes it the containing block, so those descendants are
+ * clipped with everything else. Done once here rather than on each of the ten table wrappers,
+ * because the eleventh table is the one that would forget.
+ */
+[class~='overflow-x-auto'] {
+  position: relative;
+}
+
+/*
+ * How far down a sticky page header has to start.
+ *
+ * Below `lg` the shell has its own sticky bar carrying the drawer toggle, so a page header pinned at
+ * `top: 0` would slide underneath it. Above `lg` that bar is not rendered and the offset is zero.
+ *
+ * One declaration rather than a `top-[3.25rem] lg:top-0` on each screen that uses `PageHeader`: the
+ * bar's height is a fact about the shell, and a copy of it on seven screens is seven chances to be
+ * wrong the next time its padding changes.
+ */
+/* Measured, not guessed: 54.7px in the browser, which a computed 3.25rem undershot by ~3px and
+   left a sliver of scrolling content visible above the sticky header. */
+:root {
+  --admin-topbar-h: 3.4375rem;
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --admin-topbar-h: 0rem;
+  }
+}
+
+/*
+ * The small-screen top bar is fixed, and the content column makes room for it.
+ *
+ * `sticky top-0` looked right and was not: below `lg` the bar's containing block is the banner,
+ * which is exactly the bar's own height, so it had nowhere to travel and scrolled off the top of
+ * every long page — taking the only way to open the navigation with it.
+ *
+ * `--admin-topbar-h` is now doing double duty, which is the point: it is the bar's height, the
+ * padding that keeps content clear of it, and the offset every sticky `PageHeader` starts at.
+ */
+@media (max-width: 63.999rem) {
+  .taproot-topbar {
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    z-index: 30;
+  }
+
+  #admin-content {
+    padding-top: var(--admin-topbar-h);
+  }
+}

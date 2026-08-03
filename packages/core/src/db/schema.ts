@@ -140,6 +140,21 @@ export interface PreviewTokensTable {
   created_by: string | null;
   expires_at: Timestamp;
   created_at: Timestamp;
+
+  /**
+   * The editor's unsaved form state, for the split-view preview pane.
+   *
+   * A rendering input, not a version — see `0015_preview_draft` for why that distinction is
+   * load-bearing and what must never be built on top of these. `draft_updated_at` is the flag for
+   * "a snapshot exists"; the other four are read only when it is set.
+   */
+  title: string | null;
+  slug: string | null;
+  /** JSON. Validated with `requireComplete: false`, so richtext is sanitised but nothing is required. */
+  data: string | null;
+  /** JSON. */
+  seo: string | null;
+  draft_updated_at: Timestamp | null;
 }
 
 /**

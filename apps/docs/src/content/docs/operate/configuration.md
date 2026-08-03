@@ -84,12 +84,12 @@ features that would promise delivery.
 |---|---|
 | `TAPROOT_SITE_URL` | Origin of the site that reads this content |
 
-Used for preview links: the admin's **Preview page** button mints a short-lived token and redirects
-to this origin carrying it.
+Used for preview: the admin's preview button mints a short-lived token and redirects to this
+origin carrying it, and the item editor's **live preview pane** frames the same origin.
 
-Unset, an editor pressing that button is told the CMS does not know where to send them — which is a
-clearer failure than a redirect to a 404 on the CMS's own origin, and the reason it is checked rather
-than guessed.
+Unset, an editor pressing that button is told the CMS does not know where to send them, and the pane
+says the same rather than framing nothing — which is a clearer failure than a redirect to a 404 on
+the CMS's own origin, and the reason it is checked rather than guessed.
 
 ## Scheduler
 

@@ -3,13 +3,14 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 4 complete.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 4.5 complete.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
-that focal point — at a real nested URL. Then move it through a review workflow, schedule it,
-batch it with a dozen other pages into a release that goes live all at once, find out which pages
-are hard to use with a screen reader, and read back who did what in the audit log. See
-[SCOPE.md](SCOPE.md) for the full plan and [what's next](#whats-next).
+that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
+move it through a review workflow, schedule it, batch it with a dozen other pages into a release
+that goes live all at once, find out which pages are hard to use with a screen reader, and read back
+who did what in the audit log. See [SCOPE.md](SCOPE.md) for the full plan and
+[what's next](#whats-next).
 
 **The handbook is in [`apps/docs`](apps/docs)** — `npm run docs` — and covers using the CMS,
 administering a site, and running the server.
@@ -380,8 +381,48 @@ npm test
 
 ## What's next
 
-**Phase 5 — integrations — is next.** Webhooks and a tracking script manager. API keys already
+**Phase 4.6 — the admin UI pass — is in progress.** Part A shipped: one sticky action bar per screen,
+status transitions behind a promoted action plus a menu, add-to-release moved into the Publishing
+panel where it no longer throws away unsaved edits, and a sidebar user menu. Part B is linking to
+content from rich text so a rename keeps the link working; part C is a configurable accent, title
+and icon.
+
+**Phase 5 — integrations — follows.** Webhooks and a tracking script manager. API keys already
 shipped in 3.75, which could not be done without them.
+
+**Phase 4.5 is done.** A live split-view preview: your site rendered beside the editor, following
+what you type, with no in-place editing and no bespoke integration. Four things about it:
+
+- **The CMS still renders nothing.** Taproot ships no templates, so it has nothing to draw a page
+  with — the rendering stays on your site, which resolves the page server-side as it always did.
+  What crosses the gap is the editor's unsaved form state, parked on the preview token that already
+  existed and merged over the live row exactly as a release's staged version already was.
+- **The snapshot is a rendering input, not a version.** It has no status, no path, no parent; it is
+  never listed, restored, or published, and it dies with its token in thirty minutes. There is a
+  test asserting a snapshot write leaves `content_items` and `release_items` byte-identical, because
+  "a release is the only place a content item can have a version that is not live" has to stay true
+  rather than become narrowly worded.
+- **Sanitising is not relaxed; completeness is.** The draft goes through `validateItemData` like
+  every other write, with one option turning off exactly three rules — `required`, text
+  `minLength`, repeater `minItems`. A minimum is a claim about completeness and a maximum is a
+  bound on what the system will carry, and only the first is a question a half-typed form may fail.
+- **A preview token is a capability over one item**, now enforced. The delivery route applied the
+  override to any path the token was carried to — invisible while the only caller was a redirect
+  straight to the item's own URL, and a bug the moment a frame could follow a link.
+
+Two lines on your site (`<TaprootPreviewBridge />`) upgrade the refresh from a frame remount to a
+reload from inside, which keeps the scroll position. It works without them.
+
+**The admin is responsive**, which it had never been — a fixed 240px sidebar left 16px of content at
+a 320px viewport. That is WCAG 1.4.10 Reflow, a Level **AA** criterion, so it was a conformance gap
+rather than a polish item, and it survived four phases because `npm run a11y` structurally cannot see
+it: jsdom computes no layout and the audit never loads the CSS. The nav is now one element that
+slides off-canvas below `lg`, and `npm run a11y` gained a hazard check — narrow on purpose, because a
+first draft flagged three things that measurement proved fine.
+
+Two of the defects were invisible to inspection: a grid child missing `min-w-0`, and visually hidden
+text escaping a scroll container because `position: absolute` with no positioned ancestor is not
+clipped by `overflow-x: auto` — a 1px span inside a wide table dragged the page 437px sideways.
 
 **Phase 4 is done.** The content accessibility checker: alt text, heading order, and link text, in
 a panel beside the editor and in a site-wide report. Three things about it are worth knowing:

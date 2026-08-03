@@ -424,7 +424,7 @@ function Row(props: RowProps) {
               Term link — the address is decided by the site's templates
             </span>
           ) : (
-            <code className="font-mono text-content-subtle">{node.href}</code>
+            <code className="break-all font-mono text-content-subtle">{node.href}</code>
           )}
 
           <button

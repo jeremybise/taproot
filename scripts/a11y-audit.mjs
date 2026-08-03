@@ -48,6 +48,17 @@ const base = process.argv[2] ?? 'http://localhost:4321';
  */
 const ANONYMOUS_ROUTES = ['/admin/login', '/admin/set-password?token=not-a-real-token'];
 
+/**
+ * Extra cookies for particular routes, keyed by their entry in `ROUTES`.
+ *
+ * Some admin state lives in a cookie read on the server rather than in the URL — the theme, and the
+ * item editor's preview pane — so auditing the other state means sending a different cookie rather
+ * than fetching a different address. Where the same path is audited twice, the second entry carries
+ * a `#fragment` to tell them apart: a fragment is never sent to a server, so it labels the row in
+ * the summary without changing the request.
+ */
+const EXTRA_COOKIES = new Map();
+
 const ROUTES = [
   '/admin',
   '/admin/content',
@@ -143,6 +154,28 @@ const richestItem = (items ?? [])
       (fieldCountByType.get(b.content_type_id) ?? 0) - (fieldCountByType.get(a.content_type_id) ?? 0),
   )[0];
 if (richestItem) ROUTES.push(`/admin/content/${richestItem.id}`);
+
+/**
+ * The same editor with its live preview pane open.
+ *
+ * Worth a second visit because the pane changes the editor's whole structure — the sidebar panels
+ * move into a narrow rail, a sticky Save strip appears, and the pane contributes a toolbar with an
+ * address input and two button groups. None of that markup exists on the route above.
+ *
+ * The pane is a `client:load` island, so what is audited here is its *server-rendered* markup: the
+ * toggle, the toolbar, and the labels. jsdom runs with `runScripts: 'outside-only'`, so nothing
+ * hydrates and no state reachable only by interaction is covered — the iframe itself never appears,
+ * because no token is minted until after hydration. `PreviewPane.test.tsx` is what covers the rest.
+ *
+ * Opened by cookie rather than by a query parameter, because that is how the admin stores it: the
+ * layout reads it server-side so the container is the right width in the first HTML the browser
+ * parses.
+ */
+if (richestItem) {
+  const route = `/admin/content/${richestItem.id}#preview-open`;
+  ROUTES.push(route);
+  EXTRA_COOKIES.set(route, 'taproot_preview_pane=open');
+}
 
 // One block type's field builder. Block types are excluded from the content-types endpoint on
 // purpose, so the id comes from the listing page rather than the API.
@@ -269,14 +302,99 @@ function brokenLabels(document) {
   return broken;
 }
 
+/**
+ * Reflow hazards — WCAG 2.1 SC 1.4.10, Level AA.
+ *
+ * Reflow says content must be usable at a width equivalent to 320 CSS px without scrolling in two
+ * dimensions. **The axe run above cannot see it, and neither can anything else in this file.** jsdom
+ * computes no layout: `getBoundingClientRect()` returns zeros, `scrollWidth` is always 0, media
+ * queries never evaluate, and this script does not pass `resources: 'usable'`, so the stylesheet is
+ * never fetched — every Tailwind class here is an inert string.
+ *
+ * Same bargain `a11y-contrast.mjs` makes: the thing cannot be measured, so known hazards are checked
+ * directly rather than assumed absent. **It does not prove reflow.** Only a real browser can, and
+ * this repo has none — no Playwright, no Puppeteer, no CI. Verify by hand at 320px before calling a
+ * phase done.
+ *
+ * **These rules are deliberately narrow, and the narrowness is the point.** A first draft also
+ * flagged every `min-w-56`, every unprefixed `grid-cols-2`, and the sidebar's `w-60` — and measuring
+ * at 320px in a real browser showed all three were fine: the `min-w-*` floors sit in `flex-wrap`
+ * parents, `grid-cols-2` of short stat tiles fits, and the sidebar's width is overridden below `lg`
+ * by CSS a class-string checker cannot see. A check that fires on verified-good markup is one
+ * somebody switches off, so only rules with observed signal survived.
+ *
+ * What actually caused horizontal page scroll here, for the record — note that **neither is
+ * detectable from class strings**, which is why the manual pass is not optional:
+ *  - a grid child missing `min-w-0`, so it refused to shrink below its content;
+ *  - visually-hidden text escaping a scroll container, because `position: absolute` with no
+ *    positioned ancestor is not clipped by `overflow-x: auto`.
+ *
+ * Opt out with `data-reflow-ok="why"` where CSS handles the width — the attribute is greppable and
+ * has to be justified, unlike a checker quietly guessing.
+ */
+const FIXED_TRACK_GRID = /^grid-cols-\[[^\]]*(?:rem|px)/;
+const FIXED_WIDTH = /^w-\[\d+px\]$/;
+
+function reflowHazards(document) {
+  const hazards = [];
+  const seen = new Set();
+  const note = (message) => {
+    if (seen.has(message)) return;
+    seen.add(message);
+    hazards.push(message);
+  };
+
+  for (const el of document.querySelectorAll('[class]')) {
+    if (el.closest('[data-reflow-ok]')) continue;
+    const classes = (el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+    const tag = el.tagName.toLowerCase();
+
+    for (const cls of classes) {
+      // A grid whose track list is in fixed units has a hard minimum at every viewport. This is what
+      // `grid-cols-[9rem_1fr]` on the account screen was.
+      if (FIXED_TRACK_GRID.test(cls)) {
+        note(`<${tag}> has ${cls} — a fixed track with no breakpoint or container prefix`);
+      }
+
+      // A pixel width with nothing letting it shrink.
+      if (FIXED_WIDTH.test(cls) && !classes.includes('max-w-full')) {
+        note(`<${tag}> has ${cls} with no responsive variant and no max-w-full`);
+      }
+    }
+  }
+
+  /**
+   * A table needs a scroll container of its own.
+   *
+   * Data tables are the canonical "requires two-dimensional layout" exception to 1.4.10, so they may
+   * scroll horizontally — but only *inside* something. An unwrapped one takes the page with it.
+   */
+  for (const table of document.querySelectorAll('table')) {
+    let wrapper = table.parentElement;
+    let wrapped = false;
+    for (let depth = 0; wrapper && depth < 2; depth += 1, wrapper = wrapper.parentElement) {
+      const cls = wrapper.getAttribute('class') ?? '';
+      if (/overflow-x-auto|overflow-x-scroll|overflow-auto/.test(cls)) wrapped = true;
+    }
+    if (!wrapped) {
+      const caption = table.querySelector('caption')?.textContent?.trim().slice(0, 40) ?? '';
+      note(`<table> "${caption}" is not inside an overflow-x-auto wrapper`);
+    }
+  }
+
+  return hazards;
+}
+
 let totalViolations = 0;
 let totalBrokenLabels = 0;
+let totalReflowHazards = 0;
 const summary = [];
 
 for (const route of [...ANONYMOUS_ROUTES, ...ROUTES]) {
   const anonymous = ANONYMOUS_ROUTES.includes(route);
+  const extra = EXTRA_COOKIES.get(route);
   const response = await fetch(`${base}${route}`, {
-    headers: anonymous ? {} : { cookie },
+    headers: anonymous ? {} : { cookie: extra ? `${cookie}; ${extra}` : cookie },
   });
   const html = await response.text();
 
@@ -288,6 +406,34 @@ for (const route of [...ANONYMOUS_ROUTES, ...ROUTES]) {
     runScripts: 'outside-only',
   });
   const { window } = dom;
+
+  /**
+   * Open every sheet before auditing it.
+   *
+   * A closed `<dialog>` is `display: none`, so axe skips its contents entirely — and the item
+   * editor's revision history, incoming references, and danger zone all moved into sheets. Left
+   * closed, three panels that were audited on every run when they sat inline would silently stop
+   * being checked, and the run would still report zero violations. That is the worst shape a
+   * regression in an audit can take.
+   *
+   * The `open` attribute rather than `showModal()`: the modal version makes everything outside the
+   * dialog inert, which would then hide the rest of the page from the same run.
+   */
+  for (const sheet of window.document.querySelectorAll('dialog.taproot-sheet')) {
+    sheet.setAttribute('open', '');
+  }
+
+  /**
+   * And every disclosure menu, for the same reason.
+   *
+   * The sidebar's account link, theme buttons and sign-out form used to sit in the open, and were
+   * audited on every route. Moving them behind a `[data-menu]` disclosure hides them from axe
+   * unless the panel is opened — the run would stay green while three controls stopped being
+   * checked, which is the worst way for an audit to lose coverage.
+   */
+  for (const panel of window.document.querySelectorAll('[data-menu-panel]')) {
+    panel.removeAttribute('hidden');
+  }
 
   // axe-core expects the globals of the document it is auditing.
   window.eval(axe.source);
@@ -302,11 +448,14 @@ for (const route of [...ANONYMOUS_ROUTES, ...ROUTES]) {
 
   const violations = results.violations ?? [];
   const labels = brokenLabels(window.document);
+  const reflow = reflowHazards(window.document);
   totalViolations += violations.length;
   totalBrokenLabels += labels.length;
+  totalReflowHazards += reflow.length;
   summary.push({ route, status: response.status, violations });
 
-  const mark = violations.length === 0 && labels.length === 0 ? 'PASS' : 'FAIL';
+  const mark =
+    violations.length === 0 && labels.length === 0 && reflow.length === 0 ? 'PASS' : 'FAIL';
   console.log(`${mark}  ${route}  (${response.status})`);
 
   for (const violation of violations) {
@@ -323,12 +472,19 @@ for (const route of [...ANONYMOUS_ROUTES, ...ROUTES]) {
     console.log(`      [label] ${broken}`);
   }
 
+  for (const hazard of reflow) {
+    console.log(`      [reflow] ${hazard}`);
+  }
+
   window.close();
 }
 
 console.log(
-  `\n${summary.length} routes audited, ${totalViolations} violation type(s) and ` +
-    `${totalBrokenLabels} inert label(s) found (colour contrast checked separately).`,
+  `\n${summary.length} routes audited, ${totalViolations} violation type(s), ` +
+    `${totalBrokenLabels} inert label(s) and ${totalReflowHazards} reflow hazard(s) found ` +
+    `(colour contrast checked separately).`,
 );
 
-process.exit(totalViolations === 0 && totalBrokenLabels === 0 ? 0 : 1);
+process.exit(
+  totalViolations === 0 && totalBrokenLabels === 0 && totalReflowHazards === 0 ? 0 : 1,
+);

@@ -78,6 +78,78 @@ would break reload and the back button.
 
 ---
 
+## Split-view live preview
+
+The same token also drives the **live preview pane** in the item editor: your site rendered beside
+the fields, updating as the editor types. Unsaved changes reach it because the CMS parks the form's
+current state on the token, and your SSR route picks it up on its next fetch — so what you see is
+your own templates rendering content that has not been saved yet.
+
+**If you have done the one line above, this already works.** There is nothing else to configure.
+
+### Two lines that make it better
+
+Without them the pane refreshes by reloading the whole frame from the outside, which starts the page
+back at the top. On a long page that gets tiring fast. Add this to your layout:
+
+```astro
+---
+import { TaprootPreviewBridge } from '@taprootcms/astro/components';
+---
+{previewToken && <TaprootPreviewBridge />}
+```
+
+It lets the CMS ask the page to reload *itself*, which keeps the scroll position. Keep it behind the
+token check — otherwise every visitor ships a message listener for a handshake that can never happen.
+
+The component learns the CMS's origin from the message it receives, so there is nothing to configure
+and it never broadcasts to an arbitrary framer. It uses an inline `<script>`, so a site with a strict
+script CSP needs a hash or a nonce for it.
+
+### Let the CMS frame you
+
+Nothing is required here either — Astro sends no framing headers and neither does Cloudflare, so the
+pane frames your site as-is. Setting it explicitly is still worth it, because "no header" and "only
+the CMS may frame this" are different promises:
+
+```astro
+Astro.response.headers.set(
+  'content-security-policy',
+  `frame-ancestors 'self' ${new URL(import.meta.env.TAPROOT_API_URL).origin}`,
+);
+```
+
+If your site already sends a CSP, **add the directive to it** rather than replacing the header.
+
+`frame-ancestors` rather than `X-Frame-Options`, which has no origin-list form at all — `ALLOW-FROM`
+was never implemented in Chrome and is gone from the rest.
+
+### What the pane cannot show you
+
+Worth knowing before you conclude something is broken:
+
+- **Navigation and listings are published-only.** A draft page previews correctly but does not appear
+  in the previewed menu, because menus and item listings come from delivery endpoints that take no
+  preview token.
+- **Unsaved changes apply on the item's own address.** The pane has an address box — useful for
+  seeing a change in context, or for previewing a reusable block on a page that places it — but
+  pointing it elsewhere shows the live published site. That is deliberate: a preview token is a
+  capability over one item, not a key to every unpublished page.
+- **Singletons have no page of their own**, so they get no pane. Their path is the synthetic
+  `/__singleton/{api_id}`, which is an addressing convenience rather than a route.
+- **A new item cannot be previewed until it is saved once**, because the token has to name a row.
+- **Cookies behave differently inside the frame.** A `SameSite=Lax` cookie your site sets is not
+  sent in a cross-site framed context, so a consent banner or an A/B cookie may act differently in
+  the pane than in a tab.
+
+### If the pane is blank
+
+Almost always a WAF, CDN rule, or security-headers middleware in front of your site adding
+`X-Frame-Options: SAMEORIGIN`. A CSP from your app cannot loosen that — it has to be removed where it
+is added. See [Troubleshooting](/troubleshooting/).
+
+---
+
 ## Generated types
 
 `item.data` is `Record<string, unknown>`, which is a true description of every Taproot site and a

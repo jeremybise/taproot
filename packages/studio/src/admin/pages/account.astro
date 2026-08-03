@@ -91,7 +91,7 @@ const twoFactorFlash = Astro.url.searchParams.get('enabled') === '1'
     <h1 class="text-2xl font-semibold tracking-tight">Your account</h1>
   </header>
 
-  <dl class="mb-10 grid max-w-md grid-cols-[9rem_1fr] gap-y-2 text-sm">
+  <dl class="mb-10 grid max-w-md gap-y-2 text-sm sm:grid-cols-[9rem_1fr]">
     <dt class="text-content-muted">Name</dt>
     <dd>{user.name}</dd>
     <dt class="text-content-muted">Email</dt>
@@ -202,7 +202,7 @@ const twoFactorFlash = Astro.url.searchParams.get('enabled') === '1'
               Save these somewhere safe now. Each works once, in place of a code from your app, and
               they are not shown again.
             </p>
-            <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-sm">
+            <ul class="mt-3 grid gap-x-6 gap-y-1 font-mono text-sm sm:grid-cols-2">
               {recoveryCodes.map((code) => (
                 <li>{code}</li>
               ))}
@@ -299,7 +299,7 @@ const twoFactorFlash = Astro.url.searchParams.get('enabled') === '1'
                 path and the one that works when a camera will not focus.
               */}
               <div
-                class="w-44 shrink-0 rounded-lg bg-white p-3"
+                class="w-full max-w-44 shrink-0 rounded-lg bg-white p-3"
                 aria-hidden="true"
                 set:html={enrolment.qr}
               />

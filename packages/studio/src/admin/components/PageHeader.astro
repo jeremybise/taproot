@@ -1,0 +1,48 @@
+---
+/**
+ * A screen's title, and the actions that belong to it, kept in view while the page scrolls.
+ *
+ * Content screens get long — a page with twenty fields, or a release with thirty items — and the
+ * controls all sat at the top where they scrolled away. This is the same reasoning that already
+ * made the item editor's Save button sticky in split mode, applied to the screens that have actions
+ * at all. Screens that are a heading and a table do not use it: a sticky bar with nothing in it
+ * costs vertical space, which matters most on the phone layout.
+ *
+ * **Offset, not `top-0`.** Below `lg` the shell already has a sticky top bar carrying the drawer
+ * toggle, so a second bar at `top-0` would sit underneath it. `--admin-topbar-h` is set once in
+ * `admin.css` — its height below `lg`, zero above — so this reads the answer rather than repeating a
+ * magic number per screen.
+ *
+ * **z-20**, between page content and every overlay: the mobile bar is 30, the drawer backdrop 35,
+ * the drawer 40, the skip link and the media dialog 50.
+ */
+interface Props {
+  title: string;
+  /** A short line under the title — a count, a path, a status. Prefer facts over description. */
+  meta?: string;
+  /** Set for screens whose title is long enough to want the full width, like an item editor. */
+  truncate?: boolean;
+}
+
+const { title, meta, truncate = false } = Astro.props;
+---
+
+<header
+  class="sticky z-20 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
+  style="top: var(--admin-topbar-h)"
+>
+  <div class="min-w-0">
+    <h1 class={`text-xl font-semibold tracking-tight ${truncate ? 'truncate' : ''}`}>{title}</h1>
+    {meta && <p class="mt-0.5 truncate text-sm text-content-muted">{meta}</p>}
+    <slot name="meta" />
+  </div>
+
+  {/*
+    Rendered whether or not anything fills it, so the header's flex layout is the same shape on every
+    screen that uses it — and so a screen that later grows an action does not also have to change the
+    markup around it.
+  */}
+  <div class="flex shrink-0 flex-wrap items-center gap-2">
+    <slot name="actions" />
+  </div>
+</header>

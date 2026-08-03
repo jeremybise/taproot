@@ -1,4 +1,4 @@
-﻿import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -17,7 +17,16 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronUp, GripVertical, Library, Link2Off, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Library,
+  Link2Off,
+  Trash2,
+} from 'lucide-react';
 
 import type { MediaOption } from '../../mediaOptions.js';
 import { newId, type BlockInstance, type ContentTypeRow, type FieldRow } from '@taprootcms/core';
@@ -28,7 +37,7 @@ import type { RelationTarget } from '../../relationOptions.js';
 /**
  * The editor for a `block` field: a page's composed regions.
  *
- * Each entry is one block instance â€” a block type plus its own field values â€” and the field's value
+ * Each entry is one block instance — a block type plus its own field values — and the field's value
  * is the ordered list of them. Order is the whole point, so it is reorderable by dragging **and** by
  * Move up / Move down buttons, following the field builder's precedent: the buttons are the primary
  * keyboard path, not a fallback, because nothing tells a keyboard user that dnd-kit's
@@ -189,7 +198,7 @@ export function BlockListEditor({
    * Promote a block into the library, then replace it with a reference to the new entry.
    *
    * Replacing rather than leaving a copy behind is the point: if the block stayed as content, the
-   * page would keep its own version and the library entry would drift away from it â€” and nobody
+   * page would keep its own version and the library entry would drift away from it — and nobody
    * would find out until the two disagreed on a page nobody had reopened.
    */
   async function promote(index: number) {
@@ -486,13 +495,13 @@ function BlockRow({
   /**
    * A block whose type has been deleted still renders, as an error rather than a blank.
    *
-   * Deleting a block type in use is refused, so this is unusual â€” but if it happens, silently
+   * Deleting a block type in use is refused, so this is unusual — but if it happens, silently
    * dropping the block would delete an editor's content on the next save.
    */
   if (!blockType) {
     return (
       <li className="rounded-lg border border-danger bg-danger-subtle px-4 py-3 text-sm">
-        <strong className="font-semibold">Unknown block â€œ{block.type}â€.</strong> Its type no longer
+        <strong className="font-semibold">Unknown block “{block.type}”.</strong> Its type no longer
         exists. Remove it, or recreate a block type with that API id to get its content back.
         <button
           type="button"
@@ -527,7 +536,7 @@ function BlockRow({
 
         {/*
           The disclosure is the block's heading, so a screen reader moving by heading lands on the
-          list of blocks in order â€” which is the structure of the page being composed.
+          list of blocks in order — which is the structure of the page being composed.
         */}
         <h3 id={headingId} className="min-w-0 flex-1 text-sm font-medium">
           <button
@@ -563,7 +572,7 @@ function BlockRow({
                 type="button"
                 onClick={onDetach}
                 aria-label={`Detach ${reusable.name} from the library`}
-                title="Detach from the library â€” this page keeps its own copy"
+                title="Detach from the library — this page keeps its own copy"
                 className="rounded border border-border-strong px-1.5 py-1 transition-colors hover:bg-surface-sunken"
               >
                 <Link2Off aria-hidden="true" size={14} />
@@ -587,18 +596,18 @@ function BlockRow({
               onClick={onMoveUp}
               disabled={index === 0}
               aria-label={`Move ${name} up`}
-              className="rounded border border-border-strong px-1.5 py-1 text-xs transition-colors hover:bg-surface-sunken disabled:opacity-40"
+              className="rounded border border-border-strong p-1.5 transition-colors hover:bg-surface-sunken disabled:opacity-40"
             >
-              <span aria-hidden="true">â†‘</span>
+              <ArrowUp aria-hidden="true" className="h-4 w-4" />
             </button>
             <button
               type="button"
               onClick={onMoveDown}
               disabled={index === total - 1}
               aria-label={`Move ${name} down`}
-              className="rounded border border-border-strong px-1.5 py-1 text-xs transition-colors hover:bg-surface-sunken disabled:opacity-40"
+              className="rounded border border-border-strong p-1.5 transition-colors hover:bg-surface-sunken disabled:opacity-40"
             >
-              <span aria-hidden="true">â†“</span>
+              <ArrowDown aria-hidden="true" className="h-4 w-4" />
             </button>
             <button
               type="button"
@@ -615,15 +624,15 @@ function BlockRow({
       <div id={panelId} hidden={collapsed} className="space-y-4 px-4 py-3">
         {/*
           A referenced block is shown but not edited here. Its content belongs to the library, so
-          an input on this page would either edit every other page that uses it â€” a surprise from a
-          screen that looks like it is editing one page â€” or quietly not save at all.
+          an input on this page would either edit every other page that uses it — a surprise from a
+          screen that looks like it is editing one page — or quietly not save at all.
         */}
         {reusable && (
           <p className="rounded-md border border-accent bg-accent-subtle px-3 py-2 text-xs">
             Shared content from the library. Editing it changes every page that uses it, so it is
             edited in one place:{' '}
             <a href={`/admin/blocks/${reusable.id}`} className="font-medium underline">
-              open â€œ{reusable.name}â€
+              open “{reusable.name}”
             </a>
             .
           </p>

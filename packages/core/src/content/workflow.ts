@@ -84,6 +84,50 @@ export function transitionsFrom(status: ContentStatus): Transition[] {
 }
 
 /**
+ * Which move out of a status deserves to be the visible button, if any.
+ *
+ * The editor renders one named button plus a "More" disclosure, because four full-width buttons is
+ * most of the sidebar and three of them are rare on any given edit. Which one is promoted is an
+ * editorial judgement, so it is a table here rather than "whichever the loop reaches first" — that
+ * would promote `in_review` on a draft for an editor who is about to publish, purely because of key
+ * order in the object above.
+ *
+ * `published` deliberately has **no primary**. Everything reachable from it — back to draft, back to
+ * review, schedule, archive — is an unusual thing to do to a live page, and the usual reason to open
+ * one is to edit its content and press Save. Promoting any of them would be putting a button nobody
+ * wants next to the one they do.
+ *
+ * `archived` needs no entry either: it has exactly one move, so there is nothing to hide behind a
+ * disclosure and `transitionsFrom` already returns a list of one.
+ */
+export function primaryTransition(
+  from: ContentStatus,
+  canPublish: boolean,
+): ContentStatus | undefined {
+  const allowed = (to: ContentStatus) => {
+    const role = TRANSITIONS[from]?.[to];
+    if (!role) return false;
+    return role === 'contributor' || canPublish;
+  };
+
+  switch (from) {
+    // The forward move, for whoever is asking: publish it, or hand it on to somebody who can.
+    case 'draft':
+      return allowed('published') ? 'published' : allowed('in_review') ? 'in_review' : undefined;
+    // Approve, or — for a contributor, who cannot — take it back.
+    case 'in_review':
+      return allowed('published') ? 'published' : allowed('draft') ? 'draft' : undefined;
+    // Going live now is the forward move; cancelling is the second thought.
+    case 'scheduled':
+      return allowed('published') ? 'published' : undefined;
+    case 'archived':
+      return allowed('draft') ? 'draft' : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
  * The role a transition needs, or `null` if it is not a legal move at all.
  *
  * Staying put is always allowed and needs nothing: the editor posts the whole form, so an

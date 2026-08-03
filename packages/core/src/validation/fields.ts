@@ -217,16 +217,25 @@ export function parseFieldConfig(
  * Optional fields accept `null` and `undefined` rather than only being absent, because an editor
  * clearing an input sends an explicit null.
  */
-export function buildValueSchema(field: FieldRow): z.ZodType {
+export function buildValueSchema(
+  field: FieldRow,
+  options: { requireComplete?: boolean } = {},
+): z.ZodType {
   const config = parseJson<Record<string, unknown>>(field.config, {});
-  const required = field.required === 1;
+
+  // Two questions kept apart deliberately. The first is a fact about the content type and never
+  // changes; the second is whether *this call* is asking it. See `ValidateItemOptions`.
+  const requireComplete = options.requireComplete ?? true;
+  const required = field.required === 1 && requireComplete;
 
   let schema: z.ZodType;
 
   switch (field.type) {
     case 'text': {
       let text = z.string();
-      const min = config.minLength as number | undefined;
+      // `minLength` travels with `required`, for the same reason: it is a floor on a *finished*
+      // value, and a half-typed one has not reached it yet. `maxLength` below does not move.
+      const min = requireComplete ? (config.minLength as number | undefined) : undefined;
       const max = config.maxLength as number | undefined;
       if (typeof min === 'number') text = text.min(min);
       if (typeof max === 'number') text = text.max(max);
@@ -414,6 +423,26 @@ export interface ValidateItemOptions {
    * of levels would recurse until the stack gave out.
    */
   blockDepth?: number;
+  /**
+   * Whether "you have not finished" counts as invalid. Defaults to true.
+   *
+   * There is exactly one caller that passes `false`: `writePreviewDraft`, whose input is a picture
+   * of a form somebody is still typing into. A check that refused it would refuse every draft before
+   * its last keystroke, which is the whole of what a live preview is for.
+   *
+   * It relaxes exactly three rules — `required`, a text field's `minLength`, and a repeater's
+   * `minItems` — because those are the three that say "this is not finished yet". The distinction
+   * worth holding onto: **a minimum is a statement about completeness, a maximum is a bound on what
+   * the system will carry.** So `maxLength`, `maxItems`, `maxBlocks`, `allowedBlocks`,
+   * `MAX_BLOCK_DEPTH`, select options, number ranges, and date parsing are all untouched.
+   *
+   * **Sanitising is not one of the three and cannot be.** The richtext transform runs before any
+   * refinement and sits outside every `required` branch, so no value reaches a caller unsanitised
+   * through this option. That is the property the whole live-preview design rests on, and
+   * `fields.test.ts` asserts it at all three walk sites — top level, inside a block, inside a
+   * repeater row — along with the write paths still refusing an incomplete item.
+   */
+  requireComplete?: boolean;
 }
 
 /**
@@ -446,7 +475,7 @@ export function validateItemData(
   const errors: Record<string, string[]> = {};
 
   for (const field of fields) {
-    const schema = buildValueSchema(field);
+    const schema = buildValueSchema(field, { requireComplete: options.requireComplete });
     const result = schema.safeParse(input[field.api_id]);
 
     if (!result.success) {
@@ -542,7 +571,18 @@ function validateRepeater(
   options: ValidateItemOptions,
 ): { value: RepeaterRow[]; errors: string[] } {
   const config = parseJson<Record<string, unknown>>(field.config, {});
-  const min = typeof config.minItems === 'number' ? config.minItems : 0;
+  /**
+   * `minItems` is relaxed with `required` and `maxItems` is not.
+   *
+   * A repeater configured for two rows with one filled in is a form in progress; a repeater carrying
+   * five hundred rows is a payload nobody meant to send.
+   */
+  const min =
+    options.requireComplete === false
+      ? 0
+      : typeof config.minItems === 'number'
+        ? config.minItems
+        : 0;
   const max = typeof config.maxItems === 'number' ? config.maxItems : undefined;
 
   const errors: string[] = [];

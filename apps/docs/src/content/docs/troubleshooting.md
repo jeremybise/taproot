@@ -109,3 +109,27 @@ The two are separate deployments, so one being healthy says nothing about the ot
 
 `TAPROOT_SITE_URL` is not set on the CMS. Preview links are built from it — see
 [Settings and environment](/operate/configuration/).
+
+## "The live preview pane is blank"
+
+Almost always something in front of your site adding an `X-Frame-Options` header — a WAF, a CDN
+rule, or a security-headers middleware. It refuses to let the CMS frame the page, and the browser
+reports it only to its own console, which nobody has open.
+
+It has to be removed **where it is added**. A `Content-Security-Policy` from your site cannot loosen
+an `X-Frame-Options` set upstream of it; the two are not negotiated, the stricter wins.
+
+Check by opening the preview link in a normal tab — the button in the editor header does exactly
+that. If the page loads there but not in the pane, framing is what is being blocked.
+
+## "The preview shows my page, but the menu is missing it"
+
+Working as intended, and only for unpublished pages. Menus and listings come from delivery endpoints
+that take no preview token, so they show published content whatever the pane is showing. A draft
+page previews correctly and does not appear in its own navigation until it is published.
+
+## "My unsaved changes are not showing on that page"
+
+The pane's address box will show you any page on your site, but unsaved changes only appear on the
+item's **own** page. A preview token is a capability over one content item — deliberately, so that
+holding one is not a key to every unpublished page on the site.

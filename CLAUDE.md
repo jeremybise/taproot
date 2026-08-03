@@ -30,6 +30,20 @@ advisory by design; see the constraint below. Do not confuse it with `npm run a1
 the WCAG compliance of the admin itself — an editor can write an inaccessible page in a perfectly
 accessible editor, and the two have never been the same job.
 
+**Phase 4.5 — the live split-view preview — is complete.** The site rendered beside the editor,
+following what is typed. The CMS still renders nothing: what crosses the gap is the editor's unsaved
+form state, parked on the preview token. See the constraints below.
+
+**The admin is responsive, and WCAG 1.4.10 Reflow is met.** A fixed 240px sidebar left 16px of
+content at a 320px viewport for four phases. The nav is now one element that slides off-canvas below
+`lg`, and `npm run a11y` gained a reflow-hazard check — see the accessibility section.
+
+**Phase 4.6 — the admin UI pass — is part done.** A is complete: one sticky action bar per screen,
+the status transitions behind a promoted action plus a menu, add-to-release moved into Publishing,
+a sidebar user menu, and a repair of two source files that had been shipping mojibake. **B (linking
+to content and media from rich text) and C (configurable accent, title and icon) are planned and not
+started** — the plan lives outside the repo, so what B and C are is recorded in SCOPE.
+
 The equivalence tests in `delivery.test.ts` compare the delivery layer against the *methods* the
 embedded route used (`getItemByPath`, `getChildren`, `ancestorPaths`, `resolveSeo`, `resolveMenu`)
 rather than against a second implementation, which is why they survived the embedded path being
@@ -51,10 +65,10 @@ declares it.
 | `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 1015 tests |
+| `npm test` | Vitest, 1115 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
-| `npm run a11y` | axe-core over every admin route + numeric contrast check. Needs `npm run dev` running |
+| `npm run a11y` | axe-core + inert-label + reflow-hazard checks over every admin route, then the numeric contrast check. Needs `npm run dev` running |
 | `npm run preview` | Build and serve through `wrangler dev` — the real Workers runtime |
 
 First run on a fresh clone:
@@ -252,6 +266,113 @@ may declare but not implement, so a generated helper function in one is a syntax
 convenience. A repeater's sub-fields are read in the stored `FieldRow` shape (`api_id`), never the
 delivery shape: reading them as `DeliveryField` silently emitted properties literally named
 `undefined`, which type-checks and is nonsense.
+
+**A preview token's draft snapshot is a rendering input, not a version.** Phase 4.5's split view
+needs the editor's *unsaved* state to reach a consumer that renders server-side, so `preview_tokens`
+carries nullable `title`, `slug`, `data`, `seo`, and `draft_updated_at`, and `resolvePreviewToken`
+merges them last — live row, then a release's staged version, then the draft, which is the order an
+editor experiences and which keeps `releaseId` non-null when both are present. This does **not**
+break "a release is the only place a content item can have a version that is not live", and the
+distinction is the thing to hold onto: a release row is addressable, editable, and publishable, with
+a screen, a pre-flight, and a path into `content_items` via `updateItem`. A snapshot has none of
+those, is never listed or diffed, and dies with its token. Three things keep that true:
+- **Nothing may ever read a snapshot back into the editor.** The moment something offers "restore
+  your unsaved changes", this is a draft store and Content Releases is what it duplicates badly.
+  Do not surface its durability either — no "changes preserved" message, no restore prompt.
+- `preview.test.ts` asserts a snapshot write leaves `content_items` and `release_items`
+  byte-identical. That test is the argument, not decoration.
+- The flag column is `draft_updated_at`, not `updated_at`, and the merge asks it rather than
+  `data !== null` — "a snapshot exists" is one fact, and deriving it from four nullable columns is
+  four chances to disagree.
+
+**`requireComplete: false` relaxes three rules and sanitising is not among them.** The snapshot is
+rendered by a consumer with `set:html`, so it is a write path in the sense this file means, and it
+goes through `validateItemData` like every other one. The option turns off `required`, a text
+field's `minLength`, and a repeater's `minItems` — **a minimum is a claim about completeness and a
+maximum is a bound on what the system will carry**, and only the first kind is a question a
+half-typed form may fail. It works because both recursions already forward `options` unchanged, so
+blocks and repeater rows behave identically for free. The richtext transform sits outside every
+`required` branch and runs first, which is the property the whole feature rests on;
+`validation/fields.test.ts` asserts it at all three walk sites and asserts the write paths still
+refuse an incomplete item. `writePreviewDraft` is the only caller and must stay so.
+
+**A preview token is a capability over one item, and `delivery/resolve.ts` enforces it by path.**
+The preview branch used to ignore `path` entirely and answer with the token's item whatever was
+asked for — invisible while the only caller was a 302 straight to `item.path`, and a real bug the
+moment a frame can follow a link or an editor can type an address: every page on the site would
+render as the item being edited. It also stops a token being a site-wide key to unpublished content.
+A token-bearing URL is answered `no-store` even when it falls through to published content, because
+the URL is a cache key carrying a credential.
+
+**The preview pane goes after `<form>` in the DOM, and that is not a layout preference.** An
+`<iframe>` puts everything inside it into the sequential tab order and **no attribute takes it back
+out** — `tabindex="-1"` removes the element, not its contents. With the pane between the fields and
+the sidebar, tabbing out of the Title input lands an editor in the previewed site's navigation. Last
+in the DOM, placed right by the grid, is the only arrangement where "edit, then look" is also the
+focus order. Related: the frame is sandboxed **without** `allow-top-navigation`, so a stray
+`target="_top"` in the site's own markup cannot throw somebody out of an unsaved form; and it is
+remounted by React `key` rather than by assigning `.src`, which pushes a session history entry and
+turns the admin's Back button into a walk through preview reloads.
+
+**The width rule for the open pane is deliberately unlayered — do not move it into `@layer base`.**
+`#main` carries Tailwind's `max-w-5xl`, a `utilities` class, and **cascade layers beat specificity
+outright**: Tailwind's order is `theme, base, components, utilities`, so a `base` rule loses to that
+utility however specific it is. It sat in `base` for exactly one commit and did nothing — the
+attribute was on `<html>`, the selector matched, and the width never changed. The lesson generalises:
+verifying that an attribute is in the HTML is not verifying that it had an effect. Measure the
+computed value.
+
+**The pane's open state is `data-preview` on `<html>`, with one writer.** The cookie is read on the
+server so the width is right in the first HTML the browser parses, exactly like `data-theme`. The
+eye icon in the editor's sticky bar writes the attribute and the cookie; `ItemEditor` *observes* the
+attribute with a `MutationObserver` rather than holding a second copy. That toggle is one of the few
+places in the admin that changes state **without a round trip**, and the reason is specific: it sits
+above a form that may hold an hour of unsaved writing, so the `ThemeSwitcher` pattern of posting and
+redirecting would discard it. A `?split=1` parameter has the same problem plus three redirect targets
+in `save()` to thread it through.
+
+**`@taprootcms/astro`'s `<TaprootPreviewBridge />` is optional by design**: a site that already
+forwards the token gets a working pane, and the bridge only upgrades a frame remount to a reload
+from inside, which is what keeps scroll position. Requiring it would make the first run a setup
+error. The shared `PREVIEW_MESSAGE` vocabulary lives in `pure.ts` for the same reason
+`PREVIEW_PARAM` does — a mismatched name fails silently in one direction.
+
+**Revision history, incoming references, and the danger zone live in sheets, and the sheet is a
+native `<dialog>`.** Not a React dialog, and the reason is what is inside them: three server-rendered
+Astro components whose contents are links, tables, and real form POSTs. `RevisionHistory` says in its
+own comment why it is not an island — a restore that is a real form submission works before
+hydration and needs no hand-built focus management — and wrapping it in React would have meant
+re-implementing all three in TSX or portalling server HTML into a client tree. `showModal()` supplies
+the focus trap, Escape, the inert background, and top-layer stacking from the platform. Two things
+follow:
+- **`scripts/a11y-audit.mjs` opens every `dialog.taproot-sheet` before running axe.** A closed
+  `<dialog>` is `display: none`, so axe skips its contents — three panels that were audited on every
+  run while they sat inline would silently stop being checked and the run would still report zero.
+  Measured: 2 rules evaluated inside the history sheet closed, 21 open. It sets the `open` attribute
+  rather than calling `showModal()`, which would make the rest of the page inert and hide it from
+  the same run.
+- **Delete is separated from the other icons rather than a fourth peer.** Its old placement at the
+  bottom of the page was a speed bump by design, and an equal icon beside two harmless ones makes
+  destruction the most discoverable action on the screen. The typed confirmation is still checked on
+  the server, so nothing here is load-bearing for safety — this is about not inviting the click.
+
+**There is one preview control, not two.** The header's old "Preview page" link opened the site in a
+new tab against the *saved* row; the pane offers the same thing from its toolbar with the unsaved
+draft applied. Two buttons with nearly the same name doing nearly the same thing is how somebody
+learns to trust neither.
+
+**The preview pane's "cannot reach your site" warning is a `no-cors` probe, not a timer and not
+`onLoad`.** It has been wrong in both directions. A timer never learned the frame had loaded, so it
+accused a healthy site every time; wiring it to the iframe's `onLoad` killed it entirely, because
+Chrome fires `load` for a connection-refused error page too. A `no-cors` request resolves opaque when
+anything answered and rejects when the connection is refused, which is exactly the question being
+asked — and nothing about the response needs reading. It is silent when the probe cannot run at all,
+because a hint that is unsure is worse than none. Note for tests: `new Response(null, { status: 0 })`
+throws, so an opaque response cannot be constructed; any resolved value stands in.
+
+**The preview card takes a definite `h-`, never `max-h-`.** A max bounds it without giving it a
+height, so it still sizes to its content and `flex-1` on the frame has no leftover space to claim —
+which is a short pane pinned in a tall empty column, the exact bug the sticky work was meant to fix.
 
 **Cross-origin preview is a token, and the token is the capability.** `?preview=1` worked only
 because the site and the CMS shared an origin, so the session cookie came along and the route checked
@@ -478,7 +599,96 @@ surrounding TypeScript gets checked, and does **not** check the `.astro` file's 
 
 The admin itself must be WCAG 2.1 AA — separate from the Phase 4 content-accessibility checker.
 Debt here compounds, so `npm run a11y` must pass before a phase is called done. It currently reports
-34 routes, 0 violations, all 36 token pairs passing in both themes.
+35 routes, 0 violations, 0 inert labels, 0 reflow hazards, and all 36 token pairs passing in both
+themes.
+
+**The admin is responsive, and WCAG 1.4.10 Reflow is why it has to be.** Reflow is Level **AA** —
+usable at a width equivalent to 320 CSS px with no scrolling in two dimensions — so it is part of the
+bar this file already sets, not a nice-to-have. It went unmet for four phases because nothing could
+see it: jsdom computes no layout, and `a11y-audit.mjs` does not pass `resources: 'usable'`, so it
+never loads the stylesheet at all and every Tailwind class is an inert string to it. Verified by
+measuring `scrollingElement.scrollWidth` in a real browser across 11 routes × 5 widths.
+- **The nav is one element that is sometimes a drawer.** Below `lg` `.taproot-nav` slides off-canvas,
+  toggled by `data-nav` on `<html>` — the third use of that pattern after `data-theme` and
+  `data-preview`, but with **no cookie**: every admin link is a real page load, so a drawer that
+  remembered being open would reopen on arrival. Two elements (desktop sidebar + duplicate drawer)
+  would put two `<nav aria-label="Main">` landmarks in the DOM, and the audit sees both because
+  `hidden lg:block` means nothing without CSS. Not a `<dialog>` either: forced visible at desktop it
+  keeps `role="dialog"` and the sidebar announces itself as one on every page. The cost is
+  hand-written focus handling, and **`inert` on `#admin-content` is the part that must not be
+  dropped** — without it, tabbing past the last nav link walks invisibly through the page behind.
+- **The small-screen top bar lives *inside* the banner `<header>`.** It was a top-level `<div>` for
+  one run of `npm run a11y`, which failed 29 routes on axe's `region` rule. A second `<header>` is
+  not the fix — two banner landmarks is its own violation.
+- **Two defects here were invisible to inspection and only measurement found them**, which is the
+  argument for the manual pass:
+  - a grid child missing `min-w-0` (`min-width: auto` is the default, and it refuses to shrink
+    below its content) sized the item editor's sidebar column to its widest child;
+  - **visually hidden text escaped a scroll container.** `.sr-only-focusable` hides with
+    `position: absolute`, and an absolutely positioned element whose containing block is the
+    viewport is *not* clipped by an `overflow-x: auto` ancestor — so a 1px `<span>` inside a 753px
+    table laid out at x=741 and dragged the page 437px sideways while the table itself scrolled
+    correctly. `[class~='overflow-x-auto'] { position: relative }` in `admin.css` is the fix.
+- **`reflowHazards()` in `a11y-audit.mjs` is narrow on purpose.** A first draft also flagged every
+  `min-w-56`, every unprefixed `grid-cols-2`, and the sidebar's `w-60` — measurement showed all three
+  were fine, so they were removed. **A check that fires on verified-good markup is one somebody
+  switches off.** It cannot prove reflow; neither of the two defects above is detectable from class
+  strings. Opt out with `data-reflow-ok="why"`.
+- **The sidebar's `sticky` lives on `#admin-nav`, not on the column inside it.** A sticky element
+  only travels within its containing block, and the inner column is exactly as tall as its wrapper —
+  so moving the sticky onto a child broke it silently and the sidebar scrolled away on any long page.
+  It worked before only because that child was a direct flex item of the shell and stretched to the
+  full page height.
+- **Container queries are used in exactly three places**, all field-level grids. The general
+  "breakpoints measure the viewport, not the column" problem dissolves once the sidebar collapses;
+  what does not is the item editor's 26rem rail at a ≥1280px viewport, where a `sm:` grid fires on a
+  416px column. `@sm:` needs an `@container` ancestor in the same component — without one it never
+  matches and the grid is silently stuck at one column.
+
+**Sticky positioning needs a containing block taller than the sticky element — this has now bitten
+three times.** The sidebar column, the small-screen top bar, and the preview pane each looked correct
+and each silently did nothing, because a sticky element travels only inside its containing block and
+in every case that block was exactly the element's own height. The top bar is `position: fixed`
+because of it. When adding anything sticky, check what its parent's height actually is, and verify by
+scrolling in a browser rather than by reading the CSS.
+
+**`--admin-topbar-h` is the one number three things read.** It is the small-screen bar's height, the
+top padding that keeps `#admin-content` clear of it, and the offset every sticky `PageHeader` starts
+at. It is **measured, not computed** — a value derived from the padding classes was 3px short and
+left a sliver of scrolling content visible above the header.
+
+**One sticky bar per screen.** `PageHeader.astro` is it for screens whose actions are server-rendered;
+the item editor is the exception, where the island owns the bar because Save is React state (`busy`,
+a changing label) that a server-rendered header cannot drive. That is why the icon actions live in
+`EditorActionIcons.tsx` rather than an Astro component, and why `Sheet.astro` delegates from the
+document: it used to bind every `[data-sheet-open]` it could find at load, which is a list that never
+includes anything React renders afterwards.
+
+**Disclosure menus, not `role="menu"`, and two implementations on purpose.** `UserMenu.astro` drives
+Astro-rendered `[data-menu]` panels with a delegated script; `useDismissable.ts` does the same job for
+React-rendered ones. The split is not laziness — React owns the DOM it renders, so a script toggling
+`hidden` on a React panel loses it on the next re-render. Both implement one contract:
+`aria-expanded`, Escape, click-outside, focus back to the trigger. Change one, change the other. Both
+Escape handlers guard on their own state so they do not fight the navigation drawer's.
+
+**The audit opens what the UI hides.** `scripts/a11y-audit.mjs` force-opens `dialog.taproot-sheet`
+*and* `[data-menu-panel]` before running axe, because a closed one is `display: none` and axe skips
+it — a run would stay green while the account link, the theme buttons and sign-out quietly stopped
+being checked.
+
+**`primaryTransition` decides which status action is promoted, and lives beside the transition
+table.** The editor shows one named button plus a "More" disclosure rather than four full-width
+buttons. The old comment argued against a status `<select>` and was right about what it defended —
+the label reads "Submit for review", never "in_review" — and that is unchanged. `published`
+deliberately has no primary: everything reachable from a live page is unusual, and the usual reason
+to open one is to edit it and press Save.
+
+**Source files are UTF-8 and `sourceEncoding.test.ts` keeps them that way.** Two files were once
+saved through a Windows-1252 misdecode and shipped `â†‘` for an arrow and `â€œ` for a quote for four
+phases. They were *valid* UTF-8 the whole time — just the wrong characters — so nothing at runtime
+could catch it, and `BlockListEditor.test.tsx` renders those exact buttons but asserts on their
+`aria-label`, never their glyph. Scan for the character signature, not for double-encoded bytes: the
+byte scan is the obvious thing to write and finds nothing at all.
 
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive

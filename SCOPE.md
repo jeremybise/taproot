@@ -166,7 +166,7 @@ Two things worth carrying forward. An item may sit in several unpublished releas
 
 `blocked` is the one status that needs justifying: a scheduled release whose pre-flight fails at 3am has nobody to tell, and leaving it `scheduled` would sweep the same broken content every minute forever. A release refused while somebody is *looking* at the screen just shows them the reasons and stays put.
 
-**Phase 3.75 — Standalone server & delivery API** *(3.75a complete; 3.75b next)*
+**Phase 3.75 — Standalone server & delivery API** *(complete)*
 Split the one package into a deployable CMS and a thin Astro client, correcting the Phase 0 misreading recorded under Core architecture decisions.
 
 Sequenced in two halves so there is a working site and a green suite at every commit. **3.75a is done**: API keys, principals, the delivery API, ETags, and type generation — with `apps/web` deliberately untouched and still reading the database directly. That is what makes `delivery.test.ts` able to assert the two paths agree, using the embedded route's own methods (`getItemByPath`, `getChildren`, `ancestorPaths`, `resolveSeo`, `resolveMenu`) as the expectation. **3.75b** is the rename, the consumer package, the `apps/web` rewrite, cross-origin preview, and deleting the embedded path — at which point that comparison stops being possible, so it is written now.
@@ -226,6 +226,27 @@ a time and reports how far it got rather than a site-wide issue total, because a
 reading every row and a quietly capped one is worse than none. Undescribed *images* are the
 exception and are asked separately, as a real query — that one also catches an image uploaded and
 not yet placed, which no item scan can see.
+
+**Phase 4.5 — Live split-view preview** *(complete)*
+The site rendered beside the editor, following what is being typed. Not in the original plan at all — this document had "preview" only in the narrow senses of an SEO card, a field-builder preview, and the cross-origin token 3.75b delivered.
+
+The reason it fits rather than contradicting "Taproot ships no templates": **the CMS still renders nothing.** The rendering stays on the consumer, which resolves the page server-side as it always did; what crosses the gap is the editor's unsaved form state, parked on the existing preview token and merged over the live row exactly as a release's staged version already was. A renderer inside the CMS would have been the second read path this document rules out under "one contract, one set of docs, nothing to drift."
+
+Four decisions worth keeping:
+
+- **The snapshot is a rendering input, not a version.** It carries no status, path, or parent; it is never listed, diffed, restored, or published, and it dies with its token in thirty minutes. That is what keeps "a release is the only place a content item can have a version that is not live" true rather than merely narrowly worded. The moment anything reads it back into the editor as recovered work, this becomes a draft store and Content Releases is the feature it duplicates badly.
+- **Sanitising is not relaxed; completeness is.** The snapshot goes through `validateItemData` like every other write, with one option that turns off exactly three rules — `required`, text `minLength`, repeater `minItems`. A minimum is a statement about completeness and a maximum is a bound on what the system will carry, and only the first kind is a question a half-typed form may fail. The richtext transform runs before any of it.
+- **A token stays a capability over one item.** The delivery route now applies the override only when the requested path is the token's own. It ignored `path` entirely before, which was invisible while the only caller was a redirect straight to `item.path` — and would have made every page render as the item being edited the moment a frame could follow a link.
+- **Zero consumer integration, with an optional upgrade.** A site that already forwards the token gets a working pane. Two lines (`<TaprootPreviewBridge />`) upgrade the refresh from a frame remount to a reload from inside, which is what keeps the scroll position. Requiring it would have made the first-run story a setup error.
+
+**Phase 4.6 — Admin UI pass** *(A complete; B and C next)*
+Seven things noticed from using the admin, split so each can be redirected between.
+
+**A — chrome** *(complete)*. One sticky action bar per screen (`PageHeader.astro`, except the item editor where the island owns it because Save is React state). Status transitions became a promoted named action plus a "More" disclosure — `primaryTransition` in core decides which is promoted, and `published` deliberately promotes nothing. Add-to-release moved from a banner into Publishing and now stays on the item instead of navigating away. The sidebar's user block became a menu with an avatar. Plus a repair: two files had been shipping cp1252 mojibake since `ff9af26`, and `sourceEncoding.test.ts` now guards it.
+
+**B — linking** *(next)*. Link to content by title with autocomplete, stored as `taproot:item:{id}` and resolved to the current path at delivery, so a rename keeps the link working — the same "reference the target, never store a URL" rule menus already follow. Insert images and files from the media library into rich text, with `src` and `alt` filled from the library at delivery so alt text still lives in one place. Touches the sanitiser allowlist, `collectReferences`, and the accessibility checker's media walk.
+
+**C — branding** *(after B)*. A configurable accent, CMS title and icon in a new settings table, with contrast derived rather than merely warned about. Status colours stay fixed: `--color-status-published` is byte-identical to `--color-accent` today by coincidence, and a free accent hue would put Published on top of Review.
 
 **Phase 5 — Integrations**
 Webhooks, tracking script manager. (Redirects moved to Phase 1 — see URL structure section above. API keys moved to Phase 3.75, which cannot ship without them.)

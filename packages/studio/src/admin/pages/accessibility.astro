@@ -210,7 +210,7 @@ const filtered = Boolean(search || typeFilter || ruleFilter || includeUnpublishe
                 <StatusBadge status={entry.item.status} />
               </div>
             </div>
-            <p class="mt-0.5 font-mono text-xs text-content-subtle">{entry.item.path}</p>
+            <p class="mt-0.5 break-all font-mono text-xs text-content-subtle">{entry.item.path}</p>
 
             <ul class="mt-3 space-y-2">
               {entry.issues.map((issue) => (
