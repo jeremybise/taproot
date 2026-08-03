@@ -608,6 +608,17 @@ workerd has no `node:sqlite`, which would make `npm run db:seed` impossible with
 server. `node:sqlite` is reached through a variable specifier and marked SSR-external so bundlers
 can't resolve it statically. Use `npm run preview` to exercise the real Workers runtime.
 
+**Kysely is pinned to one chunk, and a green build says nothing about whether workerd will run
+it.** Left alone the bundler splits Kysely's SQLite dialect from its core into two chunks that
+import each other — `sqlite-adapter` wants `DefaultQueryCompiler` and `DialectAdapterBase`, the core
+chunk wants `SqliteAdapter` back. Node tolerates the cycle; workerd evaluates it in an order where
+the base class is still undefined at `class … extends`, and **Cloudflare refuses the upload**
+(`Class extends value undefined`, error 10021) after `astro build` has reported success and the
+assets have already gone up. The `manualChunks` rule in `astro.config.mjs` is what prevents it, in
+`apps/studio` **and** in the scaffolder's byte-identical copy. The general lesson is the one
+`npm run preview` exists for: building is not evaluating, and this class of failure is invisible to
+every test, typecheck and build in the repo.
+
 **The Worker entry is `apps/studio/src/worker.ts`, not the adapter's.** `@astrojs/cloudflare` fills in
 `main` only when the wrangler config does not (`main: config.main ?? '@astrojs/cloudflare/entrypoints/server'`),
 and the entry it would supply is exactly `{ fetch: handle }`. Naming our own therefore costs the

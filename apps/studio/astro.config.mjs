@@ -36,5 +36,28 @@ export default defineConfig({
     // Kysely and the core package are workspace source; pre-bundling them adds nothing and makes
     // edits require a dev-server restart.
     optimizeDeps: { exclude: ['@taprootcms/core', '@taprootcms/studio'] },
+    build: {
+      rollupOptions: {
+        output: {
+          /**
+           * Keep all of Kysely in one chunk.
+           *
+           * Left to itself the bundler splits Kysely's SQLite dialect away from its core and the
+           * two chunks import each other — `sqlite-adapter` needs `DefaultQueryCompiler` and
+           * `DialectAdapterBase`, while the core chunk needs `SqliteAdapter` back. Node tolerates
+           * that cycle; workerd evaluates it in an order where the base class is still undefined
+           * when its subclass is declared, and refuses the upload with
+           * `Class extends value undefined is not a constructor or null` (error 10021) — at
+           * deploy time, after a build that reported success.
+           *
+           * One chunk means no inter-chunk cycle to order wrongly. This is why `npm run preview`
+           * exists: it is the only local command that evaluates the bundle in the real runtime.
+           */
+          manualChunks(id) {
+            if (id.includes('node_modules/kysely')) return 'kysely';
+          },
+        },
+      },
+    },
   },
 });
