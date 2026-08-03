@@ -1,6 +1,6 @@
 {
   "name": "create-taproot",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Scaffold a Taproot CMS server",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,14 @@
   },
   "homepage": "https://github.com/jeremybise/taproot#readme",
   "bugs": "https://github.com/jeremybise/taproot/issues",
-  "keywords": ["cms", "astro", "cloudflare", "create", "scaffold", "taproot"],
+  "keywords": [
+    "cms",
+    "astro",
+    "cloudflare",
+    "create",
+    "scaffold",
+    "taproot"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
