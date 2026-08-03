@@ -119,6 +119,7 @@ export default defineConfig({
           label: 'Operating Taproot',
           items: [
             { label: 'Installing it', slug: 'operate/install' },
+            { label: 'Your CMS project', slug: 'operate/your-project' },
             { label: 'Settings and environment', slug: 'operate/configuration' },
             { label: 'Email', slug: 'operate/email' },
             { label: 'The scheduler', slug: 'operate/scheduler' },

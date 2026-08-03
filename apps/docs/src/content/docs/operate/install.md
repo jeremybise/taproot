@@ -31,6 +31,10 @@ content model.
 > **Complete the setup screen before putting the server anywhere public.** Until an account exists,
 > whoever reaches the URL first becomes the administrator.
 
+That folder is your deployment rather than throwaway output, so the next step is `git init` — see
+[Your CMS project](/operate/your-project/) for what to commit, what never to, and how upgrading
+works.
+
 What this creates is **the CMS server**, not the website. The site visitors read is a separate Astro
 project that installs `@taprootcms/astro` and reads over HTTP — see
 [Getting started](/build/getting-started/). Taproot does not scaffold that half, because it would

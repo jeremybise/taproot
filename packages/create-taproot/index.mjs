@@ -465,10 +465,37 @@ screen that creates the first administrator${
 | \`npm run preview\` | Build and serve through \`wrangler dev\` — the real Workers runtime |
 | \`npm run deploy\` | Build and \`wrangler deploy\` |
 
+## This folder is yours — put it in version control
+
+It looks like scaffolding output, but it is your deployment. The CMS arrives through
+\`node_modules\`; what is here is the part that cannot be regenerated — the Cloudflare resource ids
+in \`wrangler.jsonc\`, the build configuration, the Worker entry, and the lockfile recording exactly
+which version of Taproot is deployed.
+
+\`\`\`bash
+git init && git add . && git commit -m "New Taproot server"
+\`\`\`
+
+\`.gitignore\` already excludes \`.env\` and the local database, which are the two things that must
+never be committed — \`.env\` holds your Cloudflare API token. Everything else is safe to commit,
+including the resource ids: they are identifiers rather than credentials, which is why secrets go
+through \`wrangler secret put\` instead.
+
+## Upgrading
+
+\`\`\`bash
+npm install @taprootcms/core@latest @taprootcms/studio@latest
+npm run db:migrate:remote
+npm run deploy
+\`\`\`
+
+The two packages share a version and move together. Migrate **before** deploying: migrations are
+additive, so old code tolerates the new schema, while new code cannot run against the old one.
+
 ## Deploying
 
-The target is Cloudflare Workers + D1 + R2. In short: create the D1 database and the R2 bucket,
-paste the database id into \`wrangler.jsonc\`, run \`npm run db:migrate:remote\`, then
+The target is Cloudflare Workers + D1 + R2. In short: create the D1 database, the R2 bucket, and the
+KV namespace, paste their ids into \`wrangler.jsonc\`, run \`npm run db:migrate:remote\`, then
 \`npm run deploy\`. The handbook has the full sequence, including the API key your website will
 need.
 
