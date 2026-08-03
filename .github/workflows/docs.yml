@@ -40,15 +40,16 @@ jobs:
       # Reports where this site will actually be served from. Used rather than hardcoding, so a
       # fork publishes under its own name and so attaching a custom domain in the Pages settings
       # takes effect here with no edit: `base_path` comes back empty and Astro stops prefixing.
+      # Pages has to be turned on once by hand: Settings → Pages → Build and deployment →
+      # Source: GitHub Actions. Until it is, this step fails with "Get Pages site failed".
+      #
+      # `enablement: true` looks like it removes that step and does not — the run token cannot
+      # create a Pages site (`Resource not accessible by integration`), because creating one needs
+      # administration rights that no default workflow token carries. Tried, failed, recorded here
+      # so the next person does not spend two runs finding out.
       - name: Resolve the Pages URL
         id: pages
         uses: actions/configure-pages@v5
-        with:
-          # Turns Pages on for the repository if it is not already, rather than failing with
-          # "Get Pages site failed" and waiting for somebody to find the setting. The first run
-          # did exactly that. Safe to leave on: it is idempotent, and it only ever configures the
-          # source as GitHub Actions — which is what this workflow is.
-          enablement: true
 
       - run: npm ci
 
