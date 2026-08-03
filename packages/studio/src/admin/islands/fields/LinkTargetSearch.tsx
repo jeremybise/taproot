@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Check, FileText } from 'lucide-react';
 
 /**
  * Find a page by title, and hand back a reference to it.
@@ -18,12 +19,15 @@ export interface LinkTarget {
 }
 
 interface Props {
-  /** Rendered under the input; the caller owns the surrounding form. */
+  /** Prefix for the ids this renders; the caller owns the surrounding form. */
   id: string;
+  /** The page picked so far, shown instead of the results so a choice is visibly a choice. */
+  chosen: LinkTarget | null;
   onPick: (target: LinkTarget) => void;
+  onClear: () => void;
 }
 
-export function LinkTargetSearch({ id, onPick }: Props) {
+export function LinkTargetSearch({ id, chosen, onPick, onClear }: Props) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<LinkTarget[]>([]);
   const [searching, setSearching] = useState(false);
@@ -61,27 +65,29 @@ export function LinkTargetSearch({ id, onPick }: Props) {
   }, [query]);
 
   return (
-    /*
-      `relative`, because the results below are an overlay.
-
-      They used to be an ordinary block, so every keystroke grew the form and pushed the editor
-      down the page — the text an author was about to link moved while they were reading the list.
-    */
-    <div className="relative min-w-0 flex-1">
+    <div>
       <label htmlFor={id} className="block text-xs font-medium">
-        Or link to a page
+        Search pages by title
       </label>
       <input
         id={id}
         type="search"
         value={query}
-        placeholder="Search by title"
+        /* The dialog focuses this on open — see `onOpenAutoFocus` there. */
+        data-autofocus
+        placeholder="Start typing a page title"
         aria-describedby={`${id}-hint`}
-        onChange={(event) => setQuery(event.target.value)}
-        className="mt-1 w-full rounded-md border border-border-strong bg-surface px-2.5 py-1.5 text-sm"
+        onChange={(event) => {
+          setQuery(event.target.value);
+          // Typing again is how a choice is undone, which is the same move the address panel makes:
+          // one visible thing is the answer, and editing the other replaces it.
+          if (chosen) onClear();
+        }}
+        className="mt-1 w-full rounded-md border border-border-strong bg-surface px-2.5 py-2 text-sm"
       />
-      <p id={`${id}-hint`} className="mt-1 text-xs text-content-subtle">
-        A link chosen this way follows the page if it moves.
+      <p id={`${id}-hint`} className="mt-1.5 text-xs text-content-subtle">
+        A link chosen this way is stored as a reference, so it follows the page if it is renamed or
+        moved.
       </p>
 
       {/*
@@ -89,44 +95,62 @@ export function LinkTargetSearch({ id, onPick }: Props) {
         word being typed — the same reasoning as the accessibility panel's summary.
       */}
       <div aria-live="polite" className="sr-only">
-        {searching ? 'Searching' : results.length > 0 ? `${results.length} pages found` : ''}
+        {chosen
+          ? `${chosen.title} chosen`
+          : searching
+            ? 'Searching'
+            : results.length > 0
+              ? `${results.length} pages found`
+              : ''}
       </div>
 
-      {/*
-        An overlay, so the form keeps its height while the list changes underneath the cursor.
+      {chosen ? (
+        <p className="mt-3 flex items-start gap-2.5 rounded-md border border-accent bg-accent-subtle px-3 py-2.5">
+          <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{chosen.title}</span>
+            <span className="block truncate font-mono text-xs text-content-subtle">
+              {chosen.path}
+            </span>
+          </span>
+        </p>
+      ) : (
+        results.length > 0 && (
+          <ul className="mt-3 max-h-44 overflow-y-auto rounded-md border border-border">
+            {results.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  /*
+                    `click`, not `mousedown`, and there is no longer a `mousedown` handler beside it.
 
-        `z-20` clears the toolbar it hangs over, and the list scrolls at eight-ish rows rather than
-        running off the bottom of a field that may itself be near the fold.
-      */}
-      {results.length > 0 && (
-        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-md border border-border bg-surface-raised shadow-lg">
-          {results.map((item) => (
-            <li key={item.id}>
-              <button
-                type="button"
-                /*
-                  Two handlers, doing different jobs.
-
-                  `mousedown` only prevents its default, which is what stops the press moving focus
-                  out of the editor and collapsing the selection — the difference between "wrap this
-                  phrase in a link" and "insert a link at the cursor".
-
-                  The act stays on `click`, because that is the event a keyboard fires: Enter and
-                  Space raise a click with no mousedown before it. Acting on mousedown instead would
-                  have made this reachable by pointer and by nothing else.
-                */
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onPick(item)}
-                className="block w-full border-b border-border px-2.5 py-1.5 text-left text-sm transition-colors last:border-b-0 hover:bg-surface-sunken"
-              >
-                <span className="block truncate font-medium">{item.title}</span>
-                <span className="block truncate font-mono text-xs text-content-subtle">
-                  {item.path}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+                    The old inline form had one that called `preventDefault`, because pressing here
+                    moved focus out of the editor and collapsed the selection — the difference
+                    between wrapping a phrase in a link and inserting one at the cursor. In a dialog
+                    focus has already left the editor before this list exists, so there is nothing
+                    left for that to protect; the caret's range is captured when the dialog opens and
+                    restored when Apply runs. What has not changed is that the act belongs on
+                    `click`: Enter and Space raise one with no `mousedown` before it, so acting on
+                    the press would make this reachable by pointer and by nothing else.
+                  */
+                  onClick={() => onPick(item)}
+                  className="flex w-full items-start gap-2.5 border-b border-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-surface-sunken"
+                >
+                  <FileText
+                    className="mt-0.5 h-4 w-4 shrink-0 text-content-muted"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{item.title}</span>
+                    <span className="block truncate font-mono text-xs text-content-subtle">
+                      {item.path}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
       )}
     </div>
   );

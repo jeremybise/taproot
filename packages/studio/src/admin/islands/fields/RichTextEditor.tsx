@@ -19,8 +19,7 @@ import {
   Strikethrough,
 } from 'lucide-react';
 
-import { LinkTargetSearch, type LinkTarget } from './LinkTargetSearch.js';
-import { MediaPicker } from '../media/MediaPicker.js';
+import { LinkDialog, linkModeFor, type LinkMode, type LinkOptions } from './LinkDialog.js';
 import type { MediaOption } from '../../mediaOptions.js';
 
 /**
@@ -39,15 +38,6 @@ import type { MediaOption } from '../../mediaOptions.js';
  * richtext from any client with a session, so the value is sanitised server-side on write. The
  * toolbar shapes what an editor can produce; `sanitizeHtml` decides what can be stored.
  */
-
-/**
- * The reference shape, mirrored from `sanitizeHtml`'s `TAPROOT_REF`.
- *
- * Only used to decide whether the address box shows the value or stays empty. The sanitiser is the
- * authority on what is accepted — a reference this got wrong would be dropped there rather than
- * stored malformed — so this copy is a display detail, not a second gate.
- */
-const TAPROOT_REF = /^taproot:(item|media):[0-9a-f-]{36}$/i;
 
 interface Props {
   id: string;
@@ -187,12 +177,16 @@ export function RichTextEditor({
   media = [],
 }: Props) {
   const [linkOpen, setLinkOpen] = useState(false);
-  const [linkValue, setLinkValue] = useState('');
-  const [linkIsRef, setLinkIsRef] = useState(false);
-  const [linkNewTab, setLinkNewTab] = useState(false);
-  const [linkNoFollow, setLinkNoFollow] = useState(false);
-  const [filePickerOpen, setFilePickerOpen] = useState(false);
-  const linkInputRef = useRef<HTMLInputElement>(null);
+  const [linkMode, setLinkMode] = useState<LinkMode>('url');
+  /**
+   * Where the caret was when the dialog opened.
+   *
+   * A modal takes focus, and the browser's selection inside the editor goes with it. Every path
+   * that applies a link therefore works from this range rather than from wherever the document
+   * thinks the caret is by the time Apply is pressed — which is what keeps "select a phrase, press
+   * the link button, choose a page" wrapping the phrase instead of appending a title next to it.
+   */
+  const savedRange = useRef<{ from: number; to: number } | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   /** Which toolbar button holds the group's single tab stop. */
   const [focusIndex, setFocusIndex] = useState(0);
@@ -333,6 +327,20 @@ export function RichTextEditor({
     [buttonCount],
   );
 
+  /**
+   * Ctrl/Cmd + K opens the link dialog.
+   *
+   * On the wrapper rather than in `editorProps.handleKeyDown`, which is fixed at editor creation and
+   * would close over an `openLinkDialog` whose `editor` is still undefined. `preventDefault` matters:
+   * unclaimed, this is the browser's own address-bar shortcut.
+   */
+  function onWrapperKeyDown(event: React.KeyboardEvent) {
+    if (!linkAllowed || disabled) return;
+    if (event.key !== 'k' || !(event.metaKey || event.ctrlKey) || event.altKey) return;
+    event.preventDefault();
+    openLinkDialog();
+  }
+
   function onToolbarKeyDown(event: React.KeyboardEvent) {
     const keys: Record<string, number> = {
       ArrowRight: focusIndex + 1,
@@ -346,99 +354,96 @@ export function RichTextEditor({
     moveFocus(next);
   }
 
-  useEffect(() => {
-    if (linkOpen) linkInputRef.current?.focus();
-  }, [linkOpen]);
-
-  function openLinkForm() {
+  /**
+   * Open the dialog on the panel that matches what is already there.
+   *
+   * The paperclip passes `file` so it stays the shortcut it was, rather than becoming a second
+   * control doing nearly the same thing as the chain icon — one dialog, entered at the point the
+   * button names.
+   */
+  function openLinkDialog(mode?: LinkMode) {
     if (!editor) return;
-    const href: string = editor.getAttributes('link').href ?? '';
-    setLinkValue(href);
-    /**
-     * An internal reference is not something to show in an address box.
-     *
-     * `taproot:item:{uuid}` is correct and unreadable. The box holds the free-text address, so a
-     * reference clears it and the note below says what the link actually points at.
-     */
-    setLinkIsRef(TAPROOT_REF.test(href));
-    // Seeded from the link the cursor is in, so opening the form on an existing link shows how it
-    // is currently set rather than resetting it to the defaults.
-    setLinkNewTab(editor.getAttributes('link').target === '_blank');
-    setLinkNoFollow(/nofollow/.test(editor.getAttributes('link').rel ?? ''));
+    const { from, to } = editor.state.selection;
+    savedRange.current = { from, to };
+    setLinkMode(mode ?? linkModeFor(editor.getAttributes('link').href));
     setLinkOpen(true);
   }
 
   /**
-   * The two options as link attributes.
+   * Closing clears the captured range, and that is what keeps one `removeLink` honest.
    *
-   * `rel` carries only what the author asked for; the server adds `noopener noreferrer` to anything
-   * opening in a new tab and will not let that be removed, so there is nothing to duplicate here.
+   * The toolbar unlink button and the dialog both call it, but they mean different positions: the
+   * toolbar means wherever the caret is now, the dialog means where it was before the modal took
+   * focus. A range left behind after the dialog closed would make the toolbar button act on a
+   * position from the last time it was opened — the sort of thing that looks like nothing at all
+   * until it silently unlinks the wrong phrase.
    */
-  function linkOptions() {
-    return {
-      target: linkNewTab ? '_blank' : null,
-      rel: linkNoFollow ? 'nofollow' : null,
-    };
+  function closeLinkDialog() {
+    savedRange.current = null;
+    setLinkOpen(false);
+  }
+
+  /** The range to act on: what was captured on open, or the live caret if there is none. */
+  function targetRange() {
+    if (savedRange.current) return savedRange.current;
+    const { from, to } = editor!.state.selection;
+    return { from, to };
+  }
+
+  function removeLink() {
+    editor
+      ?.chain()
+      .focus()
+      .setTextSelection(targetRange())
+      .extendMarkRange('link')
+      .unsetLink()
+      .run();
+    closeLinkDialog();
   }
 
   /**
    * Store the reference rather than the path, so the link follows the page.
    *
-   * `label` is a parameter and not the state the caller just set: a `setState` before this call has
-   * not landed by the time it runs, so reading it here inserted an empty anchor the first time and
-   * the *previous* title every time after.
+   * `label` is a parameter and not state the caller just set: a `setState` before this call has not
+   * landed by the time it runs, so reading it here inserted an empty anchor the first time and the
+   * *previous* title every time after.
    *
-   * With nothing selected there is no text to carry the link, so the label becomes the text — as a
-   * text node carrying the mark, not as an HTML string. `insertContent` with markup escaped it and
-   * put a literal `<a href=…>` into the prose.
+   * `rel` carries only what the author asked for; the server adds `noopener noreferrer` to anything
+   * opening in a new tab and will not let that be removed, so there is nothing to duplicate here.
    */
-  function applyTarget(href: string, label: string) {
+  function applyTarget(href: string, label: string, options: LinkOptions) {
     if (!editor) return;
+
+    const range = targetRange();
+    const attrs = {
+      href,
+      target: options.newTab ? '_blank' : null,
+      rel: options.noFollow ? 'nofollow' : null,
+    };
 
     /**
      * Two branches, and both are needed however the link was chosen.
      *
-     * `setLink` marks the current selection. With the caret collapsed there is no selection to mark,
-     * so it succeeds and produces nothing visible — which is what "I clicked apply and no link was
-     * created" looks like from the outside. When there is nothing selected the link has to bring its
-     * own text.
+     * `setLink` marks a selection. With the caret collapsed there is nothing to mark, so it succeeds
+     * and produces nothing visible — which from the outside is exactly "I pressed apply and no link
+     * appeared". When there is no selection the link has to bring its own text, inserted as a text
+     * node carrying the mark: `insertContent` with an HTML string escapes it and puts a literal
+     * `<a href=…>` into the prose.
+     *
+     * Both act on the captured range rather than on the live selection, because the dialog took
+     * focus and the browser's selection went with it.
      */
-    if (editor.state.selection.empty) {
+    if (range.from === range.to) {
       editor
         .chain()
         .focus()
-        .insertContent({
-          type: 'text',
-          text: label,
-          marks: [{ type: 'link', attrs: { href, ...linkOptions() } }],
-        })
+        .insertContentAt(range, { type: 'text', text: label, marks: [{ type: 'link', attrs }] })
         .run();
     } else {
-      editor
-        .chain()
-        .focus()
-        .extendMarkRange('link')
-        .setLink({ href, ...linkOptions() })
-        .run();
+      editor.chain().focus().setTextSelection(range).extendMarkRange('link').setLink(attrs).run();
     }
 
-    setLinkOpen(false);
-  }
-
-  function applyLink(event: React.FormEvent) {
-    event.preventDefault();
-    if (!editor) return;
-
-    const href = linkValue.trim();
-    if (href) {
-      // The address is the label: with nothing selected, a link has to show something, and the URL
-      // is the only thing this path knows about the destination.
-      applyTarget(href, href);
-      return;
-    }
-
-    editor.chain().focus().extendMarkRange('link').unsetLink().run();
-    setLinkOpen(false);
+    closeLinkDialog();
   }
 
   if (!editor) {
@@ -451,6 +456,7 @@ export function RichTextEditor({
 
   return (
     <div
+      onKeyDown={onWrapperKeyDown}
       className={`mt-1.5 overflow-hidden rounded-md border bg-surface ${
         invalid ? 'border-danger' : 'border-border-strong'
       }`}
@@ -496,10 +502,10 @@ export function RichTextEditor({
               aria-pressed={isLink}
               aria-label="Add or edit link"
               title="Add or edit link"
-              aria-expanded={linkOpen}
+              aria-haspopup="dialog"
               tabIndex={items.length === focusIndex ? 0 : -1}
               onFocus={() => setFocusIndex(items.length)}
-              onClick={openLinkForm}
+              onClick={() => openLinkDialog()}
               className={`rounded p-1.5 transition-colors disabled:opacity-40 ${
                 isLink ? 'bg-accent-subtle text-content' : 'hover:bg-surface'
               }`}
@@ -515,7 +521,7 @@ export function RichTextEditor({
                 title="Remove link"
                 tabIndex={items.length + 1 === focusIndex ? 0 : -1}
                 onFocus={() => setFocusIndex(items.length + 1)}
-                onClick={() => editor.chain().focus().extendMarkRange('link').unsetLink().run()}
+                onClick={removeLink}
                 className="rounded p-1.5 transition-colors hover:bg-surface disabled:opacity-40"
               >
                 <Link2Off aria-hidden="true" size={16} />
@@ -529,7 +535,7 @@ export function RichTextEditor({
                 aria-label="Link to a file"
                 tabIndex={focusIndex === fileButtonIndex ? 0 : -1}
                 onFocus={() => setFocusIndex(fileButtonIndex)}
-                onClick={() => setFilePickerOpen(true)}
+                onClick={() => openLinkDialog('file')}
                 className="rounded p-1.5 transition-colors hover:bg-surface disabled:opacity-40"
               >
                 <Paperclip aria-hidden="true" size={16} />
@@ -540,113 +546,25 @@ export function RichTextEditor({
       </div>
 
       {/*
-        A link to a file, through the picker every other field uses rather than a fourth chooser.
+        Every kind of link, in one dialog.
 
-        It produces an `<a>`, never an `<img>`: images belong to a block, where they keep their
-        hotspot. Stored as `taproot:media:{id}`, so replacing the asset does not break the link.
-      */}
-      {fileButtonShown && (
-        <MediaPicker
-          open={filePickerOpen}
-          onOpenChange={setFilePickerOpen}
-          library={media}
-          selected={[]}
-          noun="file"
-          onConfirm={(assets) => {
-            const asset = assets[0];
-            setFilePickerOpen(false);
-            if (!asset) return;
-            applyTarget(`taproot:media:${asset.id}`, asset.filename);
-          }}
-        />
-      )}
+        Mounted only while open, following `MediaField`: Radix portals its content, and a closed one
+        left mounted costs a subscription per richtext field on a screen that can carry several.
 
-      {/*
-        An inline form rather than `window.prompt`. The prompt is unstyleable, cannot show the
-        existing href when editing a link, and is blocked outright in some embedded contexts.
+        It produces an `<a>`, never an `<img>` — images belong to a block, where they keep their
+        hotspot and their alt text. A page or a file is stored as `taproot:{kind}:{id}`, so renaming
+        the page or replacing the asset keeps the link working.
       */}
       {linkOpen && (
-        <form
-          onSubmit={applyLink}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.stopPropagation();
-              setLinkOpen(false);
-            }
-          }}
-          className="flex flex-wrap items-end gap-2 border-b border-border bg-surface-sunken px-3 py-2"
-        >
-          <div className="min-w-48 flex-1">
-            <label htmlFor={`${id}-link`} className="block text-xs font-medium">
-              Link address
-            </label>
-            <input
-              ref={linkInputRef}
-              id={`${id}-link`}
-              value={linkIsRef ? '' : linkValue}
-              placeholder={
-                linkIsRef ? 'Linked to a page in this site' : '/admissions or https://example.edu'
-              }
-              aria-describedby={`${id}-link-hint`}
-              onChange={(e) => {
-                setLinkIsRef(false);
-                setLinkValue(e.target.value);
-              }}
-              className="mt-1 w-full rounded-md border border-border-strong bg-surface px-2.5 py-1.5 text-sm"
-            />
-            <p id={`${id}-link-hint`} className="mt-1 text-xs text-content-subtle">
-              {linkIsRef
-                ? 'This link points at a page by reference, so it follows if the page moves. Type an address to replace it.'
-                : 'A path on this site, or a full address. Leave blank to remove the link.'}
-            </p>
-          </div>
-
-          <LinkTargetSearch
-            id={`${id}-link-search`}
-            onPick={(target: LinkTarget) => applyTarget(`taproot:item:${target.id}`, target.title)}
-          />
-          {/*
-            Both apply to whichever path sets the link — typing an address, or choosing a page — so
-            they sit outside the two, on the form itself.
-          */}
-          <fieldset className="flex shrink-0 flex-col gap-1 border-0 p-0">
-            <legend className="sr-only">Link options</legend>
-            <label className="flex items-center gap-1.5 text-xs">
-              <input
-                type="checkbox"
-                checked={linkNewTab}
-                onChange={(e) => setLinkNewTab(e.target.checked)}
-              />
-              Open in a new tab
-            </label>
-            <label className="flex items-center gap-1.5 text-xs">
-              <input
-                type="checkbox"
-                checked={linkNoFollow}
-                onChange={(e) => setLinkNoFollow(e.target.checked)}
-              />
-              {/*
-                Said as what it does rather than as `nofollow`, which means nothing to most of the
-                people writing here.
-              */}
-              Tell search engines not to follow
-            </label>
-          </fieldset>
-
-          <button
-            type="submit"
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-content"
-          >
-            Apply
-          </button>
-          <button
-            type="button"
-            onClick={() => setLinkOpen(false)}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium"
-          >
-            Cancel
-          </button>
-        </form>
+        <LinkDialog
+          open={linkOpen}
+          onOpenChange={(next) => (next ? setLinkOpen(true) : closeLinkDialog())}
+          current={live?.isLink ? { href: live.linkHref, target: live.linkTarget, rel: live.linkRel } : null}
+          initialMode={linkMode}
+          media={media}
+          onApply={applyTarget}
+          onRemove={removeLink}
+        />
       )}
 
       <EditorContent editor={editor} />

@@ -456,11 +456,35 @@ three shipped at once, so the feature was inert while every test passed:
   includes `target: '_blank'`. Overriding only `rel` left *every* link this editor has ever made
   opening in a new tab, including internal ones. `target: null` is load-bearing.
 
-**A result list beside a rich-text editor acts on `click` and cancels `mousedown`.** The press is
-what moves focus out of the editor and collapses the selection, which silently turns "wrap this
-phrase in a link" into "insert a link at the cursor" — so `mousedown` is prevented. The *act* stays
-on `click`, because Enter and Space raise a click with no `mousedown` before it; acting on
-`mousedown` makes the control reachable by pointer and by nothing else.
+**Every link goes through `LinkDialog`, and the range is captured when it opens.** It replaced an
+inline form wrapped into the toolbar strip, for two reasons that are both worth keeping in view. The
+editor column is ~400px with the preview pane open, and an address box, a page search, two checkboxes
+and two buttons will never fit across it. And the form could not say where an existing link *pointed*
+— `taproot:item:{uuid}` is correct and unreadable, so the id is exchanged for a title through the
+same endpoints the relation and media fields use. Four things hold it up:
+- **A modal takes focus, and the browser's selection goes with it.** `savedRange` is captured in
+  `openLinkDialog` and every apply path works from it. Without that, "select a phrase, choose a
+  page" silently becomes "insert a page title beside it". This also replaced the old
+  `mousedown`-cancelling in the result list — there is no selection left to protect by the time the
+  list exists. What has *not* changed is that the act belongs on `click`: Enter and Space raise one
+  with no `mousedown` before it, so acting on the press makes a control reachable by pointer and by
+  nothing else.
+- **`closeLinkDialog` clears the range, and that is what keeps one `removeLink` honest.** The
+  toolbar's unlink button and the dialog both call it, meaning different positions — now, and where
+  the caret was. A range left behind makes the toolbar button act on a position from the last time
+  the dialog was open.
+- **Radix portals to `document.body`, but React propagates events through the React tree.** The
+  dialog's `<form>` is nowhere near the item editor in the DOM and directly beneath it in React, so
+  Apply submitted *both*: the page saved, redirected, and the link never landed. `stopPropagation`
+  in the submit handler is the fix; `MediaPicker`'s upload form had the same latent bug.
+- **The mode selector is a radio group drawn as tabs.** Hand-built tabs mean a roving tabindex and
+  the tab/panel wiring written by hand and kept written; a radio group is the same interaction from
+  the platform. The house rule about custom widgets settles it.
+
+**The paperclip and the chain icon open the same dialog.** The paperclip passes `initialMode: 'file'`.
+Two controls doing nearly the same thing is how somebody learns to trust neither — same rule as
+"there is one preview control, not two" — and one dialog entered at the point the button names is not
+that.
 
 **Asserting a control exists is not asserting it works.** The link search had tests for its input,
 its label and its place in the toolbar's tab order, and shipped unable to create a single link. A
@@ -468,6 +492,12 @@ test for a feature has to make the feature happen and inspect what came out —
 `RichTextEditor.test.tsx`'s "a chosen link actually becomes a link" block is the shape to copy.
 Where jsdom genuinely cannot help — it has no selection model, so wrapping a selection is unprovable
 there — say so in the test file and verify that branch in a browser.
+
+**Render a component where it actually lives, or the test cannot see its context.** Every richtext
+test rendered the editor on its own, and all of them passed while Apply saved the whole content item
+and navigated away — the bug only exists because there is a `<form onSubmit>` above it in the real
+screen. The regression test now renders it inside one. Same class of blind spot as auditing a closed
+`<dialog>`: the thing being tested was never in the tree.
 
 **The richtext toolbar's roving tabindex is derived, never counted by hand.** The unlink button only
 exists while the cursor is in a link, so every index after it moves; a literal index left a hole, and

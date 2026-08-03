@@ -451,6 +451,13 @@ function UploadPanel({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    /**
+     * The dialog is portalled to `document.body`, but React propagates events through the React
+     * tree — and above this sits whichever form mounted the media field, which on the item editor
+     * is the one that saves the page. Without this, uploading a file from inside the picker saved
+     * and navigated away from a half-finished item.
+     */
+    event.stopPropagation();
     const file = fileRef.current?.files?.[0];
     if (!file) {
       onError('Choose a file to upload.');

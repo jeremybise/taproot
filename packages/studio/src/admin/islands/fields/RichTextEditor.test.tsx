@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { RichTextEditor } from './RichTextEditor.js';
 
@@ -48,7 +48,24 @@ async function setupWithToolbar(props: Partial<Parameters<typeof RichTextEditor>
   return { ...rendered, bar };
 }
 
+/**
+ * jsdom has no layout, and ProseMirror asks for one.
+ *
+ * Every command that moves the selection ends in `scrollIntoView`, which calls `getClientRects` on
+ * a Range and throws asynchronously — several stack traces per run, none of them a failure and none
+ * of them about anything under test. Unhandled errors that are always there are unhandled errors
+ * nobody reads, so the two methods it reaches for return empty rather than nothing. Scroll position
+ * is not something this suite can assert on either way.
+ */
+beforeAll(() => {
+  const empty = Object.assign([], { item: () => null }) as unknown as DOMRectList;
+  Range.prototype.getClientRects = () => empty;
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
+});
 afterEach(cleanup);
+
+// This repo does not install jest-dom, so state is read off the element itself.
+const checked = (element: HTMLElement) => (element as HTMLInputElement).checked;
 
 describe('the toolbar follows the ARIA toolbar pattern', () => {
   it('is a single tab stop rather than one per button', async () => {
@@ -166,50 +183,296 @@ describe('the field config shapes the toolbar', () => {
   });
 });
 
-describe('the link form', () => {
-  it('opens with a labelled input rather than a window prompt', async () => {
+const PAGE = { id: '019fbe8e-ba01-7c65-a08f-e49bc783e1e3', title: 'About', path: '/about' };
+const ASSET = {
+  id: '019fbe8e-b69b-71e4-a9de-8a895e8bd7e2',
+  filename: 'prospectus.pdf',
+  url: '/media/prospectus.pdf',
+  altText: null,
+  mimeType: 'application/pdf',
+  width: null,
+  height: null,
+};
+
+/**
+ * One stub for every endpoint the dialog reaches, routed by URL.
+ *
+ * The dialog asks three different questions — search for pages, resolve one item, resolve one media
+ * row — and a stub that answers them all the same way is how a test passes while the resolution it
+ * is meant to be checking returns the wrong shape.
+ */
+function stubApi() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes('/items?')
+        ? { items: [PAGE] }
+        : url.includes(`/items/${PAGE.id}`)
+          ? { item: PAGE }
+          : url.includes('/media?ids=')
+            ? { media: [{ ...ASSET, mime_type: ASSET.mimeType, alt_text: null }] }
+            : {};
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }),
+  );
+}
+
+/** Open the link dialog from the toolbar and hand back its element. */
+async function openLinkDialog(
+  user: ReturnType<typeof userEvent.setup>,
+  bar: HTMLElement,
+  name: RegExp = /Add or edit link/,
+) {
+  await user.click(within(bar).getByRole('button', { name }));
+  return screen.findByRole('dialog', { name: /link/i });
+}
+
+describe('the link dialog', () => {
+  it('opens with a labelled address box rather than a window prompt', async () => {
     const user = userEvent.setup();
     const { bar } = await setupWithToolbar();
 
-    await user.click(within(bar).getByRole('button', { name: /Add or edit link/ }));
+    const dialog = await openLinkDialog(user, bar);
 
-    const input = await screen.findByLabelText('Link address');
-    expect(document.activeElement).toBe(input);
+    const input = within(dialog).getByLabelText('Link address');
+    // Focus lands in the panel, not on the close button Radix would otherwise pick — a dialog
+    // opened to type an address should not open with focus on the way out of it.
+    await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
   it('closes on Escape without applying', async () => {
     const user = userEvent.setup();
-    const { bar } = await setupWithToolbar();
+    const { onChange, bar } = await setupWithToolbar();
 
-    await user.click(within(bar).getByRole('button', { name: /Add or edit link/ }));
-    await screen.findByLabelText('Link address');
-
+    await openLinkDialog(user, bar);
     await user.keyboard('{Escape}');
-    await waitFor(() => expect(screen.queryByLabelText('Link address')).toBeNull());
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onChange).not.toHaveBeenCalled();
   });
-});
 
-describe('linking to content and files', () => {
-  const ASSET = {
-    id: '019fbe8e-b69b-71e4-a9de-8a895e8bd7e2',
-    filename: 'prospectus.pdf',
-    url: '/media/prospectus.pdf',
-    altText: null,
-    mimeType: 'application/pdf',
-    width: null,
-    height: null,
-  };
+  it('opens on Ctrl+K, which the handbook has always claimed', async () => {
+    /**
+     * The shortcut was documented and did not exist: TipTap's Link extension ships no keyboard
+     * shortcut of its own, and nothing here added one. A handbook that promises a key is a
+     * contract, so the key now does something.
+     */
+    const user = userEvent.setup();
+    await setupWithToolbar();
 
-  it('offers a page search in the link form', async () => {
+    document.getElementById('editor')!.focus();
+    await user.keyboard('{Control>}k{/Control}');
+
+    expect(await screen.findByRole('dialog', { name: /link/i })).toBeTruthy();
+  });
+
+  it('offers the three kinds of link as one radio group', async () => {
+    /**
+     * Drawn as tabs, built as radios. Hand-rolled tabs mean writing a roving tabindex and the
+     * tab/panel wiring by hand and keeping them written; a radio group is the same interaction from
+     * the platform. What matters for the contract is that all three are reachable and exclusive.
+     */
+    const user = userEvent.setup();
+    const { bar } = await setupWithToolbar({ media: [ASSET] });
+
+    const dialog = await openLinkDialog(user, bar);
+    const group = within(dialog).getByRole('group', { name: 'What should this link to?' });
+
+    expect(within(group).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual(
+      ['page', 'file', 'url'],
+    );
+    expect(checked(within(group).getByRole('radio', { name: /Web address/ }))).toBe(true);
+  });
+
+  it('hides the file panel when the library is empty', async () => {
+    // Nothing to choose. The same rule as the toolbar's paperclip, which is also absent.
     const user = userEvent.setup();
     const { bar } = await setupWithToolbar();
 
-    await user.click(within(bar).getByRole('button', { name: /link/i }));
-
-    // Typing a path from memory is what breaks when a page moves; this is the alternative.
-    expect(screen.getByLabelText('Or link to a page')).toBeTruthy();
+    const dialog = await openLinkDialog(user, bar);
+    expect(within(dialog).queryByRole('radio', { name: /File/ })).toBeNull();
   });
 
+  it('says why Apply is unavailable instead of only disabling it', async () => {
+    const user = userEvent.setup();
+    const { bar } = await setupWithToolbar();
+
+    const dialog = await openLinkDialog(user, bar);
+    expect((within(dialog).getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(within(dialog).getByText('Type an address to link to.')).toBeTruthy();
+  });
+});
+
+describe('the dialog lives inside the item editor’s form', () => {
+  /**
+   * Every one of the tests above renders this component on its own, and that is exactly why they
+   * all passed while Apply saved the whole content item and navigated away.
+   *
+   * Radix portals the dialog to `document.body`, so in the DOM it is nowhere near the editor's
+   * form — but React propagates events through the **React** tree, and that tree still has
+   * `<form onSubmit={save}>` above it. The link never landed; what an author saw was the page
+   * reloading with their link missing. Found in a browser, not here, so the shape of the test is
+   * the point: render it where it actually lives.
+   */
+  function setupInAForm(props: Partial<Parameters<typeof RichTextEditor>[0]> = {}) {
+    const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    const onChange = vi.fn();
+    render(
+      <form onSubmit={onSubmit}>
+        <span id="label">Body</span>
+        <RichTextEditor
+          id="editor"
+          value="<p>Hello</p>"
+          onChange={onChange}
+          labelledBy="label"
+          {...props}
+        />
+      </form>,
+    );
+    return { onSubmit, onChange };
+  }
+
+  it('does not submit the surrounding form when a link is applied', async () => {
+    const user = userEvent.setup();
+    const { onSubmit, onChange } = setupInAForm();
+    const bar = await screen.findByRole('toolbar', { name: 'Text formatting' });
+
+    const dialog = await openLinkDialog(user, bar);
+    await user.type(within(dialog).getByLabelText('Link address'), 'https://example.edu');
+    await user.click(within(dialog).getByRole('button', { name: 'Apply' }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(onChange.mock.calls.at(-1)?.[0] ?? '').toContain('href="https://example.edu"'),
+    );
+  });
+
+  it('does not submit it when Enter is pressed in the address box either', async () => {
+    // The same event by the other route. A fix that only covered the button would leave the
+    // keyboard path saving the page.
+    const user = userEvent.setup();
+    const { onSubmit } = setupInAForm();
+    const bar = await screen.findByRole('toolbar', { name: 'Text formatting' });
+
+    const dialog = await openLinkDialog(user, bar);
+    await user.type(within(dialog).getByLabelText('Link address'), 'https://example.edu{Enter}');
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe('editing a link that already exists', () => {
+  /**
+   * The complaint this answers: opening the form on an existing link showed an empty box and a
+   * placeholder saying *a* page was linked, never which one. A reference is correct and unreadable,
+   * so the id has to be exchanged for a title before anyone can tell what they are about to replace.
+   */
+  async function editorOnALink(html: string, props = {}) {
+    stubApi();
+    const user = userEvent.setup();
+    const rendered = await setupWithToolbar({ value: html, ...props });
+    /*
+      No click to place the caret, deliberately.
+
+      ProseMirror starts a fresh document with the selection at the start of the first text
+      block, which is inside the link when the link is the first thing in it — so the toolbar
+      already reads the mark there. Clicking the anchor instead goes through `posAtCoords`, which
+      needs `document.elementFromPoint`; jsdom has neither that nor a layout to answer it with, so
+      the click would be exercising a shim rather than the component.
+    */
+    return { ...rendered, user, bar: rendered.bar };
+  }
+
+  it('names the page a reference points at', async () => {
+    const { user, bar } = await editorOnALink(
+      `<p><a href="taproot:item:${PAGE.id}">read more</a></p>`,
+    );
+
+    const dialog = await openLinkDialog(user, bar);
+
+    expect(await within(dialog).findByText('About')).toBeTruthy();
+    expect(within(dialog).getByText('/about')).toBeTruthy();
+    // And a way to go and look at it, rather than a title with nothing behind it.
+    expect(
+      within(dialog).getByRole('link', { name: /Open in the editor/ }).getAttribute('href'),
+    ).toBe(`/admin/content/${PAGE.id}`);
+  });
+
+  it('names the file a reference points at', async () => {
+    const { user, bar } = await editorOnALink(
+      `<p><a href="taproot:media:${ASSET.id}">the prospectus</a></p>`,
+      { media: [ASSET] },
+    );
+
+    const dialog = await openLinkDialog(user, bar);
+    expect((await within(dialog).findAllByText('prospectus.pdf')).length).toBe(2);
+  });
+
+  it('opens on the panel matching the kind of link it is', async () => {
+    // A link to a page opening on the address box is how the old form managed to look identical
+    // whether you were adding a link or editing one.
+    const { user, bar } = await editorOnALink(
+      `<p><a href="taproot:item:${PAGE.id}">read more</a></p>`,
+    );
+
+    const dialog = await openLinkDialog(user, bar);
+    expect(checked(within(dialog).getByRole('radio', { name: /Page/ }))).toBe(true);
+  });
+
+  it('shows a plain address in the box it was typed into', async () => {
+    const { user, bar } = await editorOnALink('<p><a href="https://example.edu">read more</a></p>');
+
+    const dialog = await openLinkDialog(user, bar);
+    expect((within(dialog).getByLabelText('Link address') as HTMLInputElement).value).toBe('https://example.edu');
+  });
+
+  it('says so when the reference points at nothing', async () => {
+    /**
+     * Delivery unwraps an unresolvable link — the text stays, the `<a>` goes — so an author who is
+     * never told sees a link in the editor and no link on the site, with nothing connecting the two.
+     */
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    const user = userEvent.setup();
+    const { bar } = await setupWithToolbar({
+      value: `<p><a href="taproot:item:${PAGE.id}">read more</a></p>`,
+    });
+
+    const dialog = await openLinkDialog(user, bar);
+    expect(await within(dialog).findByText('This page no longer exists')).toBeTruthy();
+  });
+
+  it('carries the current options into the checkboxes', async () => {
+    const { user, bar } = await editorOnALink(
+      '<p><a href="https://example.edu" target="_blank" rel="nofollow noopener">read more</a></p>',
+    );
+
+    const dialog = await openLinkDialog(user, bar);
+    expect(checked(within(dialog).getByLabelText('Open in a new tab'))).toBe(true);
+    expect(checked(within(dialog).getByLabelText('Tell search engines not to follow'))).toBe(true);
+  });
+
+  it('removes the link from the dialog', async () => {
+    const { user, bar, onChange } = await editorOnALink(
+      '<p><a href="https://example.edu">read more</a></p>',
+    );
+
+    const dialog = await openLinkDialog(user, bar);
+    await user.click(within(dialog).getByRole('button', { name: 'Remove link' }));
+
+    await waitFor(() => {
+      const html = onChange.mock.calls.at(-1)?.[0] ?? '';
+      expect(html).not.toContain('<a');
+      // The text it was wrapped around stays; only the link goes.
+      expect(html).toContain('read more');
+    });
+  });
+});
+
+describe('the toolbar reaches the dialog', () => {
   it('adds the file button to the roving tabindex rather than stranding it', async () => {
     /**
      * The toolbar's promise is that one tab stop reaches every control. A button rendered without
@@ -242,53 +505,41 @@ describe('linking to content and files', () => {
 
     expect(within(bar).queryByRole('button', { name: 'Link to a file' })).toBeNull();
   });
+
+  it('opens the same dialog on the file panel from the paperclip', async () => {
+    // One dialog entered at the point the button names, rather than a second control doing nearly
+    // the same thing as the chain icon.
+    const user = userEvent.setup();
+    const { bar } = await setupWithToolbar({ media: [ASSET] });
+
+    const dialog = await openLinkDialog(user, bar, /Link to a file/);
+    expect(checked(within(dialog).getByRole('radio', { name: /File/ }))).toBe(true);
+  });
 });
 
 describe('a chosen link actually becomes a link', () => {
   /**
-   * The tests above check that the search input exists and that the toolbar can reach the file
-   * button. Neither of those notices that picking a result produces **nothing**, which is exactly
-   * what shipped: TipTap's Link extension validates hrefs against its `protocols` list, `taproot`
-   * was not on it, and every internal link was silently discarded between the click and the
-   * document. A control that is present and inert passes every test about its presence.
-   */
-  const PAGE = { id: '019fbe8e-ba01-7c65-a08f-e49bc783e1e3', title: 'About', path: '/about' };
-  const ASSET = {
-    id: '019fbe8e-b69b-71e4-a9de-8a895e8bd7e2',
-    filename: 'prospectus.pdf',
-    url: '/media/prospectus.pdf',
-    altText: null,
-    mimeType: 'application/pdf',
-    width: null,
-    height: null,
-  };
-
-  function stubSearch() {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(JSON.stringify({ items: [PAGE] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      ),
-    );
-  }
-
-  /**
+   * The tests above check that controls exist and that the toolbar can reach them. None of them
+   * notices that picking a result produces **nothing**, which is exactly what shipped: TipTap's Link
+   * extension validates hrefs against its `protocols` list, `taproot` was not on it, and every
+   * internal link was silently discarded between the click and the document. A control that is
+   * present and inert passes every test about its presence.
+   *
    * Selecting text inside ProseMirror is not something jsdom can be trusted to do — it has no real
    * selection model — so the branch that wraps an existing selection is verified in a browser
    * instead. What these prove is the part that was actually broken: that a `taproot:` href survives
    * TipTap's own validation and reaches the document at all.
    */
   it('inserts the page title as the text when nothing is selected', async () => {
-    stubSearch();
+    stubApi();
     const user = userEvent.setup();
     const { onChange, bar } = await setupWithToolbar();
 
-    await user.click(within(bar).getByRole('button', { name: /link/i }));
-    await user.type(screen.getByLabelText('Or link to a page'), 'about');
-    await user.click(await screen.findByRole('button', { name: /About/ }));
+    const dialog = await openLinkDialog(user, bar);
+    await user.click(within(dialog).getByRole('radio', { name: /Page/ }));
+    await user.type(within(dialog).getByLabelText('Search pages by title'), 'about');
+    await user.click(await within(dialog).findByRole('button', { name: /About/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Apply' }));
 
     await waitFor(() => {
       const html = onChange.mock.calls.at(-1)?.[0] ?? '';
@@ -299,14 +550,20 @@ describe('a chosen link actually becomes a link', () => {
   });
 
   it('links to a file chosen from the library', async () => {
+    stubApi();
     const user = userEvent.setup();
     const { onChange, bar } = await setupWithToolbar({ media: [ASSET] });
 
-    await user.click(within(bar).getByRole('button', { name: 'Link to a file' }));
+    const dialog = await openLinkDialog(user, bar, /Link to a file/);
+    await user.click(within(dialog).getByRole('button', { name: /Choose a file/ }));
 
-    const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByRole('option', { name: /prospectus/i }));
-    await user.click(within(dialog).getByRole('button', { name: /choose|insert|select/i }));
+    // The picker is a second dialog stacked on this one. It has to stay reachable: a nested modal
+    // hidden from the accessibility tree by the one underneath it is unusable, not merely awkward.
+    const picker = await screen.findByRole('dialog', { name: /Choose a file/i });
+    await user.click(within(picker).getByRole('option', { name: /prospectus/i }));
+    await user.click(within(picker).getByRole('button', { name: /^Choose$/ }));
+
+    await user.click(within(dialog).getByRole('button', { name: 'Apply' }));
 
     await waitFor(() => {
       const html = onChange.mock.calls.at(-1)?.[0] ?? '';
@@ -319,22 +576,22 @@ describe('link options', () => {
   it('offers new-tab and nofollow, worded for a person', async () => {
     const user = userEvent.setup();
     const { bar } = await setupWithToolbar();
-    await user.click(within(bar).getByRole('button', { name: /link/i }));
+    const dialog = await openLinkDialog(user, bar);
 
-    expect(screen.getByLabelText('Open in a new tab')).toBeTruthy();
+    expect(within(dialog).getByLabelText('Open in a new tab')).toBeTruthy();
     // Not "nofollow": the people writing here are not SEO consultants.
-    expect(screen.getByLabelText('Tell search engines not to follow')).toBeTruthy();
+    expect(within(dialog).getByLabelText('Tell search engines not to follow')).toBeTruthy();
   });
 
   it('applies a typed address with the options ticked', async () => {
     const user = userEvent.setup();
     const { onChange, bar } = await setupWithToolbar();
-    await user.click(within(bar).getByRole('button', { name: /link/i }));
+    const dialog = await openLinkDialog(user, bar);
 
-    await user.type(screen.getByLabelText('Link address'), 'https://example.edu');
-    await user.click(screen.getByLabelText('Open in a new tab'));
-    await user.click(screen.getByLabelText('Tell search engines not to follow'));
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    await user.type(within(dialog).getByLabelText('Link address'), 'https://example.edu');
+    await user.click(within(dialog).getByLabelText('Open in a new tab'));
+    await user.click(within(dialog).getByLabelText('Tell search engines not to follow'));
+    await user.click(within(dialog).getByRole('button', { name: 'Apply' }));
 
     await waitFor(() => {
       const html = onChange.mock.calls.at(-1)?.[0] ?? '';
@@ -352,10 +609,10 @@ describe('link options', () => {
      */
     const user = userEvent.setup();
     const { onChange, bar } = await setupWithToolbar();
-    await user.click(within(bar).getByRole('button', { name: /link/i }));
+    const dialog = await openLinkDialog(user, bar);
 
-    await user.type(screen.getByLabelText('Link address'), 'https://example.edu');
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    await user.type(within(dialog).getByLabelText('Link address'), 'https://example.edu');
+    await user.click(within(dialog).getByRole('button', { name: 'Apply' }));
 
     await waitFor(() => {
       const html = onChange.mock.calls.at(-1)?.[0] ?? '';
@@ -381,14 +638,40 @@ describe('accessibility of the rendered widget', () => {
     expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
   });
 
-  it('has no axe violations with the link form open', async () => {
+  it('has no axe violations with the link dialog open', async () => {
     const user = userEvent.setup();
-    const { bar, container } = await setupWithToolbar();
+    const { bar } = await setupWithToolbar({ media: [ASSET] });
 
-    await user.click(within(bar).getByRole('button', { name: /Add or edit link/ }));
-    await screen.findByLabelText('Link address');
+    const dialog = await openLinkDialog(user, bar);
 
-    const results = await axe.run(container, {
+    /**
+     * Scoped to the dialog element, not to the render container.
+     *
+     * Radix portals its content to `document.body`, so the container the component rendered into is
+     * empty of everything being checked here — an axe run against it would report zero violations
+     * for a dialog it never looked at. The same reason the media picker's own test does this.
+     */
+    const results = await axe.run(dialog, {
+      resultTypes: ['violations'],
+      rules: { 'color-contrast': { enabled: false } },
+    });
+
+    expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
+  });
+
+  it('has no axe violations on the panel showing an existing target', async () => {
+    // The half that only exists while editing a link: the resolved card, its open link, and the
+    // remove button. It is a different tree from the one above and would otherwise be unchecked.
+    stubApi();
+    const user = userEvent.setup();
+    const { bar } = await setupWithToolbar({
+      value: `<p><a href="taproot:item:${PAGE.id}">read more</a></p>`,
+    });
+
+    const dialog = await openLinkDialog(user, bar);
+    await within(dialog).findByText('About');
+
+    const results = await axe.run(dialog, {
       resultTypes: ['violations'],
       rules: { 'color-contrast': { enabled: false } },
     });
