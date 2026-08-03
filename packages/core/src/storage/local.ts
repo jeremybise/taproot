@@ -94,6 +94,23 @@ export class LocalStorageAdapter implements StorageAdapter {
    * anywhere on disk.
    */
   #resolve(key: string, path: NodePath): string {
+    /**
+     * Backslashes are refused everywhere, not only where they separate paths.
+     *
+     * Whether `..\escaped.txt` escapes anything is a property of the *host*: on Windows it is
+     * traversal, on Linux and macOS it is a legal filename and `path.resolve` keeps it inside the
+     * directory. A key is a property of the *data*, and the data outlives the host — a key written
+     * by a Linux deployment sits in the `media` table and can later be handed to this adapter on
+     * Windows, where the same string means something else entirely. So the rule cannot be the
+     * platform's; it has to be the same rule everywhere, as with the PBKDF2 iteration count.
+     *
+     * Nothing legitimate is lost: `sanitizeFilename` splits on `[\\/]` and strips everything
+     * outside `[a-zA-Z0-9._-]`, so no key derived from an upload has ever contained one.
+     */
+    if (key.includes('\\')) {
+      throw new Error(`Refusing to access "${key}", which resolves outside the upload directory.`);
+    }
+
     const root = path.resolve(this.#config.directory);
     const target = path.resolve(root, key);
     if (target !== root && !target.startsWith(root + path.sep)) {

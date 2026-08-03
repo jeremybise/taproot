@@ -99,12 +99,20 @@ describe('LocalStorageAdapter', () => {
      * The security control. `sanitizeFilename` strips traversal from a *filename*, but a key is
      * assembled from stored values too, so this is the backstop that makes a bad key a thrown
      * error rather than a write anywhere the process can reach.
+     *
+     * The backslash case is the one that matters here, and it passed for the wrong reason for a
+     * long time: on Windows `\` separates paths, so `path.resolve` escaped the directory and the
+     * guard caught it. On Linux and macOS it is an ordinary filename character, nothing escaped,
+     * and the upload succeeded — so this suite only ever passed on the one platform Taproot is not
+     * deployed to, and said nothing until it first ran in CI. The adapter now refuses backslashes
+     * outright, on every platform, because a stored key can be read back on a different one.
      */
     for (const key of [
       '../escaped.txt',
       '../../etc/passwd',
       'a/../../escaped.txt',
       '..\\escaped.txt',
+      'a\\..\\..\\escaped.txt',
     ]) {
       it(`refuses ${JSON.stringify(key)}`, async () => {
         const storage = adapter();
