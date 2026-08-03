@@ -1,17 +1,17 @@
 ---
-import { createItem, getContentTypeByApiId } from '@taprootcms/core';
+import { getContentTypeByApiId } from '@taprootcms/core';
 import { getTaproot, loginRedirect, canEditContent } from '../../../runtime/guards.js';
 
 /**
  * A singleton's sidebar entry.
  *
- * Resolves to the one item's editor, creating it on first visit if it does not exist yet. The
- * indirection buys a stable URL: linking the sidebar straight at an item id would mean the link
- * cannot be built until the item exists, and would break if it were ever deleted and recreated.
+ * Resolves to the one item's editor, or to the form that creates it. The indirection buys a stable
+ * URL: linking the sidebar straight at an item id would mean the link cannot be built until the
+ * item exists, and would break if it were ever deleted and recreated.
  *
- * Creating on demand rather than at seed time is what makes a singleton work like a settings
- * screen — an editor clicks "Weather Banner" and gets a form, instead of an empty list and a
- * "create the one allowed item" step that exists only to satisfy the data model.
+ * Either way an editor clicks "Weather Banner" and gets a form, rather than an empty list and a
+ * "create the one allowed item" step that exists only to satisfy the data model. That is the
+ * property worth keeping, and it does not require the row to exist first.
  */
 const taproot = getTaproot(Astro.locals);
 if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
@@ -36,12 +36,19 @@ if (!canEditContent(user)) {
   return new Response('This singleton has not been created yet.', { status: 404 });
 }
 
-const item = await createItem(taproot.db, contentType, contentType.fields, {
-  contentTypeId: contentType.id,
-  title: contentType.name,
-  status: 'draft',
-  userId: user.id,
-});
-
-return Astro.redirect(`/admin/content/${item.id}`);
+/**
+ * The row is written by the create form, not by this screen.
+ *
+ * This used to call `createItem` with no `data` at all, which works only for a type whose fields
+ * are every one of them optional — `validateItemData` enforces `required` on create like any other
+ * write path. Add one required field to a singleton and its own sidebar link answers 500, from a
+ * route with no form on it, so there is no way to reach the item from the UI at all. That is the
+ * state `assertNotLastAdmin` and the first-run setup screen both exist to prevent.
+ *
+ * Same rule a reusable block already follows: a library row is only ever written validated, so
+ * creating one collects its content first and there is no "empty entry, fill it in later" path.
+ * Relaxing validation instead would mean a second caller of `requireComplete: false`, which is
+ * reserved for preview snapshots precisely because they are never read back as content.
+ */
+return Astro.redirect(`/admin/content/new?type=${contentType.id}`);
 ---

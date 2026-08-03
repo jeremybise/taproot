@@ -98,7 +98,15 @@ const defaultOgImage = findImage(media, contentType?.default_og_image_id ?? null
           contentTypeName={contentType.name}
           fields={contentType.fields}
           initial={{
-            title: '',
+            /**
+             * A singleton is titled after its type, because there is only ever one.
+             *
+             * Its title names the thing in the admin rather than describing an instance of it —
+             * "Weather Banner", not one weather banner among several — so asking an editor
+             * arriving from the sidebar to invent one is a required field with a single sensible
+             * answer. Every other kind starts blank.
+             */
+            title: contentType.kind === 'singleton' ? contentType.name : '',
             slug: '',
             status: 'draft',
             publishAt: null,

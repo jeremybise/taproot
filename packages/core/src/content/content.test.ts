@@ -461,6 +461,47 @@ describe('content items', () => {
     ).rejects.toThrow(/already has an item/);
   });
 
+  /**
+   * The fact that made auto-creating a singleton wrong.
+   *
+   * `/admin/singleton/{api_id}` used to call `createItem` with no `data`, which succeeds only when
+   * every field is optional — and the test above passes `[]` for exactly that reason, which is why
+   * nothing caught it. Add one required field and the screen an editor reaches the singleton
+   * through answers 500, with no form on it to fix the item from.
+   *
+   * `createItem` is right to refuse; the route was wrong to assume it would not. It now sends an
+   * editor to the create form instead, so the row is written with real values. Pinned here because
+   * the route is an `.astro` file with no way to render it under vitest — this is the invariant it
+   * has to be built around, not a test of the route.
+   */
+  it('refuses an empty create against a type with a required field', async () => {
+    const type = await createContentType(handle.db, {
+      api_id: 'homepage',
+      name: 'Homepage',
+      name_plural: 'Homepage',
+      kind: 'singleton',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      title_field: null,
+    });
+
+    const headline = await createField(handle.db, type.id, {
+      api_id: 'headline',
+      label: 'Headline',
+      type: 'text',
+      required: true,
+      localized: false,
+      position: 0,
+      config: {},
+      help_text: null,
+    });
+
+    await expect(
+      createItem(handle, type, [headline], { contentTypeId: type.id, title: 'Homepage' }),
+    ).rejects.toThrow(/validation/i);
+  });
+
   it('resolves a published item by path and hides drafts', async () => {
     const { type, fields } = await seedPageType();
     await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Live', status: 'published' });
