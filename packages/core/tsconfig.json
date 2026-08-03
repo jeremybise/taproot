@@ -4,6 +4,31 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    /**
+     * The original TypeScript is embedded in each map rather than referenced beside it.
+     *
+     * This is the only published package that ships build output instead of source, so its maps
+     * are the only ones that could ever dangle. They used to: `sourceMap` is on for every package
+     * here, so every `dist/*.js` ends with a `sourceMappingURL` comment, and core's `files` list
+     * then stripped the maps out of the tarball — leaving a consumer's Vite chasing a file that
+     * was deliberately deleted, once per module, on every dev server start.
+     *
+     * The exclusion existed because a map that names `../src/x.ts` is useless without a `src/`
+     * core does not ship. `inlineSources` removes that dependency: `sourcesContent` carries the
+     * source, so the map is self-contained and the tarball still has no `src/` directory.
+     */
+    "inlineSources": true,
+    /**
+     * Off, because a declaration map is the one kind that cannot be made self-contained.
+     *
+     * `inlineSources` applies to JS maps only — a `.d.ts.map` always names `../src/x.ts` and has no
+     * `sourcesContent` to fall back on, so shipping one points an editor at a file that is not in
+     * the package, and *not* shipping one leaves the same dangling `sourceMappingURL` comment in
+     * every `.d.ts` that started this. Emitting none is the only option that is true either way.
+     * The cost is that "go to definition" lands on the `.d.ts` rather than the original source,
+     * which is ordinary for a package that ships build output.
+     */
+    "declarationMap": false,
     "types": ["node", "@cloudflare/workers-types"]
   },
   "include": ["src/**/*"],

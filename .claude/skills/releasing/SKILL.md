@@ -24,6 +24,21 @@ rather than a supported combination.
 load-bearing.** `@taprootcms/studio` and `@taprootcms/astro` ship *source*, so `!src/**/*.test.ts`
 is what stops 22 test files reaching consumers with imports (`vitest`, `@testing-library/*`) that
 are devDependencies nobody installs — an unresolvable import sitting in `node_modules` waiting for a
-bundler that walks everything. `@taprootcms/core` excludes `*.map` and `*.tsbuildinfo`: the maps
-point at a `src/` it does not ship, and the buildinfo embeds absolute paths from whichever machine
-built it. Check with `npm pack --dry-run` after touching any of this.
+bundler that walks everything. `@taprootcms/core` excludes only `*.tsbuildinfo`, a build cache that
+embeds absolute paths from whichever machine built it.
+
+**Core's `.map` files ship, and `inlineSources` is what makes that safe.** They were excluded once,
+on the reasoning that a map naming `../src/x.ts` is useless without a `src/` this package does not
+send. That was true and incomplete: `sourceMap` stayed on, so every `dist/*.js` still carried a
+`sourceMappingURL` comment naming a file the tarball had deliberately removed, and a consumer's Vite
+chased it and warned once per module on every dev server start. `inlineSources` embeds the
+TypeScript in `sourcesContent`, so each map resolves on its own with no `src/` in the package. Two
+things follow: **excluding them again means also turning off `sourceMap`**, or the dangling comments
+come straight back; and **`declarationMap` is off for core**, because a `.d.ts.map` has no
+`sourcesContent` equivalent and is the one kind that is wrong whether you ship it or not.
+
+The cost was weighed rather than waved through: core's tarball went 228 KB → 479 KB, making it the
+largest of the four. It buys a readable stack trace from a deployed Worker, where the alternative is
+an offset into a minified chunk.
+
+Check with `npm pack --dry-run` after touching any of this.

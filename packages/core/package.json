@@ -39,10 +39,9 @@
     "./validation": "./dist/validation/index.js",
     "./package.json": "./package.json"
   },
-  "//files": "`.tsbuildinfo` is a local build cache that also embeds absolute paths from whatever machine built it, and the `.map` files point at `src/`, which this package does not ship — so a debugger following them finds nothing. Excluding both is smaller and less misleading than shipping sources to make the maps resolve.",
+  "//files": "`.tsbuildinfo` is a local build cache that embeds absolute paths from whatever machine built it, so it stays out. The `.map` files now ship: they used to be excluded because they pointed at a `src/` this package does not send, but every `dist/*.js` still carried the `sourceMappingURL` comment naming them, so a consumer's bundler chased a deliberately-deleted file and warned once per module. `inlineSources` in tsconfig puts the TypeScript inside each map, so they resolve on their own and there is still no `src/` in the tarball. Excluding them again means also turning off `sourceMap`, or the dangling comments come back.",
   "files": [
     "dist",
-    "!dist/**/*.map",
     "!dist/*.tsbuildinfo"
   ],
   "scripts": {
