@@ -1,0 +1,71 @@
+name: Handbook
+
+# The handbook tracks `main` rather than a release tag. It documents the admin an editor is looking
+# at, and the two have been kept in step commit by commit; publishing it only on a release would
+# mean a correction to a sentence waits for a version bump.
+#
+# Path-filtered so an unrelated commit does not redeploy an unchanged site — but the workflow file
+# is in the filter too, or a change to *this* would never take effect.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/docs/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+# No secrets. `deploy-pages` authenticates with the run's own OIDC identity, the same shape as
+# trusted publishing in release.yml — there is no token to store, rotate, or leak.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and queued rather than cancelled: a superseded docs build is still a
+# valid site, and cancelling mid-deploy is how Pages ends up serving a half-uploaded artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      # Reports where this site will actually be served from. Used rather than hardcoding, so a
+      # fork publishes under its own name and so attaching a custom domain in the Pages settings
+      # takes effect here with no edit: `base_path` comes back empty and Astro stops prefixing.
+      - name: Resolve the Pages URL
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - run: npm ci
+
+      # DOCS_SITE and DOCS_BASE are read by apps/docs/astro.config.mjs, which sets neither by
+      # default. That default is deliberate: the handbook ships with the CMS rather than with any
+      # one installation, so a domain written into the committed config would put somebody else's
+      # origin in every sitemap entry. This is the "whoever publishes the handbook" case.
+      - name: Build the handbook
+        run: npm run docs:build
+        env:
+          DOCS_SITE: ${{ steps.pages.outputs.origin }}
+          DOCS_BASE: ${{ steps.pages.outputs.base_path }}
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/docs/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

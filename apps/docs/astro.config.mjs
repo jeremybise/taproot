@@ -15,14 +15,24 @@ import starlight from '@astrojs/starlight';
  */
 export default defineConfig({
   /**
-   * No `site` is set, and the build says so on every run:
-   * `[@astrojs/sitemap] The Sitemap integration requires the site astro.config option. Skipping.`
+   * `site` and `base` come from the environment, and are unset by default.
    *
-   * That warning is expected rather than outstanding. A sitemap has to name absolute URLs, and this
-   * handbook ships with the CMS rather than with any one installation of it — guessing a domain
-   * would produce a sitemap pointing at somebody else's site, which is worse than no sitemap.
-   * Whoever publishes the handbook sets `site` to their own origin and the warning goes with it.
+   * A sitemap has to name absolute URLs, and this handbook ships with the CMS rather than with any
+   * one installation of it — a domain written in here would produce a sitemap pointing at somebody
+   * else's site, which is worse than no sitemap. So an ordinary `npm run docs` or `npm run
+   * docs:build` still sets neither, and still prints
+   * `[@astrojs/sitemap] The Sitemap integration requires the site astro.config option. Skipping.`
+   * That warning remains expected rather than outstanding.
+   *
+   * What changed is that "whoever publishes the handbook sets `site` to their own origin" now has
+   * somewhere to do it that is not this file. `.github/workflows/docs.yml` passes both, because a
+   * project page is served from a subpath (`/taproot`) and every internal link, asset URL, and
+   * sitemap entry has to know that. Deploying to a custom domain means passing `DOCS_SITE` alone
+   * and leaving `DOCS_BASE` out.
    */
+  site: process.env.DOCS_SITE || undefined,
+  base: process.env.DOCS_BASE || undefined,
+
 
   /**
    * The passthrough image service, deliberately.
