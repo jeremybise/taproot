@@ -12,6 +12,7 @@ export * from './accessibilityReport.js';
 export * from './imageCrop.js';
 export * from './media.js';
 export * from './reusableBlocks.js';
+export * from './richTextRefs.js';
 export * from './revisions.js';
 export * from './releases.js';
 export * from './delivery.js';

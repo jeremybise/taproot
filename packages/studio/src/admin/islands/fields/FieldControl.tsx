@@ -422,6 +422,8 @@ export function FieldControl({
             invalid={Boolean(errors?.length)}
             allowedTags={stringArrayOr(config.allowedFormats, undefined)}
             disabled={preview}
+            /* The same library every other field chooses from — one picker, not a fourth chooser. */
+            media={media}
           />
         );
 

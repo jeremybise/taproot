@@ -65,7 +65,7 @@ declares it.
 | `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 1115 tests |
+| `npm test` | Vitest, 1134 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core + inert-label + reflow-hazard checks over every admin route, then the numeric contrast check. Needs `npm run dev` running |
@@ -398,6 +398,39 @@ asserts no injected pattern contains `[...path]`. The admin also keeps its own p
 `adminPath: '/'` **throws** rather than silently coming back as `/admin`, which is what it used to
 do — because root-mounting would claim the whole top level (`/content`, `/media`, `/settings`…) for
 admin screens and leave the CMS host unable to serve anything else.
+
+**Rich text stores a reference, never a path — and delivery resolves it.** `taproot:item:{id}` in an
+`href` is the same rule menus follow: a page that moves keeps every link pointing at it and nobody
+edits the prose. `taproot:media:{id}` does the same for a file. Four things hold it up:
+- **`taproot:` is on `SAFE_SCHEMES` but is not an open scheme.** `serializeAnchor` accepts only
+  `taproot:item:<uuid>` and `taproot:media:<uuid>`; anything else spelled `taproot:` is dropped
+  exactly as `javascript:` is. Admitting the scheme must not admit a payload.
+- **`collectReferences` needs a `richtext` case, and `collectLoose` a second path.** The top-level
+  walk is definition-driven and used to fall through to `default`; the loose walk inside blocks gates
+  on an *anchored* uuid — deliberately, so prose is never a lookup key — which an id inside an
+  attribute inside markup can never match. Both parse with `tokenize`, never a regex over markup, for
+  the reason `sanitizeHtml` states.
+- **Resolution inlines a reference into `data`, which the delivery rules otherwise forbid.** The
+  reasons that rule exists are generated types matching stored shape, double serialisation, and the
+  payload staying usable for a write. Here the alternative is worse: a marker left in place ships
+  `taproot:item:…` to a visitor the moment a consumer forgets a helper, and delivery is read-only
+  (`content:read`), so nothing round-trips it back. The ids stay in `references` and `media`.
+- **`loadLinkTargets` follows `includeUnpublished`; `loadItemRefs` never does.** A relation must not
+  name a draft, but an editor assembling a section links between drafts, and unwrapping all of them
+  would make the preview a worse picture than the editor already had. Outside a preview an
+  unresolvable target **unwraps** — the `<a>` goes, the text stays — mirroring a menu skipping a
+  target it cannot show.
+
+**`img` is absent from the richtext allowlist, and that was reconsidered rather than inherited.** A
+reference-only `<img data-taproot-media>` filled at delivery would have kept alt text in the library,
+which is half the original reason — but not the hotspot, because `set:html` cannot produce a
+`TaprootImage`, so a picture in prose would be the one image on the site ignoring its focal point. An
+image in a paragraph is a block's job.
+
+**The richtext toolbar's roving tabindex is derived, never counted by hand.** The unlink button only
+exists while the cursor is in a link, so every index after it moves; a literal index left a hole, and
+a button missing from `buttonCount` was reachable by mouse and by nothing else. The pattern's whole
+promise is that one tab stop reaches every control.
 
 **The accessibility checker is advisory and lives off the write path.** `checkItemAccessibility` in
 `content/accessibility.ts` never refuses a save or a publish, and no route calls it before writing.

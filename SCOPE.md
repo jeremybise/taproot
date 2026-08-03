@@ -239,12 +239,14 @@ Four decisions worth keeping:
 - **A token stays a capability over one item.** The delivery route now applies the override only when the requested path is the token's own. It ignored `path` entirely before, which was invisible while the only caller was a redirect straight to `item.path` — and would have made every page render as the item being edited the moment a frame could follow a link.
 - **Zero consumer integration, with an optional upgrade.** A site that already forwards the token gets a working pane. Two lines (`<TaprootPreviewBridge />`) upgrade the refresh from a frame remount to a reload from inside, which is what keeps the scroll position. Requiring it would have made the first-run story a setup error.
 
-**Phase 4.6 — Admin UI pass** *(A complete; B and C next)*
+**Phase 4.6 — Admin UI pass** *(A and B complete; C next)*
 Seven things noticed from using the admin, split so each can be redirected between.
 
 **A — chrome** *(complete)*. One sticky action bar per screen (`PageHeader.astro`, except the item editor where the island owns it because Save is React state). Status transitions became a promoted named action plus a "More" disclosure — `primaryTransition` in core decides which is promoted, and `published` deliberately promotes nothing. Add-to-release moved from a banner into Publishing and now stays on the item instead of navigating away. The sidebar's user block became a menu with an avatar. Plus a repair: two files had been shipping cp1252 mojibake since `ff9af26`, and `sourceEncoding.test.ts` now guards it.
 
-**B — linking** *(next)*. Link to content by title with autocomplete, stored as `taproot:item:{id}` and resolved to the current path at delivery, so a rename keeps the link working — the same "reference the target, never store a URL" rule menus already follow. Insert images and files from the media library into rich text, with `src` and `alt` filled from the library at delivery so alt text still lives in one place. Touches the sanitiser allowlist, `collectReferences`, and the accessibility checker's media walk.
+**B — linking** *(complete)*. Link to content by title with autocomplete, stored as `taproot:item:{id}` and resolved to the current path at delivery, so a rename keeps the link working — the same "reference the target, never store a URL" rule menus already follow. Links to media files (`taproot:media:{id}`) work the same way, so a link to a prospectus survives the file being replaced.
+
+**Images in rich text were considered and refused**, which is why `img` is still absent from the allowlist. A reference-only `<img data-taproot-media>` resolved at delivery would have kept alt text in the library — but not the hotspot, because `set:html` cannot produce a `TaprootImage`, so an image in prose would be the only one on the site ignoring its focal point. An image in a paragraph is a block's job.
 
 **C — branding** *(after B)*. A configurable accent, CMS title and icon in a new settings table, with contrast derived rather than merely warned about. Status colours stay fixed: `--color-status-published` is byte-identical to `--color-accent` today by coincidence, and a free accent hue would put Published on top of Review.
 

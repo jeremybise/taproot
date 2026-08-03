@@ -381,11 +381,17 @@ npm test
 
 ## What's next
 
-**Phase 4.6 — the admin UI pass — is in progress.** Part A shipped: one sticky action bar per screen,
-status transitions behind a promoted action plus a menu, add-to-release moved into the Publishing
-panel where it no longer throws away unsaved edits, and a sidebar user menu. Part B is linking to
-content from rich text so a rename keeps the link working; part C is a configurable accent, title
-and icon.
+**Phase 4.6 — the admin UI pass — is most of the way through.** Part A shipped: one sticky action bar
+per screen, status transitions behind a promoted action plus a menu, add-to-release moved into the
+Publishing panel where it no longer throws away unsaved edits, and a sidebar user menu.
+
+Part B shipped too: **an editor links to a page by picking it, not by typing its address.** The
+reference is what gets stored, so renaming or moving that page updates every link to it across the
+site without anyone editing any content — and a link whose target is unpublished or deleted arrives
+as plain text rather than pointing at a 404. Files link the same way. Your site does nothing for any
+of it: the HTML it receives already has ordinary `href`s.
+
+Part C is next: a configurable accent, title and icon.
 
 **Phase 5 — integrations — follows.** Webhooks and a tracking script manager. API keys already
 shipped in 3.75, which could not be done without them.

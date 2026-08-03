@@ -73,6 +73,21 @@ making a typo a build error. See [Preview and types](/build/preview-and-types/).
 allowlist that re-emits only what it understands. Sanitising again at render would be
 belt-and-braces against a boundary that is already the right one.
 
+### Internal links resolve before you see them — you do nothing
+
+An editor can link to another page by picking it rather than typing its address, and Taproot stores
+that as a reference. **By the time the HTML reaches you, it is an ordinary `href`** pointing at
+wherever that page currently lives. Renaming a page therefore updates every link to it across the
+site, with nobody editing any content and nothing for this app to do.
+
+Two consequences worth knowing rather than discovering:
+
+- A link whose target is unpublished or deleted arrives as **plain text with the link removed**, so
+  you never render an anchor to a page that would 404. Under a preview token the link is kept, so an
+  editor can check a section of drafts that link to each other.
+- The target's id is still in `references`, and a linked file's in `media`, if you want to do
+  something else with them.
+
 ## Breadcrumbs and children
 
 Both arrive resolved:

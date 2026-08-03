@@ -36,6 +36,12 @@
  *
  * `img` is absent too: images belong to the media library, where they carry alt text and a
  * hotspot. An `<img>` pasted into prose has neither and cannot be managed.
+ *
+ * That was reopened once, and closed again deliberately. A reference-only `<img data-taproot-media>`
+ * with `src` and `alt` filled at delivery would have honoured the alt-text half of the reason — but
+ * not the hotspot half, because `set:html` cannot produce a `TaprootImage`, so a picture placed in
+ * prose would be the one picture on the site that ignores its focal point. An image in a paragraph
+ * is a block's job. Links to media are a different thing and are allowed: see `taproot:` below.
  */
 const ALLOWED: Record<string, readonly string[]> = {
   p: [],
@@ -68,7 +74,21 @@ const VOID_TAGS = new Set(['br']);
 const DROP_WITH_CONTENTS = new Set(['script', 'style', 'textarea', 'title', 'iframe', 'noscript']);
 
 /** URL schemes allowed on `href`. Everything else — `javascript:`, `data:`, `vbscript:` — is dropped. */
-const SAFE_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+const SAFE_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:', 'taproot:']);
+
+/**
+ * An internal reference, which the delivery layer resolves to a real URL.
+ *
+ * `taproot:` is not an open scheme — only these two shapes survive, and the id must look like one.
+ * Anything else spelled `taproot:` is dropped exactly as `javascript:` is, so admitting the scheme
+ * does not admit a payload.
+ *
+ * A reference rather than a path, for the reason menu items already store a target instead of a
+ * URL: a page that moves keeps its links, with nobody editing the prose that points at it.
+ */
+const TAPROOT_REF =
+  /^taproot:(item|media):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 
 export interface SanitizeOptions {
   /**
@@ -284,7 +304,14 @@ function safeUrl(value: string): string | null {
   const slash = cleaned.indexOf('/');
   if (colon === -1 || (slash !== -1 && slash < colon)) return cleaned;
 
-  return SAFE_SCHEMES.has(cleaned.slice(0, colon + 1).toLowerCase()) ? cleaned : null;
+  const scheme = cleaned.slice(0, colon + 1).toLowerCase();
+  if (!SAFE_SCHEMES.has(scheme)) return null;
+
+  // An internal reference has to be one of the two shapes above; `taproot:` is not a free-form
+  // escape hatch just because the scheme is on the list.
+  if (scheme === 'taproot:' && !TAPROOT_REF.test(cleaned)) return null;
+
+  return cleaned;
 }
 
 function escapeText(value: string): string {

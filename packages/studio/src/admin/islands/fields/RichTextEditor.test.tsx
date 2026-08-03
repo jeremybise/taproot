@@ -189,6 +189,61 @@ describe('the link form', () => {
   });
 });
 
+describe('linking to content and files', () => {
+  const ASSET = {
+    id: '019fbe8e-b69b-71e4-a9de-8a895e8bd7e2',
+    filename: 'prospectus.pdf',
+    url: '/media/prospectus.pdf',
+    altText: null,
+    mimeType: 'application/pdf',
+    width: null,
+    height: null,
+  };
+
+  it('offers a page search in the link form', async () => {
+    const user = userEvent.setup();
+    const { bar } = await setupWithToolbar();
+
+    await user.click(within(bar).getByRole('button', { name: /link/i }));
+
+    // Typing a path from memory is what breaks when a page moves; this is the alternative.
+    expect(screen.getByLabelText('Or link to a page')).toBeTruthy();
+  });
+
+  it('adds the file button to the roving tabindex rather than stranding it', async () => {
+    /**
+     * The toolbar's promise is that one tab stop reaches every control. A button rendered without
+     * being counted is reachable by mouse and by nothing else — and the count has to be derived,
+     * because the unlink button comes and goes and everything after it shifts.
+     */
+    const { bar } = await setupWithToolbar({ media: [ASSET] });
+
+    const buttons = within(bar).getAllByRole('button');
+    const file = within(bar).getByRole('button', { name: 'Link to a file' });
+
+    expect(buttons.at(-1)).toBe(file);
+    // Exactly one tab stop, and End must be able to land on the last button.
+    expect(buttons.filter((b) => b.getAttribute('tabindex') === '0')).toHaveLength(1);
+
+    await userEvent.setup().tab();
+    await userEvent.setup().keyboard('{End}');
+    await waitFor(() => expect(document.activeElement).toBe(file));
+  });
+
+  it('hides the file button when links are not an allowed format', async () => {
+    // A file link is a link. If `a` is disallowed there is nothing this button could produce.
+    const { bar } = await setupWithToolbar({ media: [ASSET], allowedTags: ['strong', 'em'] });
+
+    expect(within(bar).queryByRole('button', { name: 'Link to a file' })).toBeNull();
+  });
+
+  it('has no file button with an empty library', async () => {
+    const { bar } = await setupWithToolbar();
+
+    expect(within(bar).queryByRole('button', { name: 'Link to a file' })).toBeNull();
+  });
+});
+
 describe('accessibility of the rendered widget', () => {
   it('has no axe violations once hydrated', async () => {
     const { container } = await setupWithToolbar();

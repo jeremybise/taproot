@@ -83,6 +83,27 @@ Use **Open in a new tab** inside the preview to get a full-width window with the
 
 Singletons have no preview, because they have no address of their own.
 
+## Linking to another page
+
+In a rich text field, press the **link** button and search for a page by title under *Or link to a
+page*. Choosing one stores a reference to that page rather than its address — so if somebody later
+renames it or moves it under a different parent, your link follows it. Nobody has to remember which
+pages linked where.
+
+The address box is still there for anything else: a path on this site, an external address, an email
+link.
+
+**A link to a page that is unpublished or deleted quietly becomes plain text.** The words stay, the
+link goes. That is deliberate: sending a reader to a page that is not there is worse than not
+offering the link. You still see the link while previewing, so you can build a section of drafts that
+link to each other and check it before any of it is live.
+
+The **paperclip** button links to a file in the media library the same way, so replacing the file
+does not break the link.
+
+Images are not inserted into rich text — use an image block, which keeps the focal point and the
+crop. See [Blocks](/content/blocks/).
+
 ## Adding it to a release
 
 Under **Publishing** in the sidebar. Choose an open release and press **Add to release** — it takes a

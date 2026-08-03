@@ -15,8 +15,13 @@ import {
   ListOrdered,
   Quote,
   SquareCode,
+  Paperclip,
   Strikethrough,
 } from 'lucide-react';
+
+import { LinkTargetSearch, type LinkTarget } from './LinkTargetSearch.js';
+import { MediaPicker } from '../media/MediaPicker.js';
+import type { MediaOption } from '../../mediaOptions.js';
 
 /**
  * The richtext editor.
@@ -35,6 +40,15 @@ import {
  * toolbar shapes what an editor can produce; `sanitizeHtml` decides what can be stored.
  */
 
+/**
+ * The reference shape, mirrored from `sanitizeHtml`'s `TAPROOT_REF`.
+ *
+ * Only used to decide whether the address box shows the value or stays empty. The sanitiser is the
+ * authority on what is accepted — a reference this got wrong would be dropped there rather than
+ * stored malformed — so this copy is a display detail, not a second gate.
+ */
+const TAPROOT_REF = /^taproot:(item|media):[0-9a-f-]{36}$/i;
+
 interface Props {
   id: string;
   value: string;
@@ -50,6 +64,13 @@ interface Props {
   allowedTags?: string[];
   /** Preview mode in the content-type builder: shows the toolbar, edits nothing. */
   disabled?: boolean;
+  /**
+   * The media library's first page, so a link to a file opens the picker every other field uses.
+   *
+   * Only links: an image cannot be placed in prose — see `sanitizeHtml`, where `img` is absent and
+   * stays absent — so what this produces is always an `<a>`.
+   */
+  media?: MediaOption[];
 }
 
 /**
@@ -163,9 +184,14 @@ export function RichTextEditor({
   invalid,
   allowedTags,
   disabled = false,
+  media = [],
 }: Props) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
+  const [linkIsRef, setLinkIsRef] = useState(false);
+  /** The chosen page's title, used as the link text when nothing is selected. */
+  const [linkTargetTitle, setLinkTargetTitle] = useState('');
+  const [filePickerOpen, setFilePickerOpen] = useState(false);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   /** Which toolbar button holds the group's single tab stop. */
@@ -219,7 +245,20 @@ export function RichTextEditor({
 
   const items = allowedTags ? ITEMS.filter((item) => allowedTags.includes(item.tag)) : ITEMS;
   const linkAllowed = !allowedTags || allowedTags.includes('a');
-  const buttonCount = items.length + (linkAllowed ? (editor?.isActive('link') ? 2 : 1) : 0);
+
+  /**
+   * Where each trailing button sits in the roving tabindex, derived rather than hardcoded.
+   *
+   * The unlink button only exists while the cursor is in a link, so anything after it moves. Writing
+   * the file button's index as a literal left a hole in the sequence whenever unlink was absent, and
+   * leaving it out of `buttonCount` meant End and the arrow-key wrap could never reach it — the
+   * toolbar pattern's whole promise is that every control is reachable from one tab stop.
+   */
+  const linkButtons = linkAllowed ? (editor?.isActive('link') ? 2 : 1) : 0;
+  // A file link is a link: if `a` is not an allowed format, there is nothing for this to produce.
+  const fileButtonShown = linkAllowed && media.length > 0;
+  const fileButtonIndex = items.length + linkButtons;
+  const buttonCount = items.length + linkButtons + (fileButtonShown ? 1 : 0);
 
   /**
    * Roving tabindex.
@@ -257,8 +296,29 @@ export function RichTextEditor({
 
   function openLinkForm() {
     if (!editor) return;
-    setLinkValue(editor.getAttributes('link').href ?? '');
+    const href: string = editor.getAttributes('link').href ?? '';
+    setLinkValue(href);
+    /**
+     * An internal reference is not something to show in an address box.
+     *
+     * `taproot:item:{uuid}` is correct and unreadable. The box holds the free-text address, so a
+     * reference clears it and the note below says what the link actually points at.
+     */
+    setLinkIsRef(TAPROOT_REF.test(href));
     setLinkOpen(true);
+  }
+
+  /** Store the reference rather than the path, so the link follows the page. */
+  function applyTarget(href: string) {
+    if (!editor) return;
+    const chain = editor.chain().focus().extendMarkRange('link');
+    // With nothing selected there is no text to carry the link, so the title becomes the text.
+    if (editor.state.selection.empty) {
+      chain.insertContent(`<a href="${href}">${linkTargetTitle}</a>`).run();
+    } else {
+      chain.setLink({ href }).run();
+    }
+    setLinkOpen(false);
   }
 
   function applyLink(event: React.FormEvent) {
@@ -355,9 +415,46 @@ export function RichTextEditor({
                 <Link2Off aria-hidden="true" size={16} />
               </button>
             )}
+
+            {fileButtonShown && (
+              <button
+                type="button"
+                title="Link to a file"
+                aria-label="Link to a file"
+                tabIndex={focusIndex === fileButtonIndex ? 0 : -1}
+                onFocus={() => setFocusIndex(fileButtonIndex)}
+                onClick={() => setFilePickerOpen(true)}
+                className="rounded p-1.5 transition-colors hover:bg-surface disabled:opacity-40"
+              >
+                <Paperclip aria-hidden="true" size={16} />
+              </button>
+            )}
           </>
         )}
       </div>
+
+      {/*
+        A link to a file, through the picker every other field uses rather than a fourth chooser.
+
+        It produces an `<a>`, never an `<img>`: images belong to a block, where they keep their
+        hotspot. Stored as `taproot:media:{id}`, so replacing the asset does not break the link.
+      */}
+      {fileButtonShown && (
+        <MediaPicker
+          open={filePickerOpen}
+          onOpenChange={setFilePickerOpen}
+          library={media}
+          selected={[]}
+          noun="file"
+          onConfirm={(assets) => {
+            const asset = assets[0];
+            setFilePickerOpen(false);
+            if (!asset) return;
+            setLinkTargetTitle(asset.filename);
+            applyTarget(`taproot:media:${asset.id}`);
+          }}
+        />
+      )}
 
       {/*
         An inline form rather than `window.prompt`. The prompt is unstyleable, cannot show the
@@ -381,16 +478,31 @@ export function RichTextEditor({
             <input
               ref={linkInputRef}
               id={`${id}-link`}
-              value={linkValue}
-              placeholder="/admissions or https://example.edu"
+              value={linkIsRef ? '' : linkValue}
+              placeholder={
+                linkIsRef ? 'Linked to a page in this site' : '/admissions or https://example.edu'
+              }
               aria-describedby={`${id}-link-hint`}
-              onChange={(e) => setLinkValue(e.target.value)}
+              onChange={(e) => {
+                setLinkIsRef(false);
+                setLinkValue(e.target.value);
+              }}
               className="mt-1 w-full rounded-md border border-border-strong bg-surface px-2.5 py-1.5 text-sm"
             />
             <p id={`${id}-link-hint`} className="mt-1 text-xs text-content-subtle">
-              A path on this site, or a full address. Leave blank to remove the link.
+              {linkIsRef
+                ? 'This link points at a page by reference, so it follows if the page moves. Type an address to replace it.'
+                : 'A path on this site, or a full address. Leave blank to remove the link.'}
             </p>
           </div>
+
+          <LinkTargetSearch
+            id={`${id}-link-search`}
+            onPick={(target: LinkTarget) => {
+              setLinkTargetTitle(target.title);
+              applyTarget(`taproot:item:${target.id}`);
+            }}
+          />
           <button
             type="submit"
             className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-content"

@@ -13,6 +13,11 @@ import { getContentType } from './types.js';
 import { getItemByPath, getRedirect, visibleToPublic, type ContentItem } from './items.js';
 import { resolveMenu, type ResolvedMenuItem } from './menus.js';
 import { ancestorPaths, normalizePath } from './paths.js';
+import {
+  collectRichTextRefs,
+  resolveRichTextRefs,
+  type RichTextTargets,
+} from './richTextRefs.js';
 import { resolveItemBlocks } from './reusableBlocks.js';
 import { resolveSeo } from './seo.js';
 
@@ -218,11 +223,27 @@ export async function buildItemPayload(
   const seo = resolveSeo(item, contentType);
   if (seo.ogImageId) collected.mediaIds.add(seo.ogImageId);
 
-  const [media, references, terms] = await Promise.all([
+  const [media, references, terms, linkTargets] = await Promise.all([
     loadMedia(db, [...collected.mediaIds], options),
     loadItemRefs(db, [...collected.itemIds]),
     loadTermRefs(db, [...collected.termIds]),
+    loadLinkTargets(db, [...collected.itemIds], options),
   ]);
+
+  /**
+   * Internal links, resolved to the paths they currently point at.
+   *
+   * Done here rather than left to the consumer because of the failure mode: a marker left in the
+   * markup ships `taproot:item:…` to a visitor the moment a site forgets to call a helper. See
+   * `richTextRefs.ts` for why that outweighs the usual "references are lookup maps" rule.
+   *
+   * The ids are still in `references` and `media` for anyone who wants them, and a target this
+   * cannot resolve leaves its text behind without a link.
+   */
+  const resolvedData = resolveRichTextData(contentType.fields, data, {
+    items: linkTargets,
+    media: new Map(Object.entries(media).map(([id, asset]) => [id, asset.url])),
+  });
 
   return {
     kind: 'item',
@@ -241,7 +262,7 @@ export async function buildItemPayload(
         kind: contentType.kind,
       },
       fields: contentType.fields.map(toDeliveryField),
-      data,
+      data: resolvedData,
       seo: {
         title: seo.title,
         description: seo.description ?? null,
@@ -462,6 +483,21 @@ export function collectReferences(
       case 'repeater':
         for (const row of ids) collectFromRepeater(field, row, into);
         break;
+      /**
+       * Rich text can carry internal links, so it holds references like any other field.
+       *
+       * It reached `default` before, which was right when the only thing in a rich-text value was
+       * prose. A `taproot:item:` href is a reference the payload has to resolve, and one this walk
+       * cannot find by looking for id-shaped strings — the id is inside an attribute inside markup.
+       */
+      case 'richtext':
+        for (const value of ids) {
+          if (typeof value !== 'string') continue;
+          const refs = collectRichTextRefs(value);
+          for (const id of refs.itemIds) into.itemIds.add(id);
+          for (const id of refs.mediaIds) into.mediaIds.add(id);
+        }
+        break;
       default:
         break;
     }
@@ -512,7 +548,19 @@ function collectLoose(value: unknown, into: CollectedReferences): void {
       into.mediaIds.add(value);
       into.itemIds.add(value);
       into.termIds.add(value);
+      return;
     }
+
+    /**
+     * A block's rich-text values arrive here as prose, and their links have to be found too.
+     *
+     * The id test above is anchored, deliberately — it is what stops a paragraph being offered as a
+     * lookup key — so an id inside an `href` inside markup can never match it. This is the parsed
+     * answer to the same question, and it runs only for strings that mention the scheme at all.
+     */
+    const refs = collectRichTextRefs(value);
+    for (const id of refs.itemIds) into.itemIds.add(id);
+    for (const id of refs.mediaIds) into.mediaIds.add(id);
     return;
   }
 
@@ -578,6 +626,74 @@ function toDeliveryMedia(row: MediaRow, options: DeliveryOptions): DeliveryMedia
           }
         : null,
   };
+}
+
+/**
+ * Where each linked item currently lives, for rewriting rich-text hrefs.
+ *
+ * Separate from `loadItemRefs`, which always filters by visibility because a "related programmes"
+ * list must never name a draft. A link is different in preview: an editor assembling a new section
+ * links between drafts, and unwrapping every one of those would make the preview a worse picture of
+ * the page than the editor already had. So this follows `includeUnpublished` — outside a preview it
+ * filters exactly as relations do, and an unpublished target unwraps rather than sending a reader to
+ * a page that is not there.
+ */
+async function loadLinkTargets(
+  db: Kysely<Database>,
+  ids: string[],
+  options: DeliveryOptions,
+): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+
+  let query = db.selectFrom('content_items').select(['id', 'path']).where('id', 'in', ids);
+  if (!options.includeUnpublished) query = query.where(visibleToPublic);
+
+  return new Map((await query.execute()).map((row) => [row.id, row.path]));
+}
+
+/**
+ * Apply link resolution to every rich-text value, wherever it sits.
+ *
+ * Mirrors `collectReferences`' walk rather than inventing a second one: a value the collector reaches
+ * and this does not is a link that was looked up and then never rewritten, which is the shape of bug
+ * that only shows up on the one page nobody reopened.
+ */
+function resolveRichTextData(
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  targets: RichTextTargets,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...data };
+
+  for (const field of fields) {
+    const value = out[field.api_id];
+    if (value === undefined || value === null) continue;
+
+    if (field.type === 'richtext') {
+      out[field.api_id] =
+        typeof value === 'string' ? resolveRichTextRefs(value, targets) : value;
+      continue;
+    }
+
+    // Blocks and repeaters hold their own values, and a block's field definitions are not in scope
+    // here — so this walks structurally, exactly as `collectLoose` does on the way in.
+    if (field.type === 'block' || field.type === 'repeater') {
+      out[field.api_id] = resolveLoose(value, targets);
+    }
+  }
+
+  return out;
+}
+
+function resolveLoose(value: unknown, targets: RichTextTargets): unknown {
+  if (typeof value === 'string') return resolveRichTextRefs(value, targets);
+  if (Array.isArray(value)) return value.map((entry) => resolveLoose(entry, targets));
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, resolveLoose(entry, targets)]),
+    );
+  }
+  return value;
 }
 
 async function loadItemRefs(
