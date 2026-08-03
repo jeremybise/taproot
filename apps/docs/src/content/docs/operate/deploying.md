@@ -39,9 +39,24 @@ The site is useless without it, and you will need a key from it.
 1. **Create the D1 database** and put its binding in `apps/studio/wrangler.jsonc`.
 2. **Create the R2 bucket** and bind it likewise.
 3. **Run migrations against D1** — `npm run db:migrate:remote`, which needs
-   `TAPROOT_CF_ACCOUNT_ID`, `TAPROOT_CF_D1_ID`, and `TAPROOT_CF_API_TOKEN`.
+   `TAPROOT_CF_ACCOUNT_ID`, `TAPROOT_CF_D1_ID`, and `TAPROOT_CF_API_TOKEN` in a local `.env` file.
 4. **Set secrets** with `wrangler secret put`. Never in `wrangler.jsonc`, which is committed.
 5. **Deploy** — `npm run deploy`.
+
+:::caution[Step 3 is a local `.env`. Step 4 is `wrangler secret put`. They are not the same thing.]
+The two steps sit next to each other and use different mechanisms, which is the most common way to
+get stuck here.
+
+Migrations run **on your machine** and talk to Cloudflare's REST API, so `TAPROOT_CF_ACCOUNT_ID`,
+`TAPROOT_CF_D1_ID`, and `TAPROOT_CF_API_TOKEN` go in `.env` — the project root, in a project made by
+`npm create taproot`. Nothing in the deployed Worker ever reads them, so setting them with
+`wrangler secret put` does nothing for the migration; the token especially is worth keeping out of
+the runtime, since it can rewrite the database and the Worker never needs it.
+
+The token has to be a **custom** token carrying `Account` · `D1` · `Edit`. Read is not enough — the
+endpoint that applies migrations is a query endpoint that writes. `DEPLOYMENT.md` has the click
+path, and what a 400 "not authorized" actually means when you hit it.
+:::
 
 ### First sign-in
 

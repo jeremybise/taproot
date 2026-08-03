@@ -97,6 +97,21 @@ do, so a missing button is a permission, not a broken screen.
 Stop the CMS dev server first — `astro dev stop --root apps/studio`. It holds the SQLite file open.
 The site's server does not touch the database and can stay up.
 
+## Remote migration fails with 400 "not authorized"
+
+Almost always the **account**, not the token. Cloudflare answers that way when the token is valid
+but has no D1 access for the account id you gave it — so check `TAPROOT_CF_ACCOUNT_ID` first, then
+that the token's **Account Resources** include that same account. If both are right, the permission
+is `D1 · Read` where it needs `D1 · Edit`: migrations write, so Read authenticates and then fails.
+
+Listing what the token can actually see settles it in one request —
+`GET /accounts/{account_id}/d1/database` returns every D1 database it can reach, with the uuid that
+belongs in `TAPROOT_CF_D1_ID`.
+
+Also check *where* you put the three values: they go in a local `.env`, not `wrangler secret put`.
+Migrations run on your machine, and the deployed Worker never reads `TAPROOT_CF_*`. See
+[Settings and environment](/operate/configuration/).
+
 ## "The site shows an error but the admin works"
 
 The site could not reach the CMS, or its key was refused. Check that the CMS is running, that

@@ -90,14 +90,35 @@ Migrations are Kysely migrations in `packages/core/src/db/migrations/`, register
 map in `migrations/index.ts`. The same migrations run locally and remotely — there is no parallel
 set of `.sql` files to drift out of sync.
 
-Remote migration goes over Cloudflare's D1 REST API, which needs three values in
-`apps/studio/.env`:
+Remote migration runs **on your machine**, not in the Worker: `npm run db:migrate:remote` is a Node
+script that talks to Cloudflare's D1 REST API directly. Its three values therefore go in a local
+`.env` file — `apps/studio/.env` in this repository, or the **project root** in a project scaffolded
+by `npm create taproot`, since that is where `scripts/_env.ts` reads from.
+
+> **These are not `wrangler secret put` values**, and mistaking them for such is the easiest thing
+> on this page to get wrong — step 4 below does use that command, immediately after this step does
+> not. `wrangler secret put` sets runtime secrets for the deployed Worker, and nothing in the Worker
+> ever reads `TAPROOT_CF_*`; the migration has finished before the Worker exists. As secrets the two
+> ids are simply inert, and the token is worth actively keeping out — it can rewrite the database and
+> has no reason to be in the runtime.
 
 | Variable | Where to find it |
 |---|---|
-| `TAPROOT_CF_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → Account details |
-| `TAPROOT_CF_D1_ID` | The `database_id` from step 1 |
-| `TAPROOT_CF_API_TOKEN` | My Profile → API Tokens → Create Token, with the **D1 Edit** permission |
+| `TAPROOT_CF_ACCOUNT_ID` | Workers & Pages → Account details, or the hex string in your dashboard URL |
+| `TAPROOT_CF_D1_ID` | The `database_id` from step 1 — the same value you pasted into `wrangler.jsonc` |
+| `TAPROOT_CF_API_TOKEN` | Created by hand; see below |
+
+**Creating the API token.** The ready-made templates do not dependably carry D1, so make a custom
+one:
+
+1. **dash.cloudflare.com/profile/api-tokens** → **Create Token**
+2. Scroll past the templates to **Create Custom Token** → *Get started*
+3. Permissions: **Account** · **D1** · **Edit**
+4. Account Resources: **Include** → the account holding your D1 database
+5. **Create Token**, then copy it — Cloudflare shows it once
+
+**Edit, not Read.** The endpoint Taproot calls is a query endpoint that writes, so a Read token
+authenticates successfully and then fails on the first migration.
 
 Then:
 
@@ -107,6 +128,12 @@ npm run db:migrate:remote
 
 It prints each migration as it applies, and is safe to re-run — already-applied migrations are
 skipped.
+
+**A 400 reading "not authorized" is usually about the account, not the token.** Cloudflare answers
+that way when the token is valid but has no D1 access *for that account id* — either
+`TAPROOT_CF_ACCOUNT_ID` is wrong, or the token's Account Resources point at a different account. If
+both ids are right, the permission is Read rather than Edit. Listing the databases the token can
+actually see (`GET /accounts/{id}/d1/database`) settles which it is in one request.
 
 > Keep `TAPROOT_CF_API_TOKEN` out of version control. `.env` is gitignored; in CI, set it as a
 > secret.

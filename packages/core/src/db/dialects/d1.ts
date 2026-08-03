@@ -5,13 +5,16 @@ import {
   type CompiledQuery,
   type DatabaseConnection,
   type DatabaseIntrospector,
+  type DatabaseMetadataOptions,
   type Dialect,
   type DialectAdapter,
   type Driver,
   type Kysely,
   type QueryCompiler,
   type QueryResult,
+  type TableMetadata,
 } from 'kysely';
+import { DEFAULT_MIGRATION_LOCK_TABLE, DEFAULT_MIGRATION_TABLE } from 'kysely/migration';
 
 import { toSqlParameters } from '../values.js';
 
@@ -71,7 +74,65 @@ export class D1Dialect implements Dialect {
   }
 
   createIntrospector(db: Kysely<unknown>): DatabaseIntrospector {
-    return new SqliteIntrospector(db);
+    return new D1Introspector(db);
+  }
+}
+
+/** The two columns of `sqlite_master` this introspector reads, typed locally so it need not cast. */
+interface SqliteMasterDb {
+  sqlite_master: { name: string; sql: string | null; type: string };
+}
+
+/**
+ * An introspector that never issues a PRAGMA.
+ *
+ * Kysely's `SqliteIntrospector` reads column metadata by selecting from `pragma_table_info(...)`,
+ * and D1's authorizer refuses anything touching PRAGMA with `not authorized: SQLITE_AUTH`
+ * (error 7500). That makes the stock introspector unusable here — and the damage is not confined
+ * to introspection, which nothing in Taproot asks for directly: Kysely's `Migrator` calls
+ * `getTables()` to decide whether its bookkeeping tables exist, *before* it creates them. So
+ * inheriting the stock introspector meant `db:migrate:remote` failed on the first statement it
+ * ever sent, with zero migrations applied and an error naming permissions rather than SQL.
+ *
+ * `sqlite_master` answers the question without a PRAGMA. **Columns are deliberately empty**: D1
+ * exposes no way to read them, and the only caller is the migrator asking whether a table of a
+ * given name exists. Anything that genuinely needs column metadata must not be built on this —
+ * `d1.test.ts` pins the no-PRAGMA property rather than the emptiness, because the day D1 offers a
+ * readable catalogue this should start returning real columns.
+ */
+class D1Introspector extends SqliteIntrospector {
+  readonly #db: Kysely<SqliteMasterDb>;
+
+  constructor(db: Kysely<unknown>) {
+    super(db);
+    this.#db = db as Kysely<SqliteMasterDb>;
+  }
+
+  override async getTables(
+    options: DatabaseMetadataOptions = { withInternalKyselyTables: false },
+  ): Promise<TableMetadata[]> {
+    let query = this.#db
+      .selectFrom('sqlite_master')
+      .where('type', 'in', ['table', 'view'])
+      .where('name', 'not like', 'sqlite_%')
+      .select(['name', 'type'])
+      .$narrowType<{ name: string; type: string }>();
+
+    if (!options.withInternalKyselyTables) {
+      query = query
+        .where('name', '!=', DEFAULT_MIGRATION_TABLE)
+        .where('name', '!=', DEFAULT_MIGRATION_LOCK_TABLE);
+    }
+
+    const rows = await query.orderBy('name').execute();
+
+    return rows.map((row) => ({
+      name: row.name,
+      isView: row.type === 'view',
+      // SQLite has no foreign tables; the field exists for Postgres.
+      isForeign: false,
+      columns: [],
+    }));
   }
 }
 

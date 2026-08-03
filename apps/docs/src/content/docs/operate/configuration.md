@@ -102,11 +102,20 @@ the network and there is nothing to authenticate. See [The scheduler](/operate/s
 
 ## Remote D1 migrations
 
-Only for `npm run db:migrate:remote`:
+| | |
+|---|---|
+| `TAPROOT_CF_ACCOUNT_ID` | Workers & Pages → Account details, or the hex string in your dashboard URL |
+| `TAPROOT_CF_D1_ID` | The `database_id` already in `wrangler.jsonc` |
+| `TAPROOT_CF_API_TOKEN` | A **custom** token carrying `Account` · `D1` · `Edit` |
 
-`TAPROOT_CF_ACCOUNT_ID`, `TAPROOT_CF_D1_ID`, `TAPROOT_CF_API_TOKEN`.
+**These three are the exception to the rule at the top of this page.** Everything else here is read
+by the running CMS, so in production it comes from your platform's secrets. These are read only by
+`npm run db:migrate:remote`, a Node script on your own machine — so they live in a local `.env` in
+every environment, including production, and `wrangler secret put` is the wrong home for them. The
+deployed Worker never reads `TAPROOT_CF_*` at all.
 
-Keep the API token out of version control.
+Keep the API token out of version control, and out of the Worker: it can rewrite the database, and
+nothing in the runtime has any use for it.
 
 ---
 

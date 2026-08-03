@@ -398,7 +398,13 @@ function envExample() {
 # TAPROOT_MEDIA_URL=https://media.example.edu
 
 # --- Deploying to Cloudflare D1 ---------------------------------------------------
-# Only needed for \`npm run db:migrate:remote\`.
+# Only needed for \`npm run db:migrate:remote\`, which runs on THIS machine and talks to
+# Cloudflare's REST API. So these belong in this file even when deploying to production —
+# they are not \`wrangler secret put\` values, and the deployed Worker never reads them.
+#
+# TAPROOT_CF_D1_ID is the database_id you already put in wrangler.jsonc. The token is a
+# custom token carrying Account > D1 > Edit; Read is not enough, because the endpoint that
+# applies migrations is a query endpoint that writes.
 # TAPROOT_CF_ACCOUNT_ID=
 # TAPROOT_CF_D1_ID=
 # TAPROOT_CF_API_TOKEN=
