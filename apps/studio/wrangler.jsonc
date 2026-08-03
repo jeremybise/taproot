@@ -43,6 +43,23 @@
     }
   ],
 
+  // --- KV -------------------------------------------------------------------
+  // Taproot does not use Astro's session API — its own sign-in sessions are rows in the database.
+  // @astrojs/cloudflare injects a `SESSION` KV binding regardless, and injects it with **no id**,
+  // which makes `wrangler deploy` silently create a namespace as a side effect. That is worth
+  // declaring rather than inheriting: an auto-provisioned namespace is a resource nobody chose, and
+  // a deploy that fails *after* provisioning cannot be retried — the second run asks for the same
+  // title and Cloudflare refuses it (`a namespace with this account ID and title already exists`,
+  // error 10014), which reads as a bug in Taproot rather than a half-finished first attempt.
+  //
+  // Create one with `wrangler kv namespace create taproot-session` and paste the id here.
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+    }
+  ],
+
   // --- R2 -------------------------------------------------------------------
   // The binding name `MEDIA` is what storageFromEnv looks for.
   "r2_buckets": [

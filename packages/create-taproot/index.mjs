@@ -345,6 +345,21 @@ function wranglerConfig(name) {
     }
   ],
 
+  // --- KV -------------------------------------------------------------------
+  // Taproot does not use Astro's session API — sign-in sessions are rows in the database.
+  // @astrojs/cloudflare injects a \`SESSION\` KV binding anyway, and injects it with no id, which
+  // makes \`wrangler deploy\` create a namespace as a side effect. Declaring it keeps that visible,
+  // and keeps a failed deploy retryable: a deploy that dies after auto-provisioning cannot be run
+  // again, because the second attempt asks for a title that now exists (error 10014).
+  //
+  // Run \`npx wrangler kv namespace create ${name}-session\` and paste the id it prints.
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+    }
+  ],
+
   // --- R2 -------------------------------------------------------------------
   // Run \`npx wrangler r2 bucket create ${name}-media\`.
   // The binding name \`MEDIA\` is what storageFromEnv looks for.

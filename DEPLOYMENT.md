@@ -84,6 +84,26 @@ fallback entirely.
 
 ---
 
+## 2b. Create the KV namespace
+
+```bash
+npx wrangler kv namespace create taproot-session
+```
+
+Paste the id it prints into `wrangler.jsonc` under `kv_namespaces`, replacing
+`REPLACE_WITH_YOUR_KV_NAMESPACE_ID`.
+
+**Taproot does not use this**, which is worth saying plainly: sign-in sessions are rows in the
+database, not Astro sessions. `@astrojs/cloudflare` injects a `SESSION` KV binding regardless, and
+injects it with **no id** — so if you skip this step `wrangler deploy` quietly creates a namespace
+for you. That is not a disaster, but it is a resource you did not choose, and it makes a failed
+deploy unretryable: the first run provisions the namespace, and if anything later in the same run
+fails, the second run asks for a title that now exists and Cloudflare refuses it with `a namespace
+with this account ID and title already exists` (error 10014) — which reads like a Taproot bug rather
+than a half-finished first attempt. Declaring the id up front avoids the whole sequence.
+
+---
+
 ## 3. Run migrations against D1
 
 Migrations are Kysely migrations in `packages/core/src/db/migrations/`, registered in the static

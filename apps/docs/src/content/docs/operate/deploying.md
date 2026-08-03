@@ -32,12 +32,16 @@ The site is useless without it, and you will need a key from it.
 - A Cloudflare account
 - A **D1 database** for content
 - An **R2 bucket** for uploads
+- A **KV namespace** — which Taproot itself never reads; see below
 - `wrangler` — already a dev dependency
 
 ### The order
 
 1. **Create the D1 database** and put its binding in `apps/studio/wrangler.jsonc`.
 2. **Create the R2 bucket** and bind it likewise.
+2b. **Create the KV namespace** and paste its id in. Taproot stores sign-in sessions in the
+   database, not in KV, but `@astrojs/cloudflare` requires a `SESSION` binding and will create the
+   namespace silently if you leave the id out — which makes a failed deploy impossible to retry.
 3. **Run migrations against D1** — `npm run db:migrate:remote`, which needs
    `TAPROOT_CF_ACCOUNT_ID`, `TAPROOT_CF_D1_ID`, and `TAPROOT_CF_API_TOKEN` in a local `.env` file.
 4. **Set secrets** with `wrangler secret put`. Never in `wrangler.jsonc`, which is committed.
