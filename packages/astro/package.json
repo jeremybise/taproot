@@ -1,6 +1,6 @@
 {
   "name": "@taprootcms/astro",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jeremybise/taproot.git",
@@ -35,7 +35,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@taprootcms/core": "^0.1.0"
+    "@taprootcms/core": "^0.1.1"
   },
   "peerDependencies": {
     "astro": "^7.0.0"

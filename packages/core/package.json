@@ -1,10 +1,10 @@
 {
   "name": "@taprootcms/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Framework-agnostic data layer, auth, and content services for Taproot",
   "license": "MIT",
   "type": "module",
-  "//version": "0.1.0 rather than 1.0.0 because the delivery contract is young and 0.x says so honestly — a consumer reading semver knows a minor bump may move things. The three packages share one version and are released together: @taprootcms/studio imports core's internals, so a mismatched pair is a broken install rather than a supported combination.",
+  "//version": "0.x rather than 1.0.0 because the delivery contract is young and 0.x says so honestly — a consumer reading semver knows a minor bump may move things. The three packages share one version and are released together: @taprootcms/studio imports core's internals, so a mismatched pair is a broken install rather than a supported combination.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jeremybise/taproot.git",
