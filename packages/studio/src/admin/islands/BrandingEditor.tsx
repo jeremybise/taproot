@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import {
+  ACCENT_PRESETS,
   ADMIN_PALETTE,
   DEFAULT_ACCENT,
   DEFAULT_TITLE,
@@ -8,6 +9,7 @@ import {
   deriveAccent,
   formatOklch,
   hexToOklch,
+  type AccentPreset,
   type ContrastCheck,
   type Oklch,
   type ThemeMode,
@@ -174,14 +176,24 @@ export default function BrandingEditor({
       {/* Accent ------------------------------------------------------------- */}
       <section aria-labelledby={`${id}-accent`} className="space-y-4">
         <h2 id={`${id}-accent`} className="text-base font-semibold">
-          Accent colour
+          Accent color
         </h2>
         <p className="max-w-prose text-sm text-content-muted">
-          One colour per palette, because a hue that reads well on white rarely reads well on the
+          One color per palette, because a hue that reads well on white rarely reads well on the
           dark surface. Hover, the label on a solid button, and the tint behind the current sidebar
           item are worked out from it — those are the parts with a right answer. Status badges keep
-          their own colours: they have to stay told apart from each other.
+          their own colors: they have to stay told apart from each other.
         </p>
+
+        <Presets
+          id={`${id}-presets`}
+          light={light}
+          dark={dark}
+          onPick={(preset) => {
+            setLight(preset.light);
+            setDark(preset.dark);
+          }}
+        />
 
         {/* A viewport breakpoint, not a container query: this form is the whole of `#main` on its
             own screen, so the column and the viewport are the same measurement here. */}
@@ -213,11 +225,86 @@ export default function BrandingEditor({
         </button>
         {!valid && (
           <p className="text-sm text-content-subtle">
-            Both accents need to be a hex colour before this can be saved.
+            Both accents need to be a hex color before this can be saved.
           </p>
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * Eight starting points, each of which passes every check in both palettes.
+ *
+ * A contrast table is the honest answer to "will this colour work?" and a poor way to *choose* one:
+ * it can only respond to a colour you already typed. These give somebody a place to start, and the
+ * measurements underneath stay in view for whatever they change it to.
+ *
+ * One press sets both palettes, because a preset is a pair — the two lightnesses that make one hue
+ * work on white and on the dark surface are not the same, which is the whole reason the accent is
+ * two settings rather than one.
+ *
+ * Buttons, not a radio group: this is an action that fills in two fields, not a fourth value the
+ * form holds. `aria-pressed` says which one the current colours came from, and the name is text
+ * rather than the swatch carrying the meaning alone.
+ */
+function Presets({
+  id,
+  light,
+  dark,
+  onPick,
+}: {
+  id: string;
+  light: string;
+  dark: string;
+  onPick: (preset: AccentPreset) => void;
+}) {
+  return (
+    <div>
+      <p id={id} className="text-xs font-medium">
+        Start from a preset
+      </p>
+      <ul aria-labelledby={id} className="mt-1.5 flex flex-wrap gap-2">
+        {ACCENT_PRESETS.map((preset) => {
+          const current =
+            light.toLowerCase() === preset.light && dark.toLowerCase() === preset.dark;
+          return (
+            <li key={preset.name}>
+              <button
+                type="button"
+                aria-pressed={current}
+                onClick={() => onPick(preset)}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm transition-colors ${
+                  current
+                    ? 'border-accent bg-accent-subtle font-medium'
+                    : 'border-border-strong hover:bg-surface-sunken'
+                }`}
+              >
+                {/*
+                  Both halves of the pair, so the swatch shows what is actually being chosen. Fixed
+                  colours rather than tokens: these are samples of a specific value, not something
+                  that should follow the theme.
+                */}
+                <span
+                  aria-hidden="true"
+                  className="h-4 w-4 shrink-0 overflow-hidden rounded-full border border-border"
+                  style={{
+                    background: `linear-gradient(135deg, ${preset.light} 0 50%, ${preset.dark} 50% 100%)`,
+                  }}
+                />
+                {preset.name}
+                {preset.light === DEFAULT_ACCENT.light && (
+                  /* The space is a real text node, not the flex gap. The gap separates these
+                     visually and contributes nothing to the accessible name, which was coming out
+                     as "Green(default)". */
+                  <span className="text-xs text-content-subtle">{' (default)'}</span>
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -251,7 +338,7 @@ function AccentField({
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label htmlFor={`${id}-picker`} className="block text-xs font-medium">
-            Colour
+            Color
           </label>
           <input
             id={`${id}-picker`}
@@ -294,7 +381,7 @@ function AccentField({
 
       {!parsed && (
         <p id={`${id}-hex-error`} className="mt-2 text-sm text-danger">
-          Use a hex colour such as #2f9e68.
+          Use a hex color such as #2f9e68.
         </p>
       )}
 
@@ -391,7 +478,7 @@ function ContrastReport({ checks }: { checks: ContrastCheck[] }) {
             hard to read and why.
           */}
           {failures.some((check) => check.derived)
-            ? 'Some of this is derived from your colour and should not be able to fail — worth reporting.'
+            ? 'Some of this is derived from your color and should not be able to fail — worth reporting.'
             : 'Nothing stops you saving this. A darker shade in light mode, or a lighter one in dark mode, is usually all it takes.'}
         </p>
       )}

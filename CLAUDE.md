@@ -66,7 +66,7 @@ declares it.
 | `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 1168 tests |
+| `npm test` | Vitest, 1172 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core + inert-label + reflow-hazard checks over every admin route, then the numeric contrast check. Needs `npm run dev` running |
@@ -830,6 +830,17 @@ measured against. Change the CSS and change both. Four things follow:
   so `DEFAULT_ACCENT`'s hex is the nearest displayable colour rather than the same one; storing it
   would round-trip the stylesheet's own value through a hex for no reason. Null also makes "has
   anybody themed this?" a null check rather than a colour comparison.
+- **`ACCENT_PRESETS` were searched, not chosen, and the test is what keeps them true.** Each pair
+  passes every check in both palettes with at least the built-in green's own margin, asserted
+  against the same `accentContrast` the screen renders — so a change to the derivation cannot leave
+  a preset quietly failing while the UI still offers it. Validated on the *hex*, because a colour
+  that passes in OKLCh and clips out of sRGB on the way to one has not passed. The first entry is
+  `DEFAULT_ACCENT` exactly, or choosing "Green" would write a row and emit an override that changes
+  how the admin looks for somebody who picked the colour it already was.
+- **The branding screen is written in US spelling, and the code around it is not.** The admin's
+  visible strings there say "color"; the comments, this file, and every other screen still say
+  "colour". That is a deliberate split rather than drift — a sweep of the repo's prose is a separate
+  decision from what one screen calls a control.
 
 **Light, dark, and system are one `color-scheme` declaration, not a class.** Every colour token is
 a `light-dark()` pair in the single `@theme` block, so the entire switch is three rules in

@@ -35,6 +35,40 @@ export const DEFAULT_ACCENT: Record<ThemeMode, string> = {
   dark: '#3bb974',
 };
 
+/**
+ * A starting point per hue, each pair measured rather than chosen by eye.
+ *
+ * Presets exist because the honest answer to "will this colour work?" is a contrast table, and
+ * reading one before you have anything to compare it against is not how anybody picks a colour.
+ * These are somewhere to start from and then adjust.
+ *
+ * Every one of them **passes every check in both palettes**, with at least the margin the built-in
+ * green has — `branding.test.ts` asserts it against the same `accentContrast` the settings screen
+ * renders, so a change to the derivation cannot quietly leave a preset failing. They were found by
+ * searching lightness and chroma per hue rather than picked, and validated on the *hex*: a colour
+ * that passes in OKLCh and clips out of sRGB on the way to a hex has not passed.
+ *
+ * A pair, not a hue, because light and dark need genuinely different lightnesses — the same reason
+ * the accent is two settings rather than one.
+ */
+export interface AccentPreset {
+  name: string;
+  light: string;
+  dark: string;
+}
+
+export const ACCENT_PRESETS: readonly AccentPreset[] = [
+  // First, and exactly `DEFAULT_ACCENT`, so choosing it is the same as choosing nothing.
+  { name: 'Green', light: DEFAULT_ACCENT.light, dark: DEFAULT_ACCENT.dark },
+  { name: 'Teal', light: '#007a80', dark: '#00babe' },
+  { name: 'Blue', light: '#006ed5', dark: '#009fff' },
+  { name: 'Indigo', light: '#5e56de', dark: '#8483ff' },
+  { name: 'Violet', light: '#8b44c9', dark: '#b671f9' },
+  { name: 'Pink', light: '#bc267f', dark: '#ed58a9' },
+  { name: 'Red', light: '#c9222b', dark: '#fc5855' },
+  { name: 'Amber', light: '#b34e00', dark: '#e37a00' },
+];
+
 /** The single row, as stored. Null everywhere means nothing has ever been configured. */
 export interface BrandingSettings {
   title: string | null;
@@ -173,7 +207,7 @@ function normaliseAccent(value: string | null | undefined, mode: ThemeMode): str
   const parsed = hexToOklch(trimmed);
   if (!parsed) {
     throw new BrandingError(
-      `The ${mode} accent must be a hex colour such as #2f9e68. Received: ${trimmed}`,
+      `The ${mode} accent must be a hex color such as #2f9e68. Received: ${trimmed}`,
     );
   }
 

@@ -18,7 +18,7 @@ export const GET = handle(
  */
 const hex = z
   .string()
-  .regex(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Use a hex colour such as #2f9e68.')
+  .regex(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Use a hex color such as #2f9e68.')
   .nullish();
 
 const putSchema = z.strictObject({

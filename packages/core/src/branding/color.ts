@@ -229,7 +229,7 @@ export function accentContrast(accent: Oklch, mode: ThemeMode): ContrastCheck[] 
     },
     {
       label: 'Accent as text',
-      where: 'Links inside the rich-text editor, drawn in the accent colour.',
+      where: 'Links inside the rich-text editor, drawn in the accent color.',
       ratio: contrastRatio(tokens.accent, palette.surface),
       threshold: 4.5,
       passes: false,

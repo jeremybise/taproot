@@ -5,6 +5,7 @@ import { migrateToLatest } from '../db/migrations/index.js';
 import { createUser } from '../auth/users.js';
 import type { User } from '../db/schema.js';
 import {
+  ACCENT_PRESETS,
   BrandingError,
   DEFAULT_ACCENT,
   DEFAULT_TITLE,
@@ -156,6 +157,69 @@ describe('the derived tokens are readable for any colour', () => {
 
     expect(asText.passes).toBe(false);
     expect(asText.derived).toBe(false);
+  });
+});
+
+describe('the presets', () => {
+  /**
+   * "Presets that pass" is a claim the screen makes on their behalf, so it is asserted rather than
+   * checked once by hand at the time they were chosen. The bar is the built-in green's own worst
+   * margin: nothing offered beside it should be tighter than it is.
+   */
+  const worstMargin = (hex: string, mode: 'light' | 'dark') =>
+    Math.min(...accentContrast(hexToOklch(hex)!, mode).map((check) => check.ratio / check.threshold));
+
+  it('all pass every check in both palettes', () => {
+    const failures: string[] = [];
+
+    for (const preset of ACCENT_PRESETS) {
+      for (const [mode, hex] of [
+        ['light', preset.light],
+        ['dark', preset.dark],
+      ] as const) {
+        // The stored value is the hex, so that is what is measured — a colour that passes in OKLCh
+        // and clips out of sRGB on the way to a hex has not passed.
+        for (const check of accentContrast(hexToOklch(hex)!, mode)) {
+          if (!check.passes) {
+            failures.push(`${preset.name} ${mode} — ${check.label} at ${check.ratio.toFixed(2)}:1`);
+          }
+        }
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it('are no tighter than the built-in green', () => {
+    const bar = Math.min(
+      worstMargin(DEFAULT_ACCENT.light, 'light'),
+      worstMargin(DEFAULT_ACCENT.dark, 'dark'),
+    );
+
+    for (const preset of ACCENT_PRESETS) {
+      expect(worstMargin(preset.light, 'light')).toBeGreaterThanOrEqual(bar - 1e-9);
+      expect(worstMargin(preset.dark, 'dark')).toBeGreaterThanOrEqual(bar - 1e-9);
+    }
+  });
+
+  it('leads with the default, so picking it is the same as picking nothing', () => {
+    // The screen stores the default as null. A first preset that was merely close would write a
+    // row, emit an override, and change how the admin looks for somebody who chose "Green".
+    expect(ACCENT_PRESETS[0]).toEqual({
+      name: 'Green',
+      light: DEFAULT_ACCENT.light,
+      dark: DEFAULT_ACCENT.dark,
+    });
+  });
+
+  it('are stored in the spelling the comparison expects', () => {
+    // `usesDefaultAccent` and the screen's "which preset is current?" are both string comparisons
+    // against a lowercase six-digit hex.
+    for (const preset of ACCENT_PRESETS) {
+      for (const hex of [preset.light, preset.dark]) {
+        expect(hex).toMatch(/^#[0-9a-f]{6}$/);
+      }
+    }
   });
 });
 
