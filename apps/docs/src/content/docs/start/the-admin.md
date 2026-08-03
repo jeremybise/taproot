@@ -37,6 +37,10 @@ keys, the audit log, and system information.
 
 ## Things that are the same on every screen
 
+**The action bar** runs across the top and stays there as you scroll, so Save is never somewhere you
+have to go and find. What sits in it depends on the screen — in a content item's editor it carries
+Save, the live preview, the revision history, and what links here.
+
 **Status badges** always carry their label as text, not just a colour, and a given colour means the
 same thing everywhere. Learning them once is enough.
 
@@ -45,11 +49,30 @@ year for anything older. Hover for the exact moment.
 
 **Breadcrumbs** at the top of a screen are links. They are the fastest way back up.
 
-**Delete lives at the bottom of an editor**, under its own heading, and asks you to type something
-to confirm. If a delete would break something, Taproot lists what to clear first instead of offering
-the button.
+**Delete is the bin icon** in the action bar, set apart from the icons beside it, and asks you to
+type something to confirm. It is kept slightly out of the way on purpose. If a delete would break
+something, Taproot lists what to clear first instead of offering the button.
 
-## Light and dark
+## Panels that slide in
 
-At the bottom of the sidebar. **System** follows your computer's setting and is the default; Light
-and Dark override it. The choice is remembered per browser.
+The revision history, what links here, and delete each open a panel over the screen rather than
+sitting further down the page. Escape closes one, and so does clicking outside it. You come back to
+exactly where you were, with anything unsaved still unsaved.
+
+## Your name, at the bottom of the sidebar
+
+Click it and a menu opens upward with everything that belongs to you:
+
+- **Account settings** — your password, and [two-factor](/admin/two-factor/).
+- **Light and dark.** **System** follows your computer's setting and is the default; Light and Dark
+  override it. The choice is remembered per browser.
+- **Sign out.**
+
+## On a phone or a narrow window
+
+The sidebar slides away and a **menu button** appears at the top left. Everything is in the same
+order behind it. Escape closes it, and so does choosing something or tapping the page behind.
+
+The admin works at any width down to a small phone. The one screen that changes shape is a content
+item's editor, where there is no room for the fields and the preview at once — see
+[Previewing](/content/items/#previewing).

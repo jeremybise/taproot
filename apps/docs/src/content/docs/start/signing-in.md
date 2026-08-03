@@ -54,7 +54,7 @@ clears on its own after a short wait. Waiting is faster than anything else you c
 
 ## Changing your own password
 
-Go to your name at the bottom of the sidebar, then **Account**.
+Click your name at the bottom of the sidebar, then **Account settings**.
 
 You will be asked for your **current** password as well as the new one. That is what stops somebody
 who finds your laptop unlocked from locking you out of your own account.

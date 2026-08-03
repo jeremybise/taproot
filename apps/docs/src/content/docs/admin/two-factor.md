@@ -6,7 +6,7 @@ description: Turning it on for your own account, recovery codes, and what to do 
 Two-factor authentication asks for a six-digit code from your phone as well as your password. It is
 per-account and you turn it on for yourself.
 
-**Your name in the sidebar → Account.**
+**Your name at the bottom of the sidebar → Account settings.**
 
 ## Turning it on
 

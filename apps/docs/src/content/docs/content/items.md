@@ -85,29 +85,20 @@ Singletons have no preview, because they have no address of their own.
 
 ## Linking to another page
 
-In a rich text field, press the **link** button and search for a page by title under *Or link to a
-page*. Choosing one stores a reference to that page rather than its address — so if somebody later
-renames it or moves it under a different parent, your link follows it. Nobody has to remember which
-pages linked where.
+In a rich text field, select the words you want to link and press the **chain** button, or
+`Ctrl/Cmd + K`. One dialog covers all three kinds of link: **a page** on this site, **a file** from
+the media library, or **a web address** for anything outside it. Full detail, including the options
+and how to change a link that is already there, is under [Rich text](/content/rich-text/#links).
 
-The address box is still there for anything else: a path on this site, an external address, an email
-link.
+The part worth knowing here is what gets stored. Choosing a page stores a reference to *that page*,
+not its address — so if somebody later renames it or moves it under a different parent, your link
+follows it, and nobody has to remember which pages linked where. Files work the same way: replace
+the prospectus and every link to it points at the new one.
 
 **A link to a page that is unpublished or deleted quietly becomes plain text.** The words stay, the
 link goes. That is deliberate: sending a reader to a page that is not there is worse than not
 offering the link. You still see the link while previewing, so you can build a section of drafts that
 link to each other and check it before any of it is live.
-
-The **paperclip** button links to a file in the media library the same way, so replacing the file
-does not break the link.
-
-Two checkboxes sit beside the address, and they apply however you chose the link:
-
-- **Open in a new tab.** Off by default — a link from one page of your site to another should not
-  open a tab, and that is most links. Taproot adds the `noopener noreferrer` protection to any
-  new-tab link automatically; there is no way to turn that off, and no reason to want to.
-- **Tell search engines not to follow.** Adds `rel="nofollow"`. Worth ticking on links you are
-  obliged to include but do not want to vouch for.
 
 Images are not inserted into rich text — use an image block, which keeps the focal point and the
 crop. See [Blocks](/content/blocks/).

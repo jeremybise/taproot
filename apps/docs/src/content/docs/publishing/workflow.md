@@ -21,6 +21,12 @@ schedule" — rather than a list of statuses.
 That is because "submit for review" is an act with a name, and "set the status to In review" is how
 that act used to be spelled. Nobody could find it.
 
+**The likely next step is a button; the rest are under "More…".** A draft's obvious move is to
+submit it, so that one is offered directly and archiving is a click further away. A published page
+is the exception and promotes nothing — everything you can do to a live page is unusual, and the
+usual reason to open one is to change the words and save. Its statuses are all under "Change
+status…".
+
 Pressing one stages the change. **Nothing moves until you save**, and the button says so.
 
 ## Which moves exist
