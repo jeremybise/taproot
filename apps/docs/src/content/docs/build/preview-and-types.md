@@ -119,7 +119,10 @@ Astro.response.headers.set(
 );
 ```
 
-If your site already sends a CSP, **add the directive to it** rather than replacing the header.
+If your site already sends a CSP, **add the directive to it** rather than replacing the header. Read
+the CMS's origin however your host supplies it — the same choice as
+[the connection module](/build/getting-started/#one-module-for-the-connection), and on Cloudflare an
+undefined value here throws inside `new URL` rather than quietly sending a weaker header.
 
 `frame-ancestors` rather than `X-Frame-Options`, which has no origin-list form at all — `ALLOW-FROM`
 was never implemented in Chrome and is gone from the rest.

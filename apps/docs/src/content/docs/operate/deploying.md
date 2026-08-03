@@ -113,7 +113,15 @@ them, which is a clearer failure than a redirect to a 404 on the wrong origin.
 ### Deploy it
 
 `npm run build --workspace=@taprootcms/web` produces an ordinary Astro server build. Node, Workers,
-a container — wherever you already deploy Astro.
+a container — wherever you already deploy Astro. The reference site ships with `@astrojs/node`
+because something had to be in the file; swapping in `@astrojs/cloudflare`, `@astrojs/vercel`, or
+any other adapter is a one-line change and Taproot has no stake in which.
+
+The one part that is not a one-line change is **how the two variables above reach the client**,
+because `import.meta.env` is a build-time substitution and a Cloudflare secret does not exist at
+build time. See [Getting started](/build/getting-started/#one-module-for-the-connection) — this
+misconfiguration presents as a 401 from the delivery API with the key visibly set, which is a bad
+half hour if you have not seen it before.
 
 ## Media URLs
 

@@ -24,10 +24,11 @@ cd my-site
 npm install @taprootcms/astro
 ```
 
-Astro must render on the server, because content is resolved per request:
+Astro must render on the server, because content is resolved per request. The **adapter** is the one
+line here that depends on where the site will live:
 
 ```js
-// astro.config.mjs
+// astro.config.mjs — Node, and anything that runs it
 import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 
@@ -36,6 +37,22 @@ export default defineConfig({
   adapter: node({ mode: 'standalone' }),
 });
 ```
+
+```js
+// astro.config.mjs — Cloudflare Workers
+import { defineConfig } from 'astro/config';
+import cloudflare from '@astrojs/cloudflare';
+
+export default defineConfig({
+  output: 'server',
+  adapter: cloudflare(),
+});
+```
+
+Vercel, Netlify, and Deno have adapters too, and Taproot has no preference among any of them: the
+site is an ordinary Astro app holding an API key, so it runs wherever Astro runs. Your host's
+deployment instructions are Astro's to give, not this handbook's — **except** for one thing
+downstream of this choice, which is how the two variables below reach the client.
 
 :::note
 A site that wants a **static** build can fetch at build time instead — the client is the same, since
@@ -46,7 +63,6 @@ Taproot is database-backed, so server output is the default worth starting from.
 ## Configure it
 
 ```
-# .env
 TAPROOT_API_URL=https://cms.example.edu
 TAPROOT_API_KEY=tpr_...
 ```
@@ -54,12 +70,17 @@ TAPROOT_API_KEY=tpr_...
 Two variables, and that is genuinely all of it. The site holds no database credentials because it
 has no database — which is also why a compromised site cannot edit anything.
 
+Where they go is the host's business: a `.env` file and whatever environment panel your platform
+offers, for most of them. On Cloudflare the URL belongs in `vars` in `wrangler.jsonc`, and the key
+belongs in `wrangler secret put TAPROOT_API_KEY` — with both in a git-ignored `.dev.vars` for local
+work.
+
 ## One module for the connection
 
 Put the client in one place rather than constructing it per route:
 
 ```ts
-// src/taproot.ts
+// src/taproot.ts — Node, and anything that runs it
 import { createTaprootClient } from '@taprootcms/astro';
 
 export const taproot = createTaprootClient({
@@ -67,6 +88,60 @@ export const taproot = createTaprootClient({
   apiKey: import.meta.env.TAPROOT_API_KEY,
 });
 ```
+
+```ts
+// src/taproot.ts — Cloudflare Workers
+import { env } from 'cloudflare:workers';
+import { createTaprootClient } from '@taprootcms/astro';
+
+export const taproot = createTaprootClient({
+  url: env.TAPROOT_API_URL,
+  apiKey: env.TAPROOT_API_KEY,
+});
+```
+
+Reading a binding is not I/O, so `cloudflare:workers` answers at module scope and the one-module
+pattern survives intact. Only the two lines that read the environment differ.
+
+:::caution[`import.meta.env` is a build-time read, and on Workers that is not a runtime one.]
+Astro replaces `import.meta.env.TAPROOT_API_KEY` with whatever the environment held when the site
+was **built**. The Node adapter then fills it from `process.env` at runtime, so the familiar pattern
+works there. Cloudflare has no `process.env` to fill it from, and a key set with `wrangler secret
+put` never existed at build time — so the client sends no `Authorization` header, the delivery API
+answers 401, and the site fails with *"The Taproot server refused the API key."*
+
+That message is true and unhelpful: `wrangler secret list` shows the key sitting right there, so the
+one thing you will not think to doubt is the line that reads it. And the other outcome is worse — a
+key that *was* in the build environment gets inlined into the deployed bundle, which puts a
+credential in a build artefact.
+:::
+
+:::note[One spelling for both]
+If you would rather not fork this file per host, [`astro:env`](https://docs.astro.build/en/guides/environment-variables/)
+is the portable route. Declare the schema once:
+
+```js
+// astro.config.mjs
+import { defineConfig, envField } from 'astro/config';
+
+export default defineConfig({
+  env: {
+    schema: {
+      TAPROOT_API_URL: envField.string({ context: 'server', access: 'public' }),
+      TAPROOT_API_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
+    },
+  },
+});
+```
+
+and read it the same way everywhere:
+
+```ts
+import { TAPROOT_API_URL, TAPROOT_API_KEY } from 'astro:env/server';
+```
+
+It costs a schema block and buys a missing variable being a named error instead of a 401.
+:::
 
 ## The smallest thing that works
 

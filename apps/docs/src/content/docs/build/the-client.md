@@ -13,6 +13,11 @@ const taproot = createTaprootClient({
 });
 ```
 
+`import.meta.env` is the Node spelling. How the key reaches this call depends on where the site is
+deployed — on Cloudflare it is `env` from `cloudflare:workers` — and
+[Getting started](/build/getting-started/#one-module-for-the-connection) has both, plus why the
+wrong one fails as a 401 rather than as a missing variable.
+
 Four methods.
 
 ## `resolve(path, options?)`
