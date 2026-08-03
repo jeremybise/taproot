@@ -70,10 +70,61 @@ TAPROOT_API_KEY=tpr_...
 Two variables, and that is genuinely all of it. The site holds no database credentials because it
 has no database — which is also why a compromised site cannot edit anything.
 
-Where they go is the host's business: a `.env` file and whatever environment panel your platform
-offers, for most of them. On Cloudflare the URL belongs in `vars` in `wrangler.jsonc`, and the key
-belongs in `wrangler secret put TAPROOT_API_KEY` — with both in a git-ignored `.dev.vars` for local
-work.
+Where they go is the host's business — a `.env` file and whatever environment panel your platform
+offers, for most of them.
+
+### On Cloudflare
+
+The URL is an ordinary variable and belongs in the committed config; the key is a secret and must
+not:
+
+```jsonc
+// wrangler.jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "my-site",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2025-05-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./dist", "binding": "ASSETS" },
+  "vars": { "TAPROOT_API_URL": "https://cms.example.edu" }
+}
+```
+
+```bash
+npx wrangler secret put TAPROOT_API_KEY
+```
+
+`main` points at the adapter's entrypoint, which is right for a site. (The CMS names a worker file of
+its own instead, but only because it needs a `scheduled` export for the publishing sweep — your site
+has no scheduler.)
+
+Then a git-ignored `.dev.vars` for local work, holding both:
+
+```
+TAPROOT_API_URL=http://localhost:4321
+TAPROOT_API_KEY=tpr_...
+```
+
+:::danger[`.dev.vars` is local-only and is never uploaded.]
+It is read by `astro dev` and `wrangler dev` and by nothing else. A variable that lives *only* there
+is `undefined` in the deployed Worker — the classic "worked perfectly locally, 500s the moment it
+ships". It surfaces from inside the client as
+
+```
+Error: createTaprootClient was given no `url`. This is usually an environment
+variable that is undefined at runtime rather than a missing argument…
+```
+
+and it fails at module scope, before a request is ever made, so *every* path 500s rather than one.
+Deployed values come from `vars` in `wrangler.jsonc` and from `wrangler secret put`. Keep `.dev.vars`
+as well — it is a second copy for local dev, not the source.
+
+On `@taprootcms/astro` **0.1.4 and earlier** the same mistake reads
+`TypeError: Cannot read properties of undefined (reading 'replace')` with a stack pointing into a
+bundled chunk, which names neither the variable nor the fact that it is configuration. Same cause,
+same fix.
+:::
 
 ## One module for the connection
 
@@ -83,8 +134,10 @@ Put the client in one place rather than constructing it per route:
 // src/taproot.ts — Node, and anything that runs it
 import { createTaprootClient } from '@taprootcms/astro';
 
+export const CMS_URL = import.meta.env.TAPROOT_API_URL;
+
 export const taproot = createTaprootClient({
-  url: import.meta.env.TAPROOT_API_URL,
+  url: CMS_URL,
   apiKey: import.meta.env.TAPROOT_API_KEY,
 });
 ```
@@ -94,14 +147,21 @@ export const taproot = createTaprootClient({
 import { env } from 'cloudflare:workers';
 import { createTaprootClient } from '@taprootcms/astro';
 
+export const CMS_URL = env.TAPROOT_API_URL;
+
 export const taproot = createTaprootClient({
-  url: env.TAPROOT_API_URL,
+  url: CMS_URL,
   apiKey: env.TAPROOT_API_KEY,
 });
 ```
 
 Reading a binding is not I/O, so `cloudflare:workers` answers at module scope and the one-module
 pattern survives intact. Only the two lines that read the environment differ.
+
+**Export the URL as well as the client.** One route later needs the CMS's origin on its own — to name
+it in a `frame-ancestors` directive so the preview pane may frame the page — and having it here means
+this file stays the *only* place in the project that reads the environment. A second read somewhere
+else is a second thing to remember when the host changes, and it will be the one that gets missed.
 
 :::caution[`import.meta.env` is a build-time read, and on Workers that is not a runtime one.]
 Astro replaces `import.meta.env.TAPROOT_API_KEY` with whatever the environment held when the site
@@ -114,6 +174,47 @@ That message is true and unhelpful: `wrangler secret list` shows the key sitting
 one thing you will not think to doubt is the line that reads it. And the other outcome is worse — a
 key that *was* in the build environment gets inlined into the deployed bundle, which puts a
 credential in a build artefact.
+:::
+
+### Teaching TypeScript about `cloudflare:workers`
+
+The import above will be underlined with **"Cannot find module 'cloudflare:workers'"** until the
+Workers types exist. It is a virtual module the runtime supplies, so nothing in `node_modules`
+declares it and `npm install` cannot fix it. Generate the types from your own config instead:
+
+```bash
+npx wrangler types
+```
+
+That writes `worker-configuration.d.ts` — the runtime types *and* an `Env` inferred from your
+bindings. Point tsconfig at it:
+
+```jsonc
+// tsconfig.json
+{
+  "compilerOptions": {
+    "types": ["./worker-configuration.d.ts", "node"]
+  }
+}
+```
+
+Append if you already have a `types` array: setting it replaces the automatic `@types/*` pickup,
+which is why `node` is listed alongside — you are on `nodejs_compat`. Astro's own types arrive
+through `src/env.d.ts`'s reference directive and are unaffected.
+
+The generated file goes stale whenever `wrangler.jsonc` or `.dev.vars` changes, so wire it into the
+scripts rather than remembering:
+
+```json
+"dev": "wrangler types && astro dev",
+"build": "wrangler types && astro check && astro build"
+```
+
+:::note[The second squiggle]
+Once the import resolves, `env.TAPROOT_API_KEY` errors with *"Property 'TAPROOT_API_KEY' does not
+exist on type 'Env'"*. `wrangler types` infers `Env` from `vars` plus **`.dev.vars`**, and a secret
+that exists only in `wrangler secret put` is invisible to it. Adding it to `.dev.vars` and re-running
+fixes the type — which is a second reason that file earns its place, alongside making local dev work.
 :::
 
 :::note[One spelling for both]

@@ -28,6 +28,12 @@ not a `?preview=1` flag anybody could add to a URL.
 
 `PREVIEW_PARAM` is `taproot_preview`. Use the constant so a rename cannot desynchronise the two ends.
 
+:::tip
+This page introduces preview one piece at a time. If you would rather see the finished route with all
+of them already in place, [the whole frontmatter, in one
+piece](/build/rendering-a-page/#the-whole-frontmatter-in-one-piece) is the assembled version.
+:::
+
 ### Never cache or index a preview
 
 ```astro
@@ -113,16 +119,25 @@ pane frames your site as-is. Setting it explicitly is still worth it, because "n
 the CMS may frame this" are different promises:
 
 ```astro
-Astro.response.headers.set(
-  'content-security-policy',
-  `frame-ancestors 'self' ${new URL(import.meta.env.TAPROOT_API_URL).origin}`,
-);
+---
+import { CMS_URL } from '../taproot.ts';
+
+if (CMS_URL) {
+  Astro.response.headers.set(
+    'content-security-policy',
+    `frame-ancestors 'self' ${new URL(CMS_URL).origin}`,
+  );
+}
+---
 ```
 
-If your site already sends a CSP, **add the directive to it** rather than replacing the header. Read
-the CMS's origin however your host supplies it — the same choice as
-[the connection module](/build/getting-started/#one-module-for-the-connection), and on Cloudflare an
-undefined value here throws inside `new URL` rather than quietly sending a weaker header.
+If your site already sends a CSP, **add the directive to it** rather than replacing the header.
+
+`CMS_URL` is imported rather than read from the environment again here, because how the environment
+is read depends on where the site is deployed and one file should own that — see
+[the connection module](/build/getting-started/#one-module-for-the-connection). The guard matters for
+the same reason: `new URL(undefined)` throws, so a missing variable would take the whole page down
+rather than sending a weaker header.
 
 `frame-ancestors` rather than `X-Frame-Options`, which has no origin-list form at all — `ALLOW-FROM`
 was never implemented in Chrome and is gone from the rest.
