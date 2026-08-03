@@ -120,6 +120,13 @@ The site could not reach the CMS, or its key was refused. Check that the CMS is 
 
 The two are separate deployments, so one being healthy says nothing about the other.
 
+**On Cloudflare, suspect the deploy before you suspect the key.** If the site worked and then began
+answering 401 after a deploy that had nothing to do with credentials, the variable was probably added
+in the dashboard: `wrangler deploy` replaces `vars` with what is in `wrangler.jsonc` and deletes
+anything else. `npx wrangler secret list` returning `[]` confirms it — the fix is
+`npx wrangler secret put TAPROOT_API_KEY`, which a deploy does not touch. See
+[Getting started](/build/getting-started/#on-cloudflare).
+
 ## "Preview says Taproot does not know where to send me"
 
 `TAPROOT_SITE_URL` is not set on the CMS. Preview links are built from it — see

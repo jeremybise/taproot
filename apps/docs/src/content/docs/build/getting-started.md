@@ -99,6 +99,21 @@ npx wrangler secret put TAPROOT_API_KEY
 its own instead, but only because it needs a `scheduled` export for the publishing sweep — your site
 has no scheduler.)
 
+:::danger[Do not add the key as a variable in the Cloudflare dashboard.]
+It appears to work, and then stops working at a moment unconnected to anything you changed about it.
+
+**`wrangler deploy` replaces the Worker's `vars` with exactly what is in `wrangler.jsonc`**, so a
+variable typed into the dashboard is deleted by the next deploy — and the deploy that deletes it is
+usually about something else entirely, which is what makes the 401 afterwards so hard to place. A
+secret is not touched by a deploy, which is the practical difference and the reason the key belongs
+in `wrangler secret put` rather than anywhere else.
+
+If a key set this way has already vanished, `npx wrangler secret list` returning `[]` is the tell,
+and `npx wrangler deployments list` will show the version that added it as a *variable*. (Should you
+ever genuinely need dashboard-set variables to survive, `wrangler deploy --keep-vars` is the escape
+hatch — but a credential should be a secret regardless.)
+:::
+
 Then a git-ignored `.dev.vars` for local work, holding both:
 
 ```
