@@ -73,6 +73,17 @@ interface Props {
   initialMode: LinkMode;
   /** The media library's first page, for the picker every other field uses. */
   media: MediaOption[];
+  /**
+   * Offer a box for the link's own text.
+   *
+   * Off for rich text, where the label is the selection and the derived one is only a fallback for
+   * a collapsed caret. On for the `link` field, where there is no surrounding prose and the label
+   * *is* the button — deriving it there means every button is named after the page it points at,
+   * with no way to say "Explore academics" instead of "Academics".
+   */
+  collectLabel?: boolean;
+  /** The label already stored, so editing a link opens on its own words rather than blank. */
+  currentLabel?: string;
   /** `label` is the text to insert when the caret is collapsed and the link has to carry its own. */
   onApply: (href: string, label: string, options: LinkOptions) => void;
   onRemove: () => void;
@@ -84,6 +95,8 @@ export function LinkDialog({
   current,
   initialMode,
   media,
+  collectLabel = false,
+  currentLabel,
   onApply,
   onRemove,
 }: Props) {
@@ -93,6 +106,7 @@ export function LinkDialog({
   const [page, setPage] = useState<LinkTarget | null>(null);
   const [file, setFile] = useState<MediaOption | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [label, setLabel] = useState(currentLabel ?? '');
   const [newTab, setNewTab] = useState(current?.target === '_blank');
   const [noFollow, setNoFollow] = useState(/nofollow/.test(current?.rel ?? ''));
   const contentRef = useRef<HTMLDivElement>(null);
@@ -149,7 +163,11 @@ export function LinkDialog({
      */
     event.stopPropagation();
     if (!pending) return;
-    onApply(pending.href, pending.label, { newTab, noFollow });
+    // Blank falls back to the derived label, which is what the placeholder has been promising.
+    onApply(pending.href, collectLabel ? label.trim() || pending.label : pending.label, {
+      newTab,
+      noFollow,
+    });
   };
 
   return (
@@ -292,6 +310,33 @@ export function LinkDialog({
                   </div>
                 )}
               </div>
+
+              {collectLabel && (
+                <div className="mt-4 border-t border-border pt-4">
+                  <label htmlFor={`${id}-label`} className="block text-xs font-medium">
+                    Link text <span className="font-normal text-content-subtle">(optional)</span>
+                  </label>
+                  <input
+                    id={`${id}-label`}
+                    value={label}
+                    onChange={(event) => setLabel(event.target.value)}
+                    /*
+                      The derived label, shown rather than filled in. Filling it would have to be
+                      kept in step with the chosen target and would quietly overwrite words somebody
+                      had already typed; a placeholder makes the same promise and cannot clobber
+                      anything.
+                    */
+                    placeholder={pending?.label ?? 'Taken from the page you choose'}
+                    aria-describedby={`${id}-label-hint`}
+                    className="mt-1 w-full rounded-md border border-border-strong bg-surface px-2.5 py-2 text-sm"
+                  />
+                  <p id={`${id}-label-hint`} className="mt-1.5 text-xs text-content-subtle">
+                    What the button says. Leave blank to use the target's own name. Wording that
+                    describes the destination — "Explore academics" rather than "Read more" — is what
+                    makes a page's links usable from a screen reader's link list.
+                  </p>
+                </div>
+              )}
 
               <fieldset className="mt-4 border-t border-border pt-4">
                 <legend className="sr-only">Link options</legend>

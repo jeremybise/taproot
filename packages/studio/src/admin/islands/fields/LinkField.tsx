@@ -146,6 +146,9 @@ export function LinkField({
         onOpenChange={setOpen}
         current={href ? { href, target: value?.newTab ? '_blank' : null, rel: value?.noFollow ? 'nofollow' : null } : null}
         initialMode={initialMode(href, allowedKinds)}
+        /* There is no surrounding prose here, so the label is the button rather than a fallback. */
+        collectLabel
+        currentLabel={value?.label}
         media={allowedKinds.length > 0 && !allowedKinds.includes('media') ? [] : media}
         onApply={(nextHref, label, options) => {
           onChange(fromApply(nextHref, label, options));

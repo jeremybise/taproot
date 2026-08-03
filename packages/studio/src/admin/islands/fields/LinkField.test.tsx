@@ -108,6 +108,59 @@ describe('what the control produces', () => {
     expect(onChange.mock.calls[0]![0]).toMatchObject({ kind: 'url', newTab: true });
   });
 
+  /**
+   * The gap this field shipped with.
+   *
+   * `LinkDialog` had no label input at all — it derived one from the target, which is right for rich
+   * text (the label is the selection) and wrong here, where the label *is* the button. Every button
+   * came out named after the page it pointed at, with no way to say "Explore academics" instead of
+   * "Academics". The earlier test asserted a label arrived, and one always did; asserting it came
+   * from the author is what was missing.
+   */
+  it('lets the author write the label, rather than only deriving it', async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderField();
+
+    await user.click(screen.getByRole('button', { name: /choose a link/i }));
+    await user.click(await screen.findByRole('radio', { name: 'Web address' }));
+    await user.type(await screen.findByLabelText('Link address'), 'https://example.edu/book');
+    await user.type(screen.getByLabelText(/link text/i), 'Reserve your place');
+    await user.click(screen.getByRole('button', { name: /^apply$/i }));
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(onChange.mock.calls[0]![0]).toMatchObject({
+      kind: 'url',
+      href: 'https://example.edu/book',
+      label: 'Reserve your place',
+    });
+  });
+
+  /** Blank still means "use the target's own name", which is what the placeholder promises. */
+  it('falls back to the derived label when the box is left empty', async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderField();
+
+    await user.click(screen.getByRole('button', { name: /choose a link/i }));
+    await user.click(await screen.findByRole('radio', { name: 'Web address' }));
+    await user.type(await screen.findByLabelText('Link address'), 'https://example.edu');
+    await user.click(screen.getByRole('button', { name: /^apply$/i }));
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(onChange.mock.calls[0]![0]).toMatchObject({ label: 'https://example.edu' });
+  });
+
+  /** Editing opens on the words already stored, not on an empty box. */
+  it('opens on the existing label', async () => {
+    const user = userEvent.setup();
+    renderField({
+      value: { kind: 'url', href: 'https://example.edu', label: 'Book a visit', newTab: false, noFollow: false },
+    });
+
+    await user.click(screen.getByRole('button', { name: /edit/i }));
+
+    expect((await screen.findByLabelText(/link text/i)).getAttribute('value') ?? (screen.getByLabelText(/link text/i) as HTMLInputElement).value).toBe('Book a visit');
+  });
+
   /** Removing clears the field. There is no surrounding text to keep, unlike unlinking in prose. */
   it('clears the value rather than storing an empty link', async () => {
     const user = userEvent.setup();
