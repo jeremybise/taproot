@@ -43,6 +43,12 @@ jobs:
       - name: Resolve the Pages URL
         id: pages
         uses: actions/configure-pages@v5
+        with:
+          # Turns Pages on for the repository if it is not already, rather than failing with
+          # "Get Pages site failed" and waiting for somebody to find the setting. The first run
+          # did exactly that. Safe to leave on: it is idempotent, and it only ever configures the
+          # source as GitHub Actions — which is what this workflow is.
+          enablement: true
 
       - run: npm ci
 
