@@ -151,6 +151,130 @@ const { items } = await taproot.items({ type: 'event', limit: 20 });
 </ul>
 ```
 
+## One specific item at a fixed route
+
+A front page built from blocks, an "about" page with its own template — a route that always renders
+the same content item, rather than whatever the URL resolves to.
+
+**Ask for it by path.** There is no fetch-by-slug, and that is not an omission: a slug is unique
+among *siblings*, not site-wide, so `/admissions/apply` and `/financial-aid/apply` both have the slug
+`apply` and "the item with slug `apply`" has no single answer. A path does.
+
+`taproot.items()` is not the way in either. It returns summaries — title, slug, path, status — with
+no `data` and no `fields`, deliberately, so filtering its results by slug still leaves you making the
+`resolve` call you could have made first.
+
+The path comes from the content type's kind:
+
+| Kind | Path |
+| --- | --- |
+| `page` | its parent's path plus its slug — a root-level `home` is `/home` |
+| `collection` | the type's URL prefix plus its slug — `/news/open-day` |
+| `singleton` | `/__singleton/{api_id}`, which no visitor ever requests |
+
+```astro
+---
+// src/pages/index.astro
+import Layout from '../layouts/Layout.astro';
+import { BlockRenderer, TaprootPreviewBridge } from '@taprootcms/astro/components';
+import { PREVIEW_PARAM } from '@taprootcms/astro';
+import { taproot } from '../taproot.ts';
+import { BLOCK_COMPONENTS } from '../blocks/index.ts';
+
+export const prerender = false;
+
+// One constant, because two routes need to agree about it — see the catch-all below.
+const HOME_PATH = '/home';
+
+const previewToken = Astro.url.searchParams.get(PREVIEW_PARAM);
+const result = await taproot.resolve(HOME_PATH, { previewToken });
+
+/*
+  Not a 404, and not an empty page.
+
+  A visitor asking for `/` and a visitor asking for a URL that does not exist are different
+  situations: the address is right and the content is missing, which is your outage rather than
+  their typo. Rendering a bare layout instead would look deliberate, and nobody would notice for
+  days. This shows up in a log.
+*/
+if (result.kind !== 'item') {
+  return new Response(`Taproot has no visible item at ${HOME_PATH}.`, { status: 500 });
+}
+
+const { item, media } = result;
+
+const blockFields = item.fields.filter((field) => field.type === 'block');
+
+if (previewToken) {
+  Astro.response.headers.set('cache-control', 'no-store');
+  Astro.response.headers.set('x-robots-tag', 'noindex, nofollow');
+} else {
+  Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+}
+---
+
+<Layout title={item.seo.title} description={item.seo.description}>
+  {previewToken && <TaprootPreviewBridge />}
+
+  {blockFields.map((field) => (
+    <BlockRenderer blocks={item.data[field.apiId]} components={BLOCK_COMPONENTS} media={media} />
+  ))}
+</Layout>
+```
+
+`kind !== 'item'` rather than a `not_found` check catches all three misses at once — no such item, the
+item is a draft, and the slug was renamed so the path is now a redirect. On a fixed route every one
+of them means the same thing: this route has nothing to render.
+
+### Two routes now claim the same content
+
+`/home` is still a path, so your catch-all serves it too. Left alone that is the same content at two
+URLs under two different templates, and the second one is the generic render rather than the front
+page you just built. Redirect it:
+
+```astro
+---
+// src/pages/[...path].astro — before the resolve call
+if (path === HOME_PATH) {
+  // Query string included, or the preview token does not survive the hop. Astro.redirect takes a
+  // string, so append the search rather than passing the pathname alone.
+  return Astro.redirect(`/${Astro.url.search}`, 301);
+}
+---
+```
+
+**A redirect written in Taproot cannot do this.** `resolveDelivery` looks for an item at the path
+*before* it consults the redirect table — that ordering is what makes a page reoccupying an old URL
+win over the redirect that used to sit there — so a manual `/home` → `/` row would never fire while
+the item lives at `/home`. This has to be your route's decision, in your route.
+
+301 rather than 302 because consolidating the duplicate for crawlers is the whole point. While you
+are still deciding which item is the front page, use 302: a cached 301 outlives a change to
+`HOME_PATH`.
+
+### The preview button points at the item's own path
+
+The CMS mints a preview token and sends the editor to `item.path` on your site — `/home`, not `/`.
+With the redirect above and the query string preserved, that lands on `index.astro` with the token
+intact, and `resolve(HOME_PATH, { previewToken })` returns the unsaved draft. Without it, an editor
+previews a page that is not the one visitors see, which is the failure that only surfaces after
+somebody has trusted it.
+
+### Or make it a singleton
+
+If the front page is genuinely one-of-a-kind, a `singleton` content type fits it better than a `page`
+that happens to sit at the root:
+
+- Its path is `/__singleton/{api_id}`, derived from the content type rather than from a slug an
+  editor can rename — so the constant in your code cannot be falsified from the admin.
+- Nothing serves that path, so there is no duplicate URL and no redirect to write.
+- It is excluded from `taproot.items()`, so it never appears in a navigation list built from one.
+- The editor gets a stable sidebar entry instead of hunting for one page among many.
+
+The cost is the live preview pane, which singletons do not get — there is no public page to point it
+at. That is the trade: a `page` keeps the split view and needs the redirect; a singleton needs
+nothing and gives up the pane.
+
 ## Related content
 
 A relation field stores ids; `references` resolves them, and omits anything a visitor may not see:

@@ -39,6 +39,12 @@ It returns a **discriminated union**, not a page or a throw:
 Handle all three. `not_found` and an unreachable CMS are different situations — one is your 404
 page, the other is an outage — which is why a miss is data and only a failure throws.
 
+**By path, and there is no by-slug form.** A slug is unique among siblings rather than site-wide, so
+`/admissions/apply` and `/financial-aid/apply` share the slug `apply` and "the item with slug `apply`"
+is not a question with one answer. To pin a fixed route — a front page, an "about" page with its own
+template — to one item, pass its path:
+[One specific item at a fixed route](/build/rendering-a-page/#one-specific-item-at-a-fixed-route).
+
 :::caution
 **A redirect is data, not a 30x.** You have to issue the redirect to *your* visitor, on your origin.
 
@@ -118,6 +124,10 @@ Filtering by a term takes a slug when you name the taxonomy — see
 
 Singletons are omitted. Their `path` is a synthetic internal one that nothing serves, so listing
 them would hand you links that 404. Fetch a singleton with `resolve` if you need it.
+
+This is also not the way to find one known item. Filtering the results by slug still leaves you
+making the `resolve` call you could have made first — see
+[One specific item at a fixed route](/build/rendering-a-page/#one-specific-item-at-a-fixed-route).
 
 ## `menu(apiId)`
 
