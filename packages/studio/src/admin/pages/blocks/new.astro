@@ -39,8 +39,15 @@ const blockType = chosen ? registry.get(chosen) : undefined;
 
 // Step two needs a real type. Anything else falls back to the picker rather than erroring.
 const fields = blockType?.fields ?? [];
-const termsByTaxonomy = blockType ? await termOptionsForFields(taproot.db.db, fields) : {};
-const relationTargets = blockType ? await relationTargetsForFields(taproot.db.db, fields) : {};
+// Not the `blockTypes` above — that list is for the picker and carries no fields. These are the
+// registry's, which is what makes a relation inside a nested block or a repeater row resolvable.
+const withFields = [...registry.values()];
+const termsByTaxonomy = blockType
+  ? await termOptionsForFields(taproot.db.db, fields, { blockTypes: withFields })
+  : {};
+const relationTargets = blockType
+  ? await relationTargetsForFields(taproot.db.db, fields, {}, { blockTypes: withFields })
+  : {};
 const media = blockType ? await mediaOptions(taproot.db.db, taproot.storage) : [];
 ---
 

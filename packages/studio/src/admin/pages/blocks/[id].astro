@@ -32,8 +32,13 @@ const usageCount = await countReusableBlockUsage(taproot.db.db, block.id);
 const usedBy = await itemsUsingReusableBlock(taproot.db.db, block.id);
 
 const fields = blockType?.fields ?? [];
-const termsByTaxonomy = await termOptionsForFields(taproot.db.db, fields);
-const relationTargets = await relationTargetsForFields(taproot.db.db, fields, block.data);
+// The registry is already loaded, so nested block types and repeater rows are reachable here too —
+// a relation inside either was invisible to both resolvers and rendered as a dead placeholder.
+const blockTypes = [...registry.values()];
+const termsByTaxonomy = await termOptionsForFields(taproot.db.db, fields, { blockTypes });
+const relationTargets = await relationTargetsForFields(taproot.db.db, fields, block.data, {
+  blockTypes,
+});
 const media = await mediaOptions(taproot.db.db, taproot.storage);
 const referencedMedia = await referencedMediaOptions(
   taproot.db.db,

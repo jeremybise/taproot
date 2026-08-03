@@ -91,7 +91,19 @@ const [inReleases, addableReleases] = canStageToRelease(user)
     ])
   : [[], []];
 
-const termsByTaxonomy = await termOptionsForFields(taproot.db.db, contentType.fields);
+/**
+ * The block registries come first, because the two resolvers below now read them.
+ *
+ * A relation or taxonomy field can live inside a block type, and neither resolver can see one
+ * without knowing which block types exist. Loading them afterwards is what the ordering used to be,
+ * and it is why a relation inside a block had no candidates at all.
+ */
+const blockTypes = await blockTypeOptionsForFields(taproot.db.db, contentType.fields);
+const reusableBlocks = await reusableBlockOptionsForFields(taproot.db.db, contentType.fields);
+
+const termsByTaxonomy = await termOptionsForFields(taproot.db.db, contentType.fields, {
+  blockTypes,
+});
 
 const relationTargets = await relationTargetsForFields(
   taproot.db.db,
@@ -99,10 +111,8 @@ const relationTargets = await relationTargetsForFields(
   // The staged version's own data, in release mode, so a relation stored only in the staged copy
   // still resolves to a title rather than a raw uuid.
   staged ? staged.data : item.data,
+  { blockTypes, reusableBlocks },
 );
-
-const blockTypes = await blockTypeOptionsForFields(taproot.db.db, contentType.fields);
-const reusableBlocks = await reusableBlockOptionsForFields(taproot.db.db, contentType.fields);
 
 // The whole library, not just images: a `media` field can accept documents, and the SEO panel
 // narrows to images through the picker's accept list rather than by getting a narrower query.

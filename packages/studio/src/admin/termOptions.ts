@@ -8,6 +8,7 @@ import {
 import type { Kysely } from 'kysely';
 
 import type { TermOption } from './islands/fields/FieldControl.js';
+import { reachableFields, type FieldRegistries } from './fieldTree.js';
 
 /**
  * Resolve the selectable terms for every taxonomy field on a content type.
@@ -23,10 +24,18 @@ import type { TermOption } from './islands/fields/FieldControl.js';
 export async function termOptionsForFields(
   db: Kysely<any>,
   fields: FieldRow[],
+  /**
+   * Block types, so a taxonomy field *inside* a block is found too.
+   *
+   * From the schema rather than the item's data, and no `reusableBlocks` needed: this answers "which
+   * taxonomies could be picked from on this screen", which does not depend on what has been placed
+   * yet. Terms are loaded whole, so unlike relations there is nothing stored to resolve afterwards.
+   */
+  registries: FieldRegistries = {},
 ): Promise<Record<string, TermOption[]>> {
   const taxonomyIds = new Set<string>();
 
-  for (const field of fields) {
+  for (const field of reachableFields(fields, registries.blockTypes ?? [])) {
     if (field.type !== 'taxonomy') continue;
     try {
       const taxonomyId = (JSON.parse(field.config) as { taxonomyId?: string | null }).taxonomyId;

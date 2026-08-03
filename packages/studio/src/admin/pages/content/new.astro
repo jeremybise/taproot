@@ -36,14 +36,8 @@ if (contentType?.kind === 'page') {
   parents = items.map((item) => ({ id: item.id, title: item.title, path: item.path }));
 }
 
-const relationTargets = contentType
-  ? await relationTargetsForFields(taproot.db.db, contentType.fields)
-  : {};
-
-const termsByTaxonomy = contentType
-  ? await termOptionsForFields(taproot.db.db, contentType.fields)
-  : {};
-
+// Before the two resolvers below, which read them: a relation or taxonomy field can live inside a
+// block type, and neither can see one without knowing which block types exist.
 const blockTypes = contentType
   ? await blockTypeOptionsForFields(taproot.db.db, contentType.fields)
   : [];
@@ -51,6 +45,14 @@ const blockTypes = contentType
 const reusableBlocks = contentType
   ? await reusableBlockOptionsForFields(taproot.db.db, contentType.fields)
   : [];
+
+const relationTargets = contentType
+  ? await relationTargetsForFields(taproot.db.db, contentType.fields, {}, { blockTypes })
+  : {};
+
+const termsByTaxonomy = contentType
+  ? await termOptionsForFields(taproot.db.db, contentType.fields, { blockTypes })
+  : {};
 
 const media = contentType ? await mediaOptions(taproot.db.db, taproot.storage) : [];
 const defaultOgImage = findImage(media, contentType?.default_og_image_id ?? null);

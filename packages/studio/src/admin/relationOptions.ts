@@ -1,6 +1,8 @@
 import { getContentType, listItems, type FieldRow } from '@taprootcms/core';
 import type { Kysely } from 'kysely';
 
+import { reachableFields, walkStoredValues, type FieldRegistries } from './fieldTree.js';
+
 /**
  * Candidate items for a `relation` field, resolved server-side.
  *
@@ -46,37 +48,49 @@ export async function relationTargetsForFields(
    * already loading the item and can simply ask for them.
    */
   data: Record<string, unknown> = {},
+  /**
+   * Block types and library entries, so relation fields *inside* a block are found too.
+   *
+   * Optional because the content-type builder's preview has no registry to give — and because
+   * a screen that forgets it degrades to the old behaviour for nested fields rather than throwing.
+   */
+  registries: FieldRegistries = {},
 ): Promise<Record<string, RelationTarget>> {
-  const targetsByField = new Map<string, string>();
-
-  for (const field of fields) {
+  /**
+   * From the schema, not from the data — an editor adds a block after this page renders, and the
+   * control inside it has to work when they do. See `fieldTree.ts` for why that is the whole point.
+   */
+  const targets = new Set<string>();
+  for (const field of reachableFields(fields, registries.blockTypes ?? [])) {
     if (field.type !== 'relation') continue;
-    try {
-      const config = JSON.parse(field.config) as { targetContentTypeId?: string | null };
-      if (config.targetContentTypeId) targetsByField.set(field.api_id, config.targetContentTypeId);
-    } catch {
-      // A malformed config should leave the field without options, not break the whole editor.
-    }
+    const target = relationTargetId(field.config);
+    // A malformed config leaves that field without options, not the whole editor without a target.
+    if (target) targets.add(target);
   }
 
-  if (targetsByField.size === 0) return {};
+  if (targets.size === 0) return {};
 
   /** Ids already stored on this item, grouped by the type they point at. */
   const selectedByTarget = new Map<string, Set<string>>();
-  for (const [apiId, contentTypeId] of targetsByField) {
-    const stored = data[apiId];
+  walkStoredValues(fields, data, registries, (field, stored) => {
+    if (field.type !== 'relation') return;
+    const target = relationTargetId(field.config);
+    if (!target) return;
+
+    // Follows the field's own config: a bare id when single, an ordered array when multiple.
     const ids = Array.isArray(stored)
       ? stored.filter((entry): entry is string => typeof entry === 'string')
       : typeof stored === 'string' && stored
         ? [stored]
         : [];
-    if (ids.length === 0) continue;
-    const set = selectedByTarget.get(contentTypeId) ?? new Set<string>();
-    for (const id of ids) set.add(id);
-    selectedByTarget.set(contentTypeId, set);
-  }
+    if (ids.length === 0) return;
 
-  const contentTypeIds = [...new Set(targetsByField.values())];
+    const set = selectedByTarget.get(target) ?? new Set<string>();
+    for (const id of ids) set.add(id);
+    selectedByTarget.set(target, set);
+  });
+
+  const contentTypeIds = [...targets];
 
   const entries = await Promise.all(
     contentTypeIds.map(async (contentTypeId) => {
