@@ -15,7 +15,6 @@ import {
   ListOrdered,
   Quote,
   SquareCode,
-  Paperclip,
   Strikethrough,
 } from 'lucide-react';
 
@@ -55,7 +54,7 @@ interface Props {
   /** Preview mode in the content-type builder: shows the toolbar, edits nothing. */
   disabled?: boolean;
   /**
-   * The media library's first page, so a link to a file opens the picker every other field uses.
+   * The media library's first page, so the link dialog's file panel opens with something in it.
    *
    * Only links: an image cannot be placed in prose — see `sanitizeHtml`, where `img` is absent and
    * stays absent — so what this produces is always an `<a>`.
@@ -297,18 +296,14 @@ export function RichTextEditor({
   const isLink = live?.isLink ?? false;
 
   /**
-   * Where each trailing button sits in the roving tabindex, derived rather than hardcoded.
+   * How many buttons the roving tabindex spans, derived rather than hardcoded.
    *
-   * The unlink button only exists while the cursor is in a link, so anything after it moves. Writing
-   * the file button's index as a literal left a hole in the sequence whenever unlink was absent, and
-   * leaving it out of `buttonCount` meant End and the arrow-key wrap could never reach it — the
-   * toolbar pattern's whole promise is that every control is reachable from one tab stop.
+   * The unlink button only exists while the cursor is in a link, so a literal count goes stale the
+   * moment the caret moves — and a button missing from it is one End and the arrow-key wrap can
+   * never reach, which is the toolbar pattern's whole promise broken.
    */
   const linkButtons = linkAllowed ? (isLink ? 2 : 1) : 0;
-  // A file link is a link: if `a` is not an allowed format, there is nothing for this to produce.
-  const fileButtonShown = linkAllowed && media.length > 0;
-  const fileButtonIndex = items.length + linkButtons;
-  const buttonCount = items.length + linkButtons + (fileButtonShown ? 1 : 0);
+  const buttonCount = items.length + linkButtons;
 
   /**
    * Roving tabindex.
@@ -355,17 +350,18 @@ export function RichTextEditor({
   }
 
   /**
-   * Open the dialog on the panel that matches what is already there.
+   * Open the dialog on the panel that matches the link already there.
    *
-   * The paperclip passes `file` so it stays the shortcut it was, rather than becoming a second
-   * control doing nearly the same thing as the chain icon — one dialog, entered at the point the
-   * button names.
+   * There is one way in, which is why there is one button. A separate paperclip opened the same
+   * dialog on its file panel and was a shortcut worth having while the alternative was a cramped
+   * inline form — but two toolbar icons for one dialog is two things to learn and one of them
+   * redundant, and the panel it jumped to is one click away.
    */
-  function openLinkDialog(mode?: LinkMode) {
+  function openLinkDialog() {
     if (!editor) return;
     const { from, to } = editor.state.selection;
     savedRange.current = { from, to };
-    setLinkMode(mode ?? linkModeFor(editor.getAttributes('link').href));
+    setLinkMode(linkModeFor(editor.getAttributes('link').href));
     setLinkOpen(true);
   }
 
@@ -525,20 +521,6 @@ export function RichTextEditor({
                 className="rounded p-1.5 transition-colors hover:bg-surface disabled:opacity-40"
               >
                 <Link2Off aria-hidden="true" size={16} />
-              </button>
-            )}
-
-            {fileButtonShown && (
-              <button
-                type="button"
-                title="Link to a file"
-                aria-label="Link to a file"
-                tabIndex={focusIndex === fileButtonIndex ? 0 : -1}
-                onFocus={() => setFocusIndex(fileButtonIndex)}
-                onClick={() => openLinkDialog('file')}
-                className="rounded p-1.5 transition-colors hover:bg-surface disabled:opacity-40"
-              >
-                <Paperclip aria-hidden="true" size={16} />
               </button>
             )}
           </>

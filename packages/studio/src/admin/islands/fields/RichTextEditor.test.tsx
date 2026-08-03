@@ -222,12 +222,8 @@ function stubApi() {
 }
 
 /** Open the link dialog from the toolbar and hand back its element. */
-async function openLinkDialog(
-  user: ReturnType<typeof userEvent.setup>,
-  bar: HTMLElement,
-  name: RegExp = /Add or edit link/,
-) {
-  await user.click(within(bar).getByRole('button', { name }));
+async function openLinkDialog(user: ReturnType<typeof userEvent.setup>, bar: HTMLElement) {
+  await user.click(within(bar).getByRole('button', { name: /Add or edit link/ }));
   return screen.findByRole('dialog', { name: /link/i });
 }
 
@@ -289,7 +285,7 @@ describe('the link dialog', () => {
   });
 
   it('hides the file panel when the library is empty', async () => {
-    // Nothing to choose. The same rule as the toolbar's paperclip, which is also absent.
+    // Nothing to choose, so nothing to offer — the panel is absent rather than empty.
     const user = userEvent.setup();
     const { bar } = await setupWithToolbar();
 
@@ -473,47 +469,40 @@ describe('editing a link that already exists', () => {
 });
 
 describe('the toolbar reaches the dialog', () => {
-  it('adds the file button to the roving tabindex rather than stranding it', async () => {
+  it('has one link button, not a second one for files', async () => {
     /**
-     * The toolbar's promise is that one tab stop reaches every control. A button rendered without
-     * being counted is reachable by mouse and by nothing else — and the count has to be derived,
-     * because the unlink button comes and goes and everything after it shifts.
+     * There was a paperclip that opened the same dialog on its file panel. It earned its place while
+     * the alternative was a cramped inline form; with a dialog that offers files as one of three
+     * panels it is a second icon for one thing, and the panel is a click away.
+     */
+    const { bar } = await setupWithToolbar({ media: [ASSET] });
+
+    expect(within(bar).queryByRole('button', { name: 'Link to a file' })).toBeNull();
+    expect(within(bar).getAllByRole('button', { name: /link/i })).toHaveLength(1);
+  });
+
+  it('keeps every button in the roving tabindex as the unlink button comes and goes', async () => {
+    /**
+     * The toolbar's promise is that one tab stop reaches every control, and the count has to be
+     * derived: the unlink button only exists while the caret is in a link, so a literal goes stale
+     * and a button missing from the count is reachable by mouse and by nothing else.
      */
     const { bar } = await setupWithToolbar({ media: [ASSET] });
 
     const buttons = within(bar).getAllByRole('button');
-    const file = within(bar).getByRole('button', { name: 'Link to a file' });
-
-    expect(buttons.at(-1)).toBe(file);
-    // Exactly one tab stop, and End must be able to land on the last button.
+    const last = buttons.at(-1)!;
+    expect(last).toBe(within(bar).getByRole('button', { name: /Add or edit link/ }));
     expect(buttons.filter((b) => b.getAttribute('tabindex') === '0')).toHaveLength(1);
 
     await userEvent.setup().tab();
     await userEvent.setup().keyboard('{End}');
-    await waitFor(() => expect(document.activeElement).toBe(file));
+    await waitFor(() => expect(document.activeElement).toBe(last));
   });
 
-  it('hides the file button when links are not an allowed format', async () => {
-    // A file link is a link. If `a` is disallowed there is nothing this button could produce.
+  it('offers no link button at all when links are not an allowed format', async () => {
     const { bar } = await setupWithToolbar({ media: [ASSET], allowedTags: ['strong', 'em'] });
 
-    expect(within(bar).queryByRole('button', { name: 'Link to a file' })).toBeNull();
-  });
-
-  it('has no file button with an empty library', async () => {
-    const { bar } = await setupWithToolbar();
-
-    expect(within(bar).queryByRole('button', { name: 'Link to a file' })).toBeNull();
-  });
-
-  it('opens the same dialog on the file panel from the paperclip', async () => {
-    // One dialog entered at the point the button names, rather than a second control doing nearly
-    // the same thing as the chain icon.
-    const user = userEvent.setup();
-    const { bar } = await setupWithToolbar({ media: [ASSET] });
-
-    const dialog = await openLinkDialog(user, bar, /Link to a file/);
-    expect(checked(within(dialog).getByRole('radio', { name: /File/ }))).toBe(true);
+    expect(within(bar).queryByRole('button', { name: /link/i })).toBeNull();
   });
 });
 
@@ -554,7 +543,8 @@ describe('a chosen link actually becomes a link', () => {
     const user = userEvent.setup();
     const { onChange, bar } = await setupWithToolbar({ media: [ASSET] });
 
-    const dialog = await openLinkDialog(user, bar, /Link to a file/);
+    const dialog = await openLinkDialog(user, bar);
+    await user.click(within(dialog).getByRole('radio', { name: /File/ }));
     await user.click(within(dialog).getByRole('button', { name: /Choose a file/ }));
 
     // The picker is a second dialog stacked on this one. It has to stay reachable: a nested modal

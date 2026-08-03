@@ -66,7 +66,7 @@ declares it.
 | `npm run dev:studio` / `dev:web` | One at a time |
 | `npm run db:seed` | Migrate and seed. Idempotent |
 | `npm run db:reset` | Delete the local database and reseed |
-| `npm test` | Vitest, 1169 tests |
+| `npm test` | Vitest, 1168 tests |
 | `npm run docs` | The handbook at :4322. `npm run docs:build` to build it |
 | `npm run typecheck` | Per-workspace tsc (see note below) |
 | `npm run a11y` | axe-core + inert-label + reflow-hazard checks over every admin route, then the numeric contrast check. Needs `npm run dev` running |
@@ -482,10 +482,12 @@ same endpoints the relation and media fields use. Four things hold it up:
   the tab/panel wiring written by hand and kept written; a radio group is the same interaction from
   the platform. The house rule about custom widgets settles it.
 
-**The paperclip and the chain icon open the same dialog.** The paperclip passes `initialMode: 'file'`.
-Two controls doing nearly the same thing is how somebody learns to trust neither — same rule as
-"there is one preview control, not two" — and one dialog entered at the point the button names is not
-that.
+**There is one link button in the toolbar, not a separate one for files.** A paperclip opened the
+same dialog on its file panel, which was worth having while the alternative was a cramped inline
+form and stopped being worth having the moment files became one of three panels: two icons for one
+dialog is two things to learn and one of them redundant. Same rule as "there is one preview control,
+not two". `openLinkDialog` derives the panel from the href, and `LinkDialog` keeps `initialMode`
+because it is still the thing that decides which panel opens.
 
 **Asserting a control exists is not asserting it works.** The link search had tests for its input,
 its label and its place in the toolbar's tab order, and shipped unable to create a single link. A
