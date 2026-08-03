@@ -63,14 +63,34 @@ jobs:
       # publishing either first leaves a window where `npm install` cannot resolve them. The four
       # share one version and release together — a mismatched pair is a broken install rather than
       # a supported combination.
-      - name: Publish @taprootcms/core
-        run: npm publish --workspace=./packages/core
+      #
+      # Already-published versions are skipped rather than attempted, which is what makes a failed
+      # release resumable. npm refuses to replace a published version, so without this a run that
+      # got core out and then failed on studio could never be re-run: the retry dies on core before
+      # it reaches the package that actually needs publishing, and the only way forward is burning
+      # a version number. Skipping is safe precisely because npm is immutable here — if the version
+      # is on the registry, it is the artifact this tag describes or the tag check above would
+      # already have failed.
+      - name: Publish, in dependency order
+        run: |
+          set -euo pipefail
+          published=0
+          for pkg in core studio astro create-taproot; do
+            name=$(node -p "require('./packages/$pkg/package.json').name")
+            version=$(node -p "require('./packages/$pkg/package.json').version")
 
-      - name: Publish @taprootcms/studio
-        run: npm publish --workspace=./packages/studio
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "· $name@$version is already on the registry — skipping."
+              continue
+            fi
 
-      - name: Publish @taprootcms/astro
-        run: npm publish --workspace=./packages/astro
+            echo "· publishing $name@$version"
+            npm publish --workspace="./packages/$pkg"
+            published=$((published + 1))
+          done
 
-      - name: Publish create-taproot
-        run: npm publish --workspace=./packages/create-taproot
+          if [ "$published" -eq 0 ]; then
+            echo "::warning::Nothing was published — every version in this tag is already on the registry."
+          else
+            echo "Published $published package(s)."
+          fi
