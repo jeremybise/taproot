@@ -131,7 +131,7 @@ describe('throttling', () => {
 
   it('refuses before checking the password, so a correct one does not get through', async () => {
     /**
-     * Also why the check runs first at all: verification is 210,000 PBKDF2 iterations, and doing
+     * Also why the check runs first at all: verification is 100,000 PBKDF2 iterations, and doing
      * that work before refusing would turn the throttle into its own amplifier.
      */
     const user = await createUser(h.db.db, { email: 'staff@campus.edu', name: 'Staff' });

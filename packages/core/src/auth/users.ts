@@ -2,7 +2,7 @@ import { sql, type Kysely } from 'kysely';
 
 import type { Database, User, UsersTable } from '../db/schema.js';
 import { fromBool, now } from '../db/values.js';
-import { hashPassword, needsRehash, verifyPassword } from './password.js';
+import { DEFAULT_ITERATIONS, hashPassword, needsRehash, verifyPassword } from './password.js';
 import { newId } from '../ids.js';
 
 export type UserRole = UsersTable['role'];
@@ -306,8 +306,13 @@ async function assertNotLastAdmin(db: Kysely<Database>, userId: string): Promise
 }
 
 /**
- * A real PBKDF2 hash of a value nobody knows, verified when no user matches so that the timing of
- * a failed login does not disclose whether the email exists.
+ * A PBKDF2 hash of a value nobody knows, verified when no user matches so that the timing of a
+ * failed login does not disclose whether the email exists.
+ *
+ * The iteration count is interpolated from `DEFAULT_ITERATIONS` rather than written out, because
+ * this hash has to cost what a real one costs — and because a literal here silently stopped
+ * matching when the real count changed. It was pinned at 210,000 while workerd refused anything
+ * above 100,000, so on Cloudflare every sign-in attempt for an unknown address threw instead of
+ * being denied: a 500 where the whole point of this constant is that the response look identical.
  */
-const DUMMY_HASH =
-  'pbkdf2$210000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+const DUMMY_HASH = `pbkdf2$${DEFAULT_ITERATIONS}$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`;

@@ -9,7 +9,7 @@ import { newId } from '../ids.js';
  *
  * There was none while password sign-in was a local convenience, which was defensible: an attacker
  * who can reach your laptop's dev server has already won. As the production front door it is the
- * difference between a password and no password at all — PBKDF2 at 210k iterations makes each
+ * difference between a password and no password at all — PBKDF2 at 100k iterations makes each
  * guess expensive for the *server*, and does nothing to stop an attacker making millions of them.
  *
  * Two identifiers, counted separately and both enforced:
@@ -69,7 +69,7 @@ export function resetIpKey(ip: string): string {
  * Whether any of these identifiers is currently over the limit.
  *
  * Checked *before* verifying the password, so a locked-out attempt costs one indexed count rather
- * than a 210,000-iteration key derivation. That matters: without it, the throttle would make the
+ * than a 100,000-iteration key derivation. That matters: without it, the throttle would make the
  * server do the expensive work anyway and become its own denial-of-service amplifier.
  */
 export async function checkThrottle(

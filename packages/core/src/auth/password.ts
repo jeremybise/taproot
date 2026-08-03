@@ -2,15 +2,39 @@
  * Password hashing on Web Crypto only.
  *
  * Deliberately **not** bcrypt or argon2: both are native modules that cannot run on Cloudflare
- * Workers, which is the v1 production target. PBKDF2-SHA256 is available identically in Node and
- * in Workers via `crypto.subtle`, so one implementation covers every environment.
+ * Workers, which is the v1 production target. PBKDF2-SHA256 is reachable in both Node and Workers
+ * through `crypto.subtle`, so one implementation covers every environment — but *not* identically,
+ * which is the trap this file exists to document.
  *
  * Encoded form: `pbkdf2$<iterations>$<salt-base64>$<hash-base64>`. The iteration count travels
  * with the hash so it can be raised later without invalidating existing passwords.
  */
 
-/** OWASP's recommended minimum for PBKDF2-HMAC-SHA256. */
-const DEFAULT_ITERATIONS = 210_000;
+/**
+ * **workerd refuses more than 100,000 PBKDF2 iterations**, and the refusal is a thrown
+ * `NotSupportedError`, not a clamp. This is a ceiling imposed by the runtime, not a security
+ * preference — OWASP asks for more, and `crypto.subtle` on Workers is the only KDF available to a
+ * CMS that ships zero native dependencies.
+ *
+ * The cost of getting this wrong is total and invisible until deployment: at 210,000 the first-run
+ * setup screen 500s, so a Cloudflare deployment cannot create its first administrator, and every
+ * sign-in attempt for an address that does not exist 500s too, because that path derives against
+ * `DUMMY_HASH` to equalise timing. Nothing in Node reproduces it — Node has no cap, so every test,
+ * every `npm run dev` session, and every local sign-in works perfectly.
+ *
+ * Raising this above 100,000 breaks production. If a future runtime lifts the cap, raise it there
+ * first and confirm with `npm run preview`, which is the only local command that runs in workerd.
+ */
+export const MAX_WORKERD_ITERATIONS = 100_000;
+
+/**
+ * The iteration count new hashes use.
+ *
+ * One number for every environment on purpose: a hash written in dev has to verify in production
+ * and the other way round, and a per-platform count would make a database that moves between them
+ * hold passwords nobody can check.
+ */
+export const DEFAULT_ITERATIONS = MAX_WORKERD_ITERATIONS;
 const SALT_BYTES = 16;
 const KEY_BITS = 256;
 
@@ -45,7 +69,17 @@ export async function verifyPassword(password: string, encoded: string): Promise
     return false;
   }
 
-  const actual = await deriveBits(password, salt, iterations);
+  let actual: Uint8Array;
+  try {
+    actual = await deriveBits(password, salt, iterations);
+  } catch {
+    // A stored count this runtime will not derive — a hash written where the cap is higher, read
+    // where it is lower. Returning false keeps the contract above: no exception escapes to
+    // distinguish one stored row from another. It does mean such a hash reads as a wrong password,
+    // which is why DEFAULT_ITERATIONS is the same number everywhere rather than per-platform.
+    return false;
+  }
+
   return timingSafeEqual(actual, expected);
 }
 

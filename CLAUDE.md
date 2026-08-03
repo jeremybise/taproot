@@ -123,7 +123,7 @@ being ignored, because silently dropping it would leave an operator believing th
 something. Things that follow, none of them optional now that this is the front door:
 - **Sign-in is throttled per email *and* per client IP** (`auth/throttle.ts`). Per-account alone
   misses password spraying entirely. The check runs **before** `verifyCredentials`, or a
-  locked-out attacker still costs 210,000 PBKDF2 iterations per request. The IP comes from
+  locked-out attacker still costs 100,000 PBKDF2 iterations per request. The IP comes from
   `CF-Connecting-IP` only — `X-Forwarded-For` is client-settable, so trusting it would let an
   attacker reset their own counter and lock out an address they do not own.
 - **Nobody sets somebody else's password.** An admin mints a single-use, hashed-at-rest,
@@ -582,8 +582,20 @@ because both already degrade visibly by design.
 **Zero native dependencies.** Both SQL drivers are written in-tree because Kysely ships no D1
 dialect and `kysely-d1` is unmaintained. `npm install` must never need a C++ toolchain, and no
 Node-only binary may reach the Workers bundle. Never add `bcrypt`, `argon2`, `better-sqlite3`, or
-`sharp`. Hashing goes through `crypto.subtle` (PBKDF2-SHA256), which is identical in Node and
-Workers.
+`sharp`. Hashing goes through `crypto.subtle` (PBKDF2-SHA256), which is *reachable* in both Node and
+Workers — but read the next paragraph before assuming that means the same thing.
+
+**workerd caps PBKDF2 at 100,000 iterations, and `DEFAULT_ITERATIONS` is that cap.** Above it,
+`crypto.subtle.deriveBits` throws `NotSupportedError`; it does not clamp. This is the runtime's
+ceiling rather than a security choice — OWASP asks for more, and `crypto.subtle` is the only KDF
+available to a CMS that ships zero native dependencies. It sat at 210,000 through every phase, and
+the consequence was total: a Cloudflare deployment could not create its first administrator (the
+setup screen 500s), and every sign-in for an address that does not exist 500s too, because that path
+derives against `DUMMY_HASH` to equalise timing. **Node has no cap, so nothing local reproduces
+it** — the tests, `npm run dev`, and every local sign-in all pass. Two things follow: the count is
+one number for every environment, because a per-platform count leaves a database that moves between
+them holding passwords nobody can verify; and `DUMMY_HASH` interpolates the same constant rather
+than spelling a number out, which is how the two drifted apart in the first place.
 
 **D1 refuses PRAGMA, so the D1 dialect carries its own introspector.** Kysely's
 `SqliteIntrospector` reads column metadata through `pragma_table_info`, and D1's authorizer answers

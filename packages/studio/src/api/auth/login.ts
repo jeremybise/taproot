@@ -56,7 +56,7 @@ export async function POST(context: APIContext): Promise<Response> {
     /**
      * Checked before the password is verified, not after.
      *
-     * Verification is 210,000 PBKDF2 iterations by design. Doing that work and *then* refusing
+     * Verification is 100,000 PBKDF2 iterations by design. Doing that work and *then* refusing
      * would turn the throttle into an amplifier — an attacker past the limit would still be
      * spending the server's CPU on every request.
      */

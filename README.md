@@ -359,7 +359,7 @@ npm test
 - That two concurrent first-run setups produce one administrator, not two. The check and the insert
   are one statement for exactly this reason — it is the only unauthenticated write in the admin.
 - That the sign-in throttle refuses *before* verifying the password, so a correct password does not
-  slip through a lockout and a locked-out attacker cannot spend the server's CPU on 210,000 PBKDF2
+  slip through a lockout and a locked-out attacker cannot spend the server's CPU on 100,000 PBKDF2
   iterations per request.
 - That a set-password link cannot be used twice, and that two concurrent uses leave exactly one
   winner rather than one password silently overwriting another.
