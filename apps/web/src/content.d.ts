@@ -11,6 +11,12 @@ export type MediaId = string;
 export type ContentItemId = string;
 /** An id referring to a taxonomy term. Look it up in `terms`. */
 export type TermId = string;
+/** A saved query. Its results are in a delivery response’s `queries` map, not here. */
+export interface TaprootQuery {
+  termIds: TermId[];
+  sort: "path" | "title" | "newest" | "oldest" | "recently_updated" | "field_asc" | "field_desc";
+  limit: number;
+}
 /** Hero — `hero` (block). */
 export interface HeroData {
   heading: string;
@@ -40,6 +46,12 @@ export interface GalleryData {
   images: MediaId[];
   caption?: string;
 }
+/** Event listing — `event_listing` (block). */
+export interface EventListingData {
+  heading?: string;
+  /** Published events matching this appear automatically — nobody edits this page. */
+  events?: TaprootQuery;
+}
 /** Any block instance, discriminated by `type`. */
 export type TaprootBlock =
   | { id: string; type: "hero"; data: HeroData; ref?: string }
@@ -47,6 +59,7 @@ export type TaprootBlock =
   | { id: string; type: "prose"; data: ProseData; ref?: string }
   | { id: string; type: "quote"; data: QuoteData; ref?: string }
   | { id: string; type: "gallery"; data: GalleryData; ref?: string }
+  | { id: string; type: "event_listing"; data: EventListingData; ref?: string }
 /** Page — `page` (page). */
 export interface PageData {
   /** One or two sentences shown in listings and search results. */
@@ -67,6 +80,8 @@ export interface EventData {
   body?: string;
   /** Maximum attendees. Leave blank for unlimited. */
   capacity?: number;
+  /** What this event is about. A listing filtered by a parent finds these too. */
+  departments?: TermId[];
   /** Sessions within the event, in the order they run. */
   schedule?: {
     id: string;
@@ -76,15 +91,17 @@ export interface EventData {
       room?: string;
     };
   }[];
-  /** The department or programme page this event belongs to. */
-  host_page?: ContentItemId;
   /** Where people sign up — a page here, a file, or an external booking system. */
   registration_link?: ({ kind: "item"; id: ContentItemId; label?: string; newTab: boolean; noFollow: boolean } | { kind: "media"; id: MediaId; label?: string; newTab: boolean; noFollow: boolean } | { kind: "url"; href: string; label?: string; newTab: boolean; noFollow: boolean });
+  /** The department or programme page this event belongs to. */
+  host_page?: ContentItemId;
 }
 /** Weather Banner — `weather_banner` (singleton). */
 export interface WeatherBannerData {
   enabled?: boolean;
+  /** Shown when `enabled` is checked — so it may be absent. */
   message?: string;
+  /** Shown when `enabled` is checked — so it may be absent. */
   severity?: "info" | "warning" | "closure";
 }
 /** Every content type, keyed by `api_id`. */

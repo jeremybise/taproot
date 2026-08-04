@@ -51,5 +51,21 @@ for (const suffix of ['', '-wal', '-shm', '-journal']) {
 
 console.log(`Removed ${location}`);
 
+/**
+ * Said out loud, because the silent case above is the one that actually costs time.
+ *
+ * On macOS and Linux the unlink succeeds even with the dev server running, and that server keeps
+ * its descriptor open on the now-unlinked inode — so it goes on serving the *old* content
+ * indefinitely while the file on disk holds the new. Every symptom points at the feature being
+ * debugged rather than at the database: fresh seed data missing, a stored value reading as its
+ * previous version, a query answering from content that is no longer there.
+ *
+ * The Windows branch above gets an error and a fix. This is the same fix for the platforms that do
+ * not error.
+ */
+console.log(
+  'If a dev server was running, restart it — it is still reading the deleted file, not the new one.',
+);
+
 // Re-seed by importing, so this stays one process and one code path.
 await import('./seed.ts');

@@ -1,5 +1,6 @@
 import type { FieldRow } from '../db/schema.js';
 import { MAX_BLOCK_DEPTH, repeaterRowFields, type BlockInstance } from '../validation/fields.js';
+import { isFieldVisible } from '../validation/visibility.js';
 import { htmlToText, tokenize } from './sanitizeHtml.js';
 
 /**
@@ -154,6 +155,8 @@ export function checkItemAccessibility(
   const issues: A11yIssue[] = [];
 
   for (const field of fields) {
+    if (!isFieldVisible(field, fields, data)) continue;
+
     walkField(field, data[field.api_id], context, {
       issues,
       fieldApiId: field.api_id,
@@ -231,7 +234,10 @@ function walkField(field: FieldRow, value: unknown, context: A11yContext, state:
         if (typeof rowData !== 'object' || rowData === null) return;
 
         for (const sub of subFields) {
-          walkField(sub, (rowData as Record<string, unknown>)[sub.api_id], context, {
+          const row = rowData as Record<string, unknown>;
+          if (!isFieldVisible(sub, subFields, row)) continue;
+
+          walkField(sub, row[sub.api_id], context, {
             ...state,
             trail: [...here, `Entry ${index + 1}`],
           });
@@ -273,6 +279,18 @@ function walkField(field: FieldRow, value: unknown, context: A11yContext, state:
     case 'relation':
       return;
 
+    /**
+     * A query holds a rule, and a rule has no alt text and no headings.
+     *
+     * Its *results* do, and they are deliberately not checked here: they are other content items,
+     * each already reported on its own editing screen and in the site-wide report. Following the
+     * query would attribute somebody else's missing alt text to whoever placed the listing block —
+     * pointing them at a fix they may have no permission to make — and would make this walk's cost
+     * depend on how many items happen to match, on a function that runs on every keystroke.
+     */
+    case 'query':
+      return;
+
     default: {
       const exhaustive: never = field.type;
       throw new Error(`Unhandled field type: ${String(exhaustive)}`);
@@ -301,6 +319,8 @@ function walkBlocks(blocks: BlockInstance[], context: A11yContext, state: WalkSt
       if (!blockType) return;
 
       for (const field of blockType.fields) {
+        if (!isFieldVisible(field, blockType.fields, entry.data)) continue;
+
         walkField(field, entry.data[field.api_id], context, {
           ...state,
           trail: [...state.trail, `Block ${index + 1} (${entry.name})`],
@@ -316,6 +336,8 @@ function walkBlocks(blocks: BlockInstance[], context: A11yContext, state: WalkSt
 
     const data = block.data ?? {};
     for (const field of blockType.fields) {
+      if (!isFieldVisible(field, blockType.fields, data)) continue;
+
       walkField(field, data[field.api_id], context, {
         ...state,
         trail: [...state.trail, `Block ${index + 1} (${blockType.name})`],
@@ -545,6 +567,20 @@ export function referencedMediaIds(
   return [...found];
 }
 
+/**
+ * **This walk deliberately does not skip conditionally hidden fields, where the rules walk does.**
+ *
+ * The two answer different questions and the divergence is the point. `checkItemAccessibility` asks
+ * "what is on screen", so a field whose condition is unmet has nothing to report and nagging about
+ * it would make the panel permanently red for content the editor has switched off. This asks "what
+ * does this item point at", and a hidden field's value is still *stored* — that is the rule in
+ * `validateItemData` — so an image referenced only from a hidden field still needs its alt text
+ * resolved, or the panel reports every one of its images as undescribed the moment somebody
+ * unticks the box above them.
+ *
+ * The root CLAUDE.md's note that this uses the same walk as the rules is true of the *shape* and no
+ * longer of the filter. Do not "restore" the guard here.
+ */
 function collectMediaIds(
   fields: FieldRow[],
   data: Record<string, unknown>,

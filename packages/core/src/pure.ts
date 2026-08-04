@@ -23,6 +23,16 @@
 export * from './content/imageCrop.js';
 export * from './content/menuHrefs.js';
 /**
+ * `queryKey` — how a consumer finds a listing's results in the response's `queries` map.
+ *
+ * Its own module for the same reason `menuHrefs` is one: the resolver beside it needs Kysely, and a
+ * consumer that imported that would drag the whole data layer into its bundle. One implementation
+ * of the key on both sides, because a mismatched key fails by returning `undefined` — a listing that
+ * renders nothing and reports nothing.
+ */
+export * from './content/queryKeys.js';
+export type { ItemSort } from './content/itemSort.js';
+/**
  * The query parameter a preview link travels in.
  *
  * Declared *here* rather than beside the token logic, because this is the only entry both sides of
@@ -64,5 +74,7 @@ export type {
   DeliveryTermRef,
   DeliveryTypeSchema,
 } from './content/delivery.js';
+
+export type { DeliveryQueryResult } from './content/itemQueries.js';
 
 export type { ContentStatus, ContentTypeKind, FieldType } from './db/schema.js';

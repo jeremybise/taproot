@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   FIELD_TYPE_META,
+  parseVisibility,
   type ContentTypeRow,
   type FieldRow,
   type FieldType,
   type TaxonomyRow,
+  type VisibilityCondition,
 } from '@taprootcms/core';
 
 import { FieldConfigForm } from './fields/FieldConfigForm.js';
 import { FieldTypePicker } from './fields/FieldTypePicker.js';
 import { SortableFieldList } from './fields/SortableFieldList.js';
+import { VisibilityEditor } from './fields/VisibilityEditor.js';
 
 /**
  * The visual content-type builder.
@@ -45,6 +48,8 @@ interface Draft {
   help_text: string;
   required: boolean;
   config: Record<string, unknown>;
+  /** Null means unconditional, and is what the API is sent to clear an existing condition. */
+  visible_when: VisibilityCondition | null;
 }
 
 const NEW_DRAFT: Draft = {
@@ -54,6 +59,7 @@ const NEW_DRAFT: Draft = {
   help_text: '',
   required: false,
   config: {},
+  visible_when: null,
 };
 
 export default function FieldBuilder({
@@ -110,6 +116,7 @@ export default function FieldBuilder({
       help_text: field.help_text ?? '',
       required: field.required === 1,
       config: safeParse(field.config),
+      visible_when: parseVisibility(field.visible_when),
     });
   }
 
@@ -135,6 +142,9 @@ export default function FieldBuilder({
             required: draft.required,
             localized: false,
             config: draft.config,
+            // Explicitly null rather than omitted, so removing a condition actually removes it —
+            // `updateField` reads absent as "keep what is stored".
+            visible_when: draft.visible_when,
           }),
         })) as { field: FieldRow };
 
@@ -152,6 +162,7 @@ export default function FieldBuilder({
             localized: false,
             position: fields.length,
             config: draft.config,
+            visible_when: draft.visible_when,
           }),
         })) as { field: FieldRow };
 
@@ -355,6 +366,25 @@ export default function FieldBuilder({
                   </p>
                 )}
               </div>
+
+              <fieldset className="border-t border-border pt-4">
+                <legend className="px-1 text-sm font-medium">Visibility</legend>
+                <div className="mt-2">
+                  <VisibilityEditor
+                    idPrefix="field"
+                    value={draft.visible_when}
+                    /*
+                      A field cannot depend on itself, and a *new* field has no id — so the filter
+                      is on `draft.id`, which is undefined then and excludes nothing, which is
+                      correct: every existing field is a legitimate target for a field being added.
+                    */
+                    siblings={fields
+                      .filter((candidate) => candidate.id !== draft.id)
+                      .map(({ api_id, label, type }) => ({ api_id, label, type }))}
+                    onChange={(visible_when) => setDraft({ ...draft, visible_when })}
+                  />
+                </div>
+              </fieldset>
 
               <fieldset className="border-t border-border pt-4">
                 <legend className="px-1 text-sm font-medium">

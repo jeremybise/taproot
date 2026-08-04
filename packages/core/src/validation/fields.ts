@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { htmlToText, safeUrl, sanitizeHtml } from '../content/sanitizeHtml.js';
 import type { FieldRow, FieldType } from '../db/schema.js';
 import { parseJson, stringifyJson } from '../db/values.js';
+import { ITEM_SORTS } from '../content/itemSort.js';
+import { isFieldVisible, visibilityCondition } from './visibility.js';
 
 /**
  * The field-type registry.
@@ -70,6 +72,15 @@ export const repeaterSubField = z.object({
   required: z.boolean().default(false),
   help_text: z.string().max(500).nullish(),
   config: z.record(z.string(), z.unknown()).default({}),
+  /**
+   * The same conditional visibility a top-level field gets, scoped to the row.
+   *
+   * Stored as the condition object rather than a JSON string, because this definition already lives
+   * inside JSON — `repeaterRowFields` stringifies it onto the synthesised row, exactly as it already
+   * does for `config`. A row's sub-field sees that row's values and nothing wider, which is what
+   * makes "show the closing time unless we are closed that day" work per row.
+   */
+  visible_when: visibilityCondition.nullish(),
 });
 
 export type RepeaterSubField = z.infer<typeof repeaterSubField>;
@@ -89,6 +100,38 @@ export type RepeaterSubField = z.infer<typeof repeaterSubField>;
  * `taproot:item:…` to a visitor. Rich text accepts that trade because `set:html` cannot perform a
  * lookup; a structured field has no such excuse.
  */
+/**
+ * What the *editor* chooses on one placement of a query field.
+ *
+ * The counterpart to `fieldConfigSchemas.query`: config says what may be asked, this is what was
+ * asked. Every key has a default, so a block placed and never touched still resolves — the
+ * alternative is a freshly added "Events" block rendering an error until somebody opens it.
+ *
+ * `termIds` is a list rather than one id for the reason `ItemFilters.termIds` is: an item carrying
+ * any of them matches, and a term filter always means the whole branch, which `resolveItemQueries`
+ * expands through `termIdsForBranch`. An **empty list means no term filter**, which is the opposite
+ * of `ItemFilters`' own convention — deliberately, and the reason is which mistake is recoverable.
+ * There, an empty array arrives from a caller that asked for a term with no members and matching
+ * everything would silently widen a filter. Here it arrives from an editor who has not picked a
+ * term yet, and matching nothing would make a newly placed block render as broken.
+ */
+const queryValueSchema = z.strictObject({
+  termIds: z.array(z.string()).default([]),
+  sort: z.enum(ITEM_SORTS).default('path'),
+  limit: z.number().int().positive().default(6),
+  /**
+   * Whether the listing is bounded by the configured date field, and which way.
+   *
+   * Stored as an *intent* — "upcoming" — never as a resolved timestamp. A stored bound would be
+   * frozen at whatever moment somebody last pressed save, so a page would quietly stop listing
+   * anything the day after it was edited. That is the same trap a stale `publish_at` is, and the
+   * same answer: the moment is computed when the query runs.
+   */
+  dateFilter: z.enum(['any', 'upcoming', 'past']).default('any'),
+});
+
+export type QueryValue = z.infer<typeof queryValueSchema>;
+
 export const LINK_KINDS = ['item', 'media', 'url'] as const;
 export type LinkKind = (typeof LINK_KINDS)[number];
 
@@ -233,6 +276,50 @@ export const fieldConfigSchemas = {
     allowedBlocks: z.array(z.string()).default([]),
     maxBlocks: z.number().int().positive().optional(),
   }),
+  /**
+   * What the *admin* fixes about a query, in the field builder.
+   *
+   * The split between this and the stored value is the feature. Config bounds what may be asked —
+   * which content type, which taxonomy an editor may narrow by, how many results they may ask for —
+   * and the block instance holds what *was* asked. That is what lets one "Faculty" block type serve
+   * twenty department pages: same field definition, each page's editor picks their own term.
+   *
+   * Fixing the whole query here instead would mean a block type per department, and letting the
+   * editor choose everything would mean a picker over every content type on a page where only one
+   * makes sense.
+   */
+  query: z.object({
+    /**
+     * Nullable and defaulted, matching `taxonomy` and `relation`: a field can be added before its
+     * target exists, and the editor renders an explicit notice rather than an empty picker.
+     */
+    targetContentTypeId: z.string().nullable().default(null),
+    /** Which taxonomy the editor may narrow by. Null offers no term filter at all. */
+    taxonomyId: z.string().nullable().default(null),
+    /**
+     * The `api_id` of a `date` field on the target type — what "upcoming" means and what "soonest
+     * first" orders by.
+     *
+     * One key serving both, because for the case this exists for they are the same field: an
+     * event's start date is what you filter on *and* what you sort by, and offering two pickers
+     * would invite them to disagree. Null hides the date filter and both field orders.
+     *
+     * An `api_id` rather than a field id, so it survives the field being deleted and recreated —
+     * and if it does not resolve, the filter is dropped and the sort falls back to `path` rather
+     * than the listing erroring.
+     */
+    dateFieldApiId: z.string().nullable().default(null),
+    /**
+     * The ceiling on `limit`, not the limit itself.
+     *
+     * A bound on what the system will carry rather than a claim about completeness — so
+     * `requireComplete: false` leaves it alone, and a consumer cannot be handed a thousand
+     * fully-resolved items because somebody typed a big number into a block.
+     */
+    maxResults: z.number().int().positive().max(100).default(24),
+    /** What a freshly placed block asks for before anybody touches it. */
+    defaultLimit: z.number().int().positive().default(6),
+  }),
   repeater: z.object({
     minItems: z.number().int().nonnegative().default(0),
     maxItems: z.number().int().positive().optional(),
@@ -291,6 +378,11 @@ export const FIELD_TYPE_META: Record<FieldType, FieldTypeMeta> = {
   link: { type: 'link', label: 'Link', description: 'A page, a file, or a web address — with optional label.' },
   block: { type: 'block', label: 'Blocks', description: 'Composable blocks placed into a region.' },
   repeater: { type: 'repeater', label: 'Repeater', description: 'A repeating group of sub-fields.' },
+  query: {
+    type: 'query',
+    label: 'Query',
+    description: 'A live list of content, chosen by a rule rather than by hand.',
+  },
 };
 
 /**
@@ -487,6 +579,30 @@ export function buildValueSchema(
       );
       break;
 
+    case 'query': {
+      /**
+       * The saved question, not its answer.
+       *
+       * Results are never stored: they are resolved at delivery, and writing them here would freeze
+       * "the six soonest events" to whichever six were soonest on the day somebody last saved the
+       * page — which is the entire thing a query exists not to do. It is also why a revision
+       * restoring this value restores the *rule*, and the rule then answers with today's content.
+       *
+       * `limit` is clamped to the field's own `maxResults` rather than refused. An editor typing 50
+       * into a field capped at 24 has asked for more than the site will carry, and the useful answer
+       * is 24 — refusing the save would block them on a number they cannot see the ceiling for.
+       */
+      const config = parseJson<Record<string, unknown>>(field.config, {});
+      const maxResults =
+        typeof config.maxResults === 'number' && config.maxResults > 0 ? config.maxResults : 24;
+
+      schema = queryValueSchema.transform((value) => ({
+        ...value,
+        limit: Math.min(value.limit, maxResults),
+      }));
+      break;
+    }
+
     default: {
       const exhaustive: never = field.type;
       throw new Error(`Unhandled field type: ${String(exhaustive)}`);
@@ -592,7 +708,32 @@ export function validateItemData(
   const errors: Record<string, string[]> = {};
 
   for (const field of fields) {
-    const schema = buildValueSchema(field, { requireComplete: options.requireComplete });
+    /**
+     * Evaluated against `input`, never the accumulating `parsed`.
+     *
+     * The loop fills `parsed` in field order, so a controlling checkbox positioned *after* the field
+     * it governs would not be there yet — and the dependent would evaluate against `undefined`,
+     * come out hidden, and stop being required for no reason an author could see. Reading the raw
+     * input makes the answer independent of the order fields happen to sit in.
+     */
+    const visible = isFieldVisible(field, fields, input);
+
+    /**
+     * A hidden field is relaxed by the mechanism that already exists rather than a second one.
+     *
+     * "You have not finished this" is exactly what `requireComplete` describes, and a field the
+     * editor is not showing cannot be finished — so the same three rules come off (`required`, text
+     * `minLength`, repeater `minItems`) and every bound stays on. Sanitising is untouched, because
+     * the richtext transform sits outside every `required` branch; a hidden richtext value still
+     * goes through it, which matters because it is still stored and still rendered with `set:html`
+     * by any consumer that reads the boolean differently than the editor does.
+     *
+     * Threaded into the block and repeater walks too, not just the value schema, so a hidden
+     * region's contents relax with it.
+     */
+    const fieldOptions = visible ? options : { ...options, requireComplete: false };
+
+    const schema = buildValueSchema(field, { requireComplete: fieldOptions.requireComplete });
     const result = schema.safeParse(input[field.api_id]);
 
     if (!result.success) {
@@ -607,7 +748,7 @@ export function validateItemData(
         field,
         result.data as BlockInstance[],
         options.blockTypes,
-        options,
+        fieldOptions,
       );
       if (blocks.errors.length > 0) errors[field.api_id] = blocks.errors;
       else parsed[field.api_id] = blocks.value;
@@ -615,12 +756,22 @@ export function validateItemData(
     }
 
     if (field.type === 'repeater') {
-      const rows = validateRepeater(field, result.data as RepeaterRow[], options);
+      const rows = validateRepeater(field, result.data as RepeaterRow[], fieldOptions);
       if (rows.errors.length > 0) errors[field.api_id] = rows.errors;
       else parsed[field.api_id] = rows.value;
       continue;
     }
 
+    /**
+     * A hidden field's value is **kept**, here and in delivery.
+     *
+     * Dropping it would make this function a destructive transform driven by a rule an admin can
+     * edit on a different screen: adding a condition to a content type would silently wipe that
+     * field on every item's next save, with no revision showing an author doing it. Keeping it also
+     * means unticking a box and reticking it brings the text back, which is what anyone expects of
+     * a checkbox. The consumer reads the controlling value and decides what to render — Taproot
+     * ships no templates and does not get to make that call.
+     */
     parsed[field.api_id] = result.data;
   }
 
@@ -669,6 +820,7 @@ export function repeaterRowFields(field: FieldRow): FieldRow[] {
         required: sub.required ? 1 : 0,
         localized: 0,
         config: stringifyJson(sub.config),
+        visible_when: sub.visible_when ? stringifyJson(sub.visible_when) : null,
         created_at: field.created_at,
         updated_at: field.updated_at,
       } as FieldRow,
@@ -886,6 +1038,12 @@ export const fieldInputSchema = z.object({
   localized: z.boolean().default(false),
   position: z.number().int().nonnegative().default(0),
   config: z.record(z.string(), z.unknown()).default({}),
+  /**
+   * `nullish` rather than `optional`, and the difference is load-bearing on a PATCH: `undefined`
+   * means "not provided, keep what is stored" and `null` means "remove the condition". Collapsing
+   * them with `??` is what silently ignored a request to clear `publish_at`.
+   */
+  visible_when: visibilityCondition.nullish(),
 });
 
 export type ContentTypeInput = z.infer<typeof contentTypeInputSchema>;

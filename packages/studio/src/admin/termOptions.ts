@@ -36,7 +36,13 @@ export async function termOptionsForFields(
   const taxonomyIds = new Set<string>();
 
   for (const field of reachableFields(fields, registries.blockTypes ?? [])) {
-    if (field.type !== 'taxonomy') continue;
+    /**
+     * `query` as well as `taxonomy`, because both name a taxonomy in the same config key and both
+     * need its terms on screen — one to file content under a term, the other to filter a listing by
+     * one. Missing the second is silent: the field renders with an empty set of checkboxes, which
+     * reads as "this taxonomy has no terms" rather than "nobody asked for them".
+     */
+    if (field.type !== 'taxonomy' && field.type !== 'query') continue;
     try {
       const taxonomyId = (JSON.parse(field.config) as { taxonomyId?: string | null }).taxonomyId;
       if (taxonomyId) taxonomyIds.add(taxonomyId);

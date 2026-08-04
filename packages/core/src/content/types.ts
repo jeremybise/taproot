@@ -481,6 +481,7 @@ export async function createField(
     required: fromBool(input.required),
     localized: fromBool(input.localized),
     config: stringifyJson(parsed.config),
+    visible_when: input.visible_when ? stringifyJson(input.visible_when) : null,
     created_at: timestamp,
     updated_at: timestamp,
   };
@@ -528,6 +529,17 @@ export async function updateField(
     required: input.required === undefined ? existing.required : fromBool(input.required),
     localized: input.localized === undefined ? existing.localized : fromBool(input.localized),
     config: stringifyJson(parsed.config),
+    /**
+     * `undefined` keeps the stored condition, `null` clears it — the two cannot be collapsed with
+     * `??`, which is exactly how a request to remove `publish_at` was silently ignored. There is no
+     * other way to make a conditional field unconditional again.
+     */
+    visible_when:
+      input.visible_when === undefined
+        ? existing.visible_when
+        : input.visible_when
+          ? stringifyJson(input.visible_when)
+          : null,
     updated_at: now(),
   };
 

@@ -1,4 +1,10 @@
-import { createItem, getContentType, listItems } from '@taprootcms/core';
+import {
+  createItem,
+  getContentType,
+  isItemSort,
+  listItems,
+  termIdsForBranch,
+} from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, readJson } from '../_shared.js';
@@ -8,10 +14,67 @@ import { canChangeStatus } from '../../runtime/guards.js';
 export const GET = handle(async ({ context, taproot }) => {
   const params = new URL(context.request.url).searchParams;
 
+  /**
+   * `termIds` and `sort` exist for the query field's live preview, which has to answer "what would
+   * this rule return" using the *same* code path that answers it at delivery — otherwise the count
+   * an editor tunes against and the list a visitor sees are two implementations free to disagree.
+   *
+   * Branch expansion happens here rather than in `ItemFilters`, which stays a synchronous query
+   * builder the status facets can share. An empty `termIds` parameter means no filter, matching the
+   * query field's own convention rather than `ItemFilters`' — see `resolveItemQueries` for why the
+   * two differ.
+   */
+  const chosen = (params.get('termIds') ?? '').split(',').filter(Boolean);
+  const termIds = chosen.length
+    ? [...new Set((await Promise.all(chosen.map((id) => termIdsForBranch(taproot.db.db, id)))).flat())]
+    : undefined;
+
+  const sort = params.get('sort');
+  const visibleOnly = params.get('visibleOnly') === '1';
+  const contentTypeId = params.get('contentTypeId') ?? undefined;
+
+  /**
+   * The date dimension, resolved exactly as `resolveItemQueries` resolves it — looked up on the
+   * content type as it is now, and dropped when it does not name a real `date` field.
+   *
+   * Duplicating the *lookup* here is the price of the preview answering the same question delivery
+   * will. Trusting the parameter instead would let the editor's count diverge from the published
+   * page precisely when the configuration is wrong, which is when an admin most needs to see it.
+   */
+  const dateFieldApiId = params.get('dateField');
+  const dateFilter = params.get('dateFilter');
+  let dateField: { apiId: string; kind: 'date' } | undefined;
+
+  if (contentTypeId && dateFieldApiId) {
+    const contentType = await getContentType(taproot.db.db, contentTypeId);
+    const found = contentType?.fields.find(
+      (field) => field.api_id === dateFieldApiId && field.type === 'date',
+    );
+    if (found) dateField = { apiId: found.api_id, kind: 'date' };
+  }
+
+  const valueFilters =
+    dateField && (dateFilter === 'upcoming' || dateFilter === 'past')
+      ? [
+          {
+            field: dateField.apiId,
+            operator: (dateFilter === 'upcoming' ? 'after' : 'before') as 'after' | 'before',
+            // Now, worked out per request — never read from a parameter, for the same reason it is
+            // never read from stored data.
+            value: new Date().toISOString(),
+          },
+        ]
+      : undefined;
+
   const result = await listItems(taproot.db.db, {
-    contentTypeId: params.get('contentTypeId') ?? undefined,
+    contentTypeId,
     status: (params.get('status') as never) ?? undefined,
     search: params.get('search') ?? undefined,
+    termIds,
+    sort: isItemSort(sort) ? sort : undefined,
+    sortField: dateField,
+    valueFilters,
+    visibleOnly: visibleOnly || undefined,
     limit: Number(params.get('limit') ?? 50),
     offset: Number(params.get('offset') ?? 0),
   });

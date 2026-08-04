@@ -29,9 +29,17 @@ import {
 } from 'lucide-react';
 
 import type { MediaOption } from '../../mediaOptions.js';
-import { newId, type BlockInstance, type ContentTypeRow, type FieldRow } from '@taprootcms/core';
+import {
+  isFieldVisible,
+  newId,
+  type BlockInstance,
+  type ContentTypeRow,
+  type FieldRow,
+} from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './FieldControl.js';
+import { CollapseAll } from './CollapseAll.js';
+import { useCollapsible } from './useCollapsible.js';
 import type { RelationTarget } from '../../relationOptions.js';
 
 /**
@@ -118,7 +126,7 @@ export function BlockListEditor({
   const [status, setStatus] = useState('');
   const [promoting, setPromoting] = useState<string | null>(null);
   /** Blocks collapse to a summary row once there are several; a page can hold a lot of them. */
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const { collapsed, toggle: toggleCollapsed, collapseAll, expandAll } = useCollapsible();
 
   // False during SSR and the first client render, so both produce identical HTML. dnd-kit derives
   // ids from a module-level counter and would otherwise cause a hydration mismatch.
@@ -257,13 +265,19 @@ export function BlockListEditor({
     onChange(value.map((block, i) => (i === index ? { ...block, data } : block)));
   }
 
-  function toggleCollapsed(blockId: string) {
-    setCollapsed((current) => {
-      const next = new Set(current);
-      if (next.has(blockId)) next.delete(blockId);
-      else next.add(blockId);
-      return next;
-    });
+  /**
+   * Announced rather than left silent, because both controls are idempotent: pressing "Expand all"
+   * when everything is already open changes nothing on screen, and a control that sometimes does
+   * nothing and never says so is one people stop trusting.
+   */
+  function onExpandAll() {
+    expandAll();
+    setStatus(`All ${value.length} block${value.length === 1 ? '' : 's'} expanded.`);
+  }
+
+  function onCollapseAll() {
+    collapseAll(value.map((block) => block.id));
+    setStatus(`All ${value.length} block${value.length === 1 ? '' : 's'} collapsed.`);
   }
 
   function onDragEnd(event: DragEndEvent) {
@@ -323,6 +337,15 @@ export function BlockListEditor({
 
   return (
     <div>
+      {/*
+        Offered from two blocks up, not from one: with a single block the pair is two controls for
+        something its own disclosure already does. Shown even when `disabled`, because collapsing is
+        a way of reading a long region rather than a way of editing it.
+      */}
+      {value.length > 1 && (
+        <CollapseAll label="blocks" onExpandAll={onExpandAll} onCollapseAll={onCollapseAll} />
+      )}
+
       {value.length === 0 ? (
         <p className="mt-1.5 rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-content-muted">
           No blocks yet. Add one below to start composing this region.
@@ -641,7 +664,14 @@ function BlockRow({
         {blockType.fields.length === 0 ? (
           <p className="text-sm text-content-subtle">This block type has no fields yet.</p>
         ) : (
-          blockType.fields.map((field) => (
+          // Scoped to this block's own `data`: a block's field condition names a sibling inside the
+          // same block, never a field on the page around it. That is the same scope
+          // `validateBlocks` recurses with, so the two cannot disagree.
+          blockType.fields
+            .filter((field) =>
+              isFieldVisible(field, blockType.fields, (reusable ? reusable.data : block.data) ?? {}),
+            )
+            .map((field) => (
             <FieldControl
               key={field.id}
               field={field}

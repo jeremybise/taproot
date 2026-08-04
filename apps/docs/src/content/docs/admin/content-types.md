@@ -56,6 +56,32 @@ keyboard.
 An editor reading a field for the first time has your help text and nothing else. "Shown on the
 listing card, roughly 20 words" is worth more than any amount of general documentation.
 
+### Showing a field only when it matters
+
+Under **Visibility**, a field can name one other field on the same type and only appear when that
+field says so — *show the message only when the banner is switched on*. It keeps a form honest:
+nobody is asked to fill in a closure message for a banner nobody is showing.
+
+Three things are worth knowing before you use it.
+
+**A hidden field is never required.** If you mark a field required *and* give it a condition, that
+means "required when shown". Editors are never blocked by an input they cannot see.
+
+**Hidden fields keep what is already in them.** Switching the condition off does not clear anything
+— switch it back on and the text is still there. The same is true when you add a condition to a
+field that already has content across hundreds of items: nothing is erased.
+
+**Your site still decides what to render.** Taproot ships no templates, so the condition governs the
+*editing form*, not the page. A hidden field's value is still delivered, and the usual template
+reads the controlling field itself — the same checkbox your condition names.
+
+The condition can name any field beside it, which means inside a block it names another field in
+that block, and inside a repeater it names another field in that row. So one row of opening hours
+can hide its closing time while the row above it shows one.
+
+If you delete or rename a field that something else depends on, the dependent field simply becomes
+visible again rather than disappearing.
+
 ## Sidebar order
 
 **Settings → Content types** reorders the sidebar. Put what people touch daily at the top.

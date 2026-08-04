@@ -61,6 +61,13 @@ describe('config round-trips through core validation', () => {
     link: { allowedKinds: ['item', 'url'] },
     block: { allowedBlocks: [], maxBlocks: 4 },
     repeater: { minItems: 0, maxItems: 5, fields: [] },
+    query: {
+      targetContentTypeId: 'abc',
+      taxonomyId: 'tax1',
+      dateFieldApiId: 'starts_at',
+      maxResults: 24,
+      defaultLimit: 6,
+    },
   };
 
   for (const type of FIELD_TYPES) {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { FieldRow } from '@taprootcms/core';
+import { isFieldVisible, type FieldRow } from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import AccessibilityPanel from './AccessibilityPanel.js';
@@ -166,7 +166,9 @@ export default function ReusableBlockEditor({
         {fields.length === 0 ? (
           <p className="text-sm text-content-subtle">This block type has no fields.</p>
         ) : (
-          fields.map((field) => (
+          fields
+            .filter((field) => isFieldVisible(field, fields, data))
+            .map((field) => (
             <FieldControl
               key={field.id}
               field={field}

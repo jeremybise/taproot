@@ -10,7 +10,9 @@ import type {
 import type { StorageAdapter } from '../storage/types.js';
 import { parseJson } from '../db/values.js';
 import { repeaterRowFields } from '../validation/fields.js';
-import { getContentType } from './types.js';
+import { parseVisibility, type VisibilityCondition } from '../validation/visibility.js';
+import { resolveItemQueries, type DeliveryQueryResult } from './itemQueries.js';
+import { blockTypeRegistry, getContentType } from './types.js';
 import { getItemByPath, getRedirect, visibleToPublic, type ContentItem } from './items.js';
 import { resolveMenu, type ResolvedMenuItem } from './menus.js';
 import { ancestorPaths, normalizePath } from './paths.js';
@@ -63,6 +65,18 @@ export interface DeliveryItemRef {
   title: string;
   path: string;
   status: ContentStatus;
+  /**
+   * The item's own field values — present **only** for items matched by a `query` field.
+   *
+   * A breadcrumb or a relation target is a name and a URL, and that is all any consumer has ever
+   * needed of one. A query result is a card: a thumbnail, a date, a location. Carrying the data on
+   * the same ref rather than in a second map means an item that is both — a related page that also
+   * matches a listing — is one entry rather than two that could disagree.
+   *
+   * `block` and `query` fields are stripped; media, relation and term ids inside it resolve through
+   * the payload's own maps exactly as the host item's do, one level deep.
+   */
+  data?: Record<string, unknown>;
 }
 
 export interface DeliveryTermRef {
@@ -80,6 +94,16 @@ export interface DeliveryField {
   helpText: string | null;
   position: number;
   config: Record<string, unknown>;
+  /**
+   * The condition under which the editor shows this field, or null.
+   *
+   * Sent because a hidden field's **value is still stored and still delivered** — dropping it would
+   * make a content-type edit silently wipe content — so a consumer that wants to honour the
+   * editor's intent needs the rule as well as the data. Most will not: the usual template reads the
+   * controlling boolean itself, which is what `show_website_banner` is for. Taproot ships no
+   * templates and does not get to decide.
+   */
+  visibleWhen: VisibilityCondition | null;
 }
 
 export interface DeliveryItem {
@@ -118,6 +142,21 @@ export type DeliveryResult =
       media: Record<string, DeliveryMedia>;
       references: Record<string, DeliveryItemRef>;
       terms: Record<string, DeliveryTermRef>;
+      /**
+       * Answers to the page's `query` fields, keyed by `queryKey(containerId, fieldApiId)`.
+       *
+       * A fourth top-level map rather than results written into `data[apiId]`, because that slot
+       * holds the saved *rule* and has to keep the stored shape — the payload stays usable for a
+       * write, and the generated types keep describing what is actually sent. Overwriting it with
+       * an answer would break both, and worse than the rich-text exception does, since a rule
+       * replaced by its results does not round-trip at all.
+       *
+       * The key is composite because a query field can sit inside a block, and the same block type
+       * placed twice on one page is two placements with two answers. `containerId` is the item's id
+       * at the top level and the block instance's id inside a block — both of which a consumer
+       * already holds when it comes to render one.
+       */
+      queries: Record<string, DeliveryQueryResult>;
     }
   | { kind: 'redirect'; to: string; status: number }
   | { kind: 'not_found' };
@@ -218,11 +257,34 @@ export async function buildItemPayload(
   if (!options.includeUnpublished) childQuery = childQuery.where(visibleToPublic);
   const children = (await childQuery.execute()).map(toItemRef);
 
+  /**
+   * Queries run **before** the reference walk, and that ordering is the whole design.
+   *
+   * A matched event's thumbnail is a media id inside *its* data, not inside this page's — so the
+   * ids have to be in `collected` before the loaders below, or every listing would ship image ids
+   * that resolve to nothing. Running it after would mean a second round of loaders, which is the
+   * N+1 this avoids.
+   *
+   * It also has to run after `resolveItemBlocks`, so a query inside a reusable block is found at
+   * all.
+   */
+  const blockTypes = await blockTypeRegistry(db);
+  const resolvedQueries = await resolveItemQueries(db, contentType.fields, data, item.id, {
+    blockTypes,
+    includeUnpublished: options.includeUnpublished,
+  });
+
   const collected = collectReferences(contentType.fields, data);
   // The social image is referenced from `seo`, not from a field, so it would be missed by a walk
   // over `data` alone — and it is the one image every page needs absolutely.
   const seo = resolveSeo(item, contentType);
   if (seo.ogImageId) collected.mediaIds.add(seo.ogImageId);
+
+  // Each result's own references, one level deep — its hero image and its department term, not the
+  // references of whatever *those* point at in turn.
+  for (const result of resolvedQueries.items) {
+    collectReferences(result.fields, result.data, collected);
+  }
 
   const [media, references, terms, linkTargets] = await Promise.all([
     loadMedia(db, [...collected.mediaIds], options),
@@ -274,8 +336,25 @@ export async function buildItemPayload(
     breadcrumbs,
     children,
     media,
-    references,
+    /**
+     * Query results are folded in rather than replacing what `loadItemRefs` found.
+     *
+     * An item can be both a relation target and a query match on one page. Two entries for one id
+     * is impossible in a map, so the question is which wins — and the answer has to be the one
+     * carrying `data`, or a listing card silently loses its date because the same event happened to
+     * be linked from a paragraph above it.
+     */
+    references: {
+      ...references,
+      ...Object.fromEntries(
+        resolvedQueries.items.map(({ item: row, data: resultData }) => [
+          row.id,
+          { ...toItemRef(row), data: resultData },
+        ]),
+      ),
+    },
     terms,
+    queries: resolvedQueries.queries,
   };
 }
 
@@ -513,6 +592,22 @@ export function collectReferences(
           const refs = collectRichTextRefs(value);
           for (const id of refs.itemIds) into.itemIds.add(id);
           for (const id of refs.mediaIds) into.mediaIds.add(id);
+        }
+        break;
+      /**
+       * A query names the terms it filters by, and those are references like any other.
+       *
+       * The *results* are not collected here — they are not in `data` at all, and finding them
+       * means running the query, which `resolveItemQueries` does before this walk so their ids are
+       * already in `into`. What is here is the rule's own vocabulary: a heading reading "Events in
+       * Arts" needs the term's name, and the `terms` map is the only route from an id to one.
+       */
+      case 'query':
+        for (const saved of ids) {
+          if (typeof saved !== 'object' || saved === null) continue;
+          const termIds = (saved as { termIds?: unknown }).termIds;
+          if (!Array.isArray(termIds)) continue;
+          for (const id of termIds) if (typeof id === 'string') into.termIds.add(id);
         }
         break;
       default:
@@ -806,5 +901,6 @@ function toDeliveryField(field: FieldRow): DeliveryField {
     helpText: field.help_text,
     position: field.position,
     config: parseJson<Record<string, unknown>>(field.config, {}),
+    visibleWhen: parseVisibility(field.visible_when),
   };
 }

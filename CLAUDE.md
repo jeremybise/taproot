@@ -215,6 +215,76 @@ close the gap and is the wrong one: `data` has to keep the stored shape so the p
 for a write. Note the older test asserted only that the sub-field names appeared, which they do
 either way — that is why this survived.
 
+**A `query` field stores the rule and never the answer, and the answer has nowhere to live in
+`data`.** `resolveItemQueries` runs the rules on every read, so "the six soonest Arts events" changes
+when somebody publishes a seventh without anyone editing the page the listing sits on. Five things
+hold it up:
+- **Results land in a fourth top-level map, `queries`, not in `data[apiId]`.** That slot holds the
+  saved rule and has to keep the stored shape — the payload stays usable for a write and the
+  generated types keep describing what is sent. Overwriting it is worse than the rich-text
+  exception: a rule replaced by its results does not round-trip at all.
+- **The key is `${containerId}:${fieldApiId}`**, because a query field can sit on a block type and
+  the same block placed twice on one page is two rules with two answers. Keyed by the field alone
+  the second placement silently renders the first one's results — `itemQueries.test.ts` is the
+  proof, and `queryKey` lives in its own module so `pure.ts` can re-export it to a consumer that
+  must never see Kysely.
+- **Queries run *after* `resolveItemBlocks` and *before* `collectReferences`.** After, so a query
+  inside a reusable block is found at all; before, so each matched item's own media and term ids
+  reach `collected` and ride the loaders that were going to run anyway. Cost is O(query fields), not
+  O(results): one list query per field plus one memoised `getContentType` per distinct target type.
+- **A result carries the item's whole `data` minus `block` and `query` fields.** Not a configurable
+  subset — if an editor chose the fields, a template would render nothing the day somebody unticked
+  "location". Excluding `query` is the recursion bound, and a sharper one than a depth counter: two
+  types listing each other cannot fan out. Results merge into `references` *after* `loadItemRefs`,
+  because an item that is both a relation target and a match must keep the entry carrying `data`.
+- **A listing never shows a draft, even under a preview token**, where the rest of a preview
+  deliberately does. A listing is a claim about what the page will look like once live, so including
+  drafts would let an editor tune it to six results and watch four vanish at publish.
+
+**Filtering or ordering by a value inside `data` goes through `content_item_values`, a derived index
+rebuilt in the item's write batch.** `data` is TEXT holding JSON, so "events whose `starts_at` is
+upcoming, soonest first" has no other SQL path — the only reads into `data` anywhere else are `LIKE`
+prefilters verified afterwards in JS. Same status and same rules as `taxonomy_assignments`: not the
+source of truth, rebuilt from `data`, so a restored revision restores it. Six things to know:
+- **`json_extract` was the alternative and is worse.** It needs different syntax per dialect —
+  the first dialect-branched query building in the repo — and is an unindexed scan unless an
+  expression index exists per content type per field.
+- **Three value columns, not one.** `'10' < '9'` is true as text, so a numeric ordering stored as
+  text is wrong in a way that looks plausible. `indexedValueKind` picks the column from the field
+  type; a caller guessing gets it silently wrong.
+- **Dates are normalised through `Date` before storing.** A `date` field with `includeTime` off
+  stores `2030-05-01`, which as raw text sorts *before* `2030-05-01T09:00:00Z` — dropping an
+  all-day event out of a window it belongs in.
+- **Nothing about status is denormalised in.** A listing joins back and applies `visibleToPublic`,
+  or a scheduled item would go live only when something happened to reindex it.
+- **The planner is not called on the cascading path-move path.** Descendants' `data` did not
+  change, and that batch already carries a statement per descendant.
+- **`npm run db:reindex` is a required step after migration `0019`, not a nicety.** The table is
+  created empty and a migration cannot fill it — that needs field definitions and a walk over
+  stored JSON. Until it runs, every query field filtering or ordering by a value answers as though
+  nothing matched. `reindexValues` goes through `handle.batch` per item so an item is never left
+  with its old rows deleted and its new ones unwritten.
+
+**"Upcoming" is stored as an intent and resolved against the clock on every read.** `dateFilter` is
+`'any' | 'upcoming' | 'past'`, never a timestamp: a stored bound would be frozen at whatever moment
+somebody last pressed save, so a page would quietly stop listing anything the day after it was
+edited — the same booby trap a stale `publish_at` is. The *preview* endpoint resolves it the same
+way and does its own lookup of the nominated date field rather than trusting the parameter, because
+the editor's count and the published page must not diverge exactly when the configuration is wrong.
+A `dateFieldApiId` that no longer names a `date` field drops the bound and falls back to `path`
+rather than erroring — a query outlives the type it points at, and a live page must not break for a
+configuration mistake made weeks earlier on another screen.
+
+**`listItems` sorts by a named set, never a caller-supplied column.** `ITEM_SORTS` lives in its own
+importless module because `items.ts` and `validation/fields.ts` already point at each other. A column
+name from a caller means the delivery API publishes the schema as its sort vocabulary; a named order
+is also free to be a different expression, which `newest` needs — it is
+`coalesce(published_at, created_at)`, so an item awaiting its sweep does not sort as though it had no
+date, and so NULL ordering cannot differ between SQLite and Postgres. Every order ends with `path` as
+a tiebreak, or two items sharing a timestamp swap between pages and one is shown twice. The sort goes
+on `listItems` and **not** on `applyItemFilters`, which is typed pre-`select` and shared byte for
+byte with the status facets — a facet count has no ordering to pay for.
+
 **A preview token's draft snapshot is a rendering input, not a version.** Phase 4.5's split view
 needs the editor's *unsaved* state to reach a consumer that renders server-side, so `preview_tokens`
 carries nullable `title`, `slug`, `data`, `seo`, and `draft_updated_at`, and `resolvePreviewToken`
@@ -242,7 +312,42 @@ half-typed form may fail. It works because both recursions already forward `opti
 blocks and repeater rows behave identically for free. The richtext transform sits outside every
 `required` branch and runs first, which is the property the whole feature rests on;
 `validation/fields.test.ts` asserts it at all three walk sites and asserts the write paths still
-refuse an incomplete item. `writePreviewDraft` is the only caller and must stay so.
+refuse an incomplete item. `writePreviewDraft` is the only *external* caller and must stay so —
+`validateItemData` now also derives it per field for a conditionally hidden one, which is reuse of
+the same three-rule relaxation rather than a second way in.
+
+**A conditionally hidden field is not required, and its value is not dropped.** `visible_when` is a
+nullable column on `fields` — not a key in `config`, because a condition means the same thing for
+every field type and `config` would carry twelve identical copies; `repeaterSubField` holds the same
+key because a sub-field has no row, and block types need nothing because a block type is a content
+type. `validation/visibility.ts` is the one evaluator, called by `validateItemData` **and** by the
+three editor render sites, for the reason `resolveSeo` lives in core: two implementations disagreeing
+here is a field an editor cannot see and cannot save without. Four things hold it up:
+- **The condition is evaluated against the raw `input`, never the accumulating `parsed`.** The loop
+  fills `parsed` in field order, so a controlling checkbox positioned *after* its dependent is not
+  there yet — the dependent would come out hidden, stop being required, and the rule would silently
+  depend on the order somebody dragged the fields into. Proven by mutation: flipping it to `parsed`
+  fails exactly one test.
+- **A hidden field's value is kept.** Dropping it makes `validateItemData` a destructive transform
+  driven by a rule an admin edits on a different screen — adding a condition would wipe that field
+  across every item on its next save, with no revision showing an author doing it. Keeping it is
+  also why unticking and reticking a box brings the text back.
+- **A dangling condition fails open.** `evaluateVisibility` takes the sibling `api_id`s from the
+  *schema* precisely so a condition naming a deleted or renamed field renders the dependent visible.
+  Failing closed makes an input permanently unreachable with nothing able to explain why. Absent
+  *data* on a field that exists is a different thing and evaluates normally — a checkbox nobody
+  ticked is unticked, not unknown.
+- **"Sibling" is always the same level**, and it costs nothing to enforce because every walk already
+  has exactly that in hand: `validateBlocks` recurses with the block's own fields and data,
+  `validateRepeater` with the row's. So one repeater row can hide what another shows. A condition
+  reaching across levels would have to name a path, which is a different feature.
+
+Two consequences elsewhere. `typegen` emits a conditional field **optional whatever `required`
+says**, because "required" on one means "required when shown" and a non-optional emit would be the
+CMS promising something it does not enforce. And the editor filters hidden fields in the *parent*
+rather than passing siblings into `FieldControl` — which keeps `FieldControl` a component that
+renders one field and knows nothing about its neighbours, and means a hidden richtext editor is
+never mounted and torn down as somebody ticks a box.
 
 **A preview token is a capability over one item, and `delivery/resolve.ts` enforces it by path.**
 The preview branch used to ignore `path` entirely and answer with the token's item whatever was
@@ -740,7 +845,25 @@ are about the audit scripts at the repo root rather than the admin itself:
   list is zero for everything and quietly restores the bug. The same trap one screen along: the
   content type settings form renders a different control per kind, so it audits `contentTypes[0]`
   **and** the first singleton — auditing only the first type leaves whichever kind sorts second
-  unchecked while the run still reports zero.
+  unchecked while the run still reports zero. And a third time, one axis along: **field count is a
+  fact about the content type, composition is a fact about the item.** The field-count winner on the
+  seeded database had zero blocks placed and zero repeater entries, so every collapsible panel in
+  the admin — and every field inside one — was absent from the run. `composedRows` picks the
+  block-heaviest and row-heaviest items as well, counting the two envelopes **separately** because
+  they sit on different items and one combined score leaves repeaters unaudited.
+
+**Blocks and repeater rows default to expanded, and that default is what keeps them auditable.**
+`useCollapsible` is shared by `BlockListEditor` and `RepeaterField`, and the audit runs with
+`runScripts: 'outside-only'` — so what axe sees is the island's *server-rendered* markup with that
+initial state. A collapsed panel carries `hidden`, which is `display: none`, and axe skips its
+contents entirely. Defaulting to collapsed for long lists is the obvious ergonomic improvement and
+would silently drop every field inside every block from the audit while the run still reported zero.
+Nothing persists the state either: the only flash-free precedent is a cookie read on the server
+(`data-theme`, `data-preview`), and per-row state keyed by block instance id is far too fine-grained
+to spend one on. Related: a repeater row's disclosure is a **button and deliberately not a heading**,
+where a block's is an `<h3>` — a block is a section of the page being composed, while a repeater's
+rows are one field's value, and a repeater nested inside a block would have to guess a heading level
+from a depth the component cannot see.
 - **A new colour token or a new *pairing* of existing tokens is not done until it has a pair in
   `a11y-contrast.mjs`.** `axe` runs with `color-contrast` disabled precisely because that script is
   the authority, so a colour put on a background it has never been checked against is unchecked no

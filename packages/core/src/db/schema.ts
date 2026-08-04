@@ -308,7 +308,16 @@ export type FieldType =
   | 'relation'
   | 'link'
   | 'block'
-  | 'repeater';
+  | 'repeater'
+  /**
+   * A saved question about content, resolved at delivery — "the six soonest Arts events".
+   *
+   * Not a `relation` with filters. A relation names items an editor chose, and the set is only
+   * right until somebody publishes another one; a query names a *rule*, and its answer changes
+   * without anybody editing the page it sits on. That difference is the whole feature, and it is
+   * also why the two coexist rather than one absorbing the other.
+   */
+  | 'query';
 
 export interface FieldsTable {
   id: string;
@@ -323,6 +332,16 @@ export interface FieldsTable {
   localized: SqlBool;
   /** Type-specific options: select choices, relation target, min/max, etc. Validated by Zod. */
   config: JsonText;
+  /**
+   * When this field is shown, as one condition on a sibling — `{ field, operator, value? }`, or
+   * null for unconditional.
+   *
+   * Its own column rather than a key in `config` because it means the same thing for every field
+   * type, so `config` would carry twelve identical copies. See `validation/visibility.ts` for the
+   * evaluator both the editor and `validateItemData` call, and `0018_field_visibility` for why a
+   * hidden field's value is kept rather than dropped.
+   */
+  visible_when: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -657,6 +676,25 @@ export interface SettingsTable {
  * no `departments` or `role_assignments` table — roles are flat and site-wide, and departments are
  * classification, which `taxonomies` already covers. See SCOPE.md.
  */
+/**
+ * A derived index of scalar field values — see `0019_item_values` for why it exists at all.
+ *
+ * Same status as `taxonomy_assignments`: **not the source of truth.** The authored value lives in
+ * `content_items.data` and this is rebuilt from it inside the same atomic batch as the item write,
+ * which is what keeps a restored revision correct. One row per value, so a multi-value `select`
+ * contributes several.
+ */
+export interface ContentItemValuesTable {
+  content_item_id: string;
+  field_api_id: string;
+  /** The canonical string form, always written. */
+  value_text: string | null;
+  /** Numbers, and booleans as 0/1 — so `10` sorts above `9` rather than below it. */
+  value_num: number | null;
+  /** ISO 8601, which is why it sorts correctly as text. */
+  value_date: string | null;
+}
+
 export interface Database {
   users: UsersTable;
   api_keys: ApiKeysTable;
@@ -682,6 +720,7 @@ export interface Database {
   taxonomies: TaxonomiesTable;
   terms: TermsTable;
   taxonomy_assignments: TaxonomyAssignmentsTable;
+  content_item_values: ContentItemValuesTable;
   menus: MenusTable;
   menu_items: MenuItemsTable;
   settings: SettingsTable;

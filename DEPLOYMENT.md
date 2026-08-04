@@ -149,6 +149,26 @@ npm run db:migrate:remote
 It prints each migration as it applies, and is safe to re-run — already-applied migrations are
 skipped.
 
+### After `0019_item_values`, reindex once
+
+`0019` adds `content_item_values`, the derived index that lets a listing filter and order by a value
+inside an item's own field data — an event's start date rather than its publish date. The migration
+creates the table **empty**, and cannot fill it: doing so needs every content type's field
+definitions and a walk over each item's stored JSON, which is application knowledge rather than
+schema knowledge.
+
+```bash
+npm run db:reindex
+```
+
+Until it has run, any `query` field that filters or orders by a field value answers as though nothing
+matched — the content is intact and simply not indexed yet. It is safe to re-run at any time, since
+it rebuilds from `content_items.data`, which remains the source of truth. New and edited items index
+themselves as part of the same write, so this is a one-off for content that already existed.
+
+> Only needed on a database that already had content when `0019` was applied. A fresh deployment has
+> nothing to backfill, and `npm run db:seed` indexes what it creates.
+
 **A 400 reading "not authorized" is usually about the account, not the token.** Cloudflare answers
 that way when the token is valid but has no D1 access *for that account id* — either
 `TAPROOT_CF_ACCOUNT_ID` is wrong, or the token's Account Resources point at a different account. If

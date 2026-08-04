@@ -1,4 +1,6 @@
 import type { DeliveryField, DeliverySchema, DeliveryTypeSchema } from './delivery.js';
+import type { VisibilityCondition } from '../validation/visibility.js';
+import { ITEM_SORTS } from './itemSort.js';
 
 /** How a repeater's sub-fields are stored: the `FieldRow` shape, not the delivery one. */
 interface RepeaterSubFieldShape {
@@ -8,6 +10,12 @@ interface RepeaterSubFieldShape {
   required?: boolean;
   help_text?: string | null;
   config?: Record<string, unknown>;
+  /**
+   * Snake case like its siblings, and the **condition object** rather than the JSON string a
+   * `FieldRow` carries — a sub-field definition already lives inside JSON, so there is nothing to
+   * parse. `repeaterRowFields` is what stringifies it onto the synthesised row.
+   */
+  visible_when?: VisibilityCondition | null;
 }
 
 /**
@@ -143,6 +151,17 @@ function singleType(field: DeliveryField, blockTypeNames: Map<string, string>): 
       return blockTypeNames.size > 0
         ? `TaprootBlock`
         : 'Record<string, unknown>';
+    /**
+     * The saved rule, following the same rule `media` and `relation` follow.
+     *
+     * Reaching `default` here would have typed it `unknown` — which compiles, renders nothing, and
+     * errors nowhere, exactly the failure the repeater envelope comment describes. The answer is in
+     * the response's `queries` map and is deliberately not reachable from this type: a consumer
+     * looks it up by `${containerId}:${fieldApiId}`, because the same block type placed twice on one
+     * page has two answers and only the placement can tell them apart.
+     */
+    case 'query':
+      return 'TaprootQuery';
     case 'repeater': {
       /**
        * A repeater's sub-fields live in its own config, in the stored `FieldRow` shape.
@@ -168,8 +187,12 @@ function singleType(field: DeliveryField, blockTypeNames: Map<string, string>): 
             helpText: child.help_text ?? null,
             position: 0,
             config: child.config ?? {},
+            visibleWhen: child.visible_when ?? null,
           };
-          return `      ${propertyName(child.api_id)}${asDelivery.required ? '' : '?'}: ${fieldType(asDelivery, blockTypeNames)};`;
+          // Conditional sub-fields are optional whatever `required` says, for the same reason a
+          // conditional top-level field is: validation relaxes it when the condition is unmet.
+          const optional = !asDelivery.required || Boolean(asDelivery.visibleWhen);
+          return `      ${propertyName(child.api_id)}${optional ? '?' : ''}: ${fieldType(asDelivery, blockTypeNames)};`;
         })
         .join('\n');
 
@@ -218,10 +241,27 @@ function renderType(type: DeliveryTypeSchema, blockTypeNames: Map<string, string
 
   for (const field of type.fields) {
     if (field.helpText) lines.push(`  /** ${field.helpText.replace(/\*\//g, '*\\/')} */`);
-    // Optional unless required. A required field is guaranteed present by validation on write, so
-    // making it non-optional is a promise the CMS actually keeps.
+
+    /**
+     * Optional unless required — and a conditional field is optional whatever `required` says.
+     *
+     * "Required" on a conditional field means "required *when shown*": `validateItemData` relaxes
+     * it exactly as `requireComplete: false` does the moment its condition is unmet, so the value
+     * genuinely can be absent. Emitting it non-optional would be the CMS promising something it
+     * does not enforce, and the consumer would dereference `undefined` on a build that type-checks
+     * clean — the same shape of quiet failure as the repeater envelope.
+     */
+    const optional = !field.required || Boolean(field.visibleWhen);
+    if (field.visibleWhen) {
+      lines.push(
+        `  /** Shown when \`${field.visibleWhen.field}\` ${field.visibleWhen.operator.replace(/_/g, ' ')}${
+          field.visibleWhen.value === undefined ? '' : ` \`${field.visibleWhen.value}\``
+        } — so it may be absent. */`,
+      );
+    }
+
     lines.push(
-      `  ${propertyName(field.apiId)}${field.required ? '' : '?'}: ${fieldType(field, blockTypeNames)};`,
+      `  ${propertyName(field.apiId)}${optional ? '?' : ''}: ${fieldType(field, blockTypeNames)};`,
     );
   }
 
@@ -253,6 +293,21 @@ export function generateTypes(schema: DeliverySchema, options: GenerateOptions =
     'export type ContentItemId = string;',
     '/** An id referring to a taxonomy term. Look it up in `terms`. */',
     'export type TermId = string;',
+    '',
+    /**
+     * The rule, not the answer — matching what is actually stored in `data`.
+     *
+     * A query field's results are never in `data`; they arrive in the response's `queries` map,
+     * keyed by `${containerId}:${fieldApiId}`. Typing this as the results would be the same class
+     * of mistake the repeater envelope was: a generated type describing a payload Taproot does not
+     * send, which compiles and renders nothing.
+     */
+    '/** A saved query. Its results are in a delivery response’s `queries` map, not here. */',
+    'export interface TaprootQuery {',
+    '  termIds: TermId[];',
+    `  sort: ${ITEM_SORTS.map((sort) => JSON.stringify(sort)).join(' | ')};`,
+    '  limit: number;',
+    '}',
     '',
   ];
 

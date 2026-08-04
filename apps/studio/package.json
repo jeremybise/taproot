@@ -13,7 +13,8 @@
     "db:migrate:remote": "node --experimental-strip-types ./scripts/migrate.ts --remote",
     "db:seed": "node --experimental-strip-types ./scripts/seed.ts",
     "db:reset": "node --experimental-strip-types ./scripts/reset.ts",
-    "deploy": "astro build && wrangler deploy"
+    "deploy": "astro build && wrangler deploy",
+    "db:reindex": "node --experimental-strip-types ./scripts/reindex.ts"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.5",

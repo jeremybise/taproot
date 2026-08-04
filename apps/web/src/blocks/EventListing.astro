@@ -1,0 +1,109 @@
+---
+/**
+ * A listing driven by a `query` field.
+ *
+ * The point of the worked example: **this template never receives a list of events.** It receives
+ * the saved rule in `events`, and looks the answer up in the delivery response's `queries` map
+ * using the block instance's own id. That indirection is what lets the same block type sit on a
+ * page twice with two different rules — keyed by the field alone, the second placement would
+ * silently render the first one's results.
+ *
+ * Each matched item arrives in `references` carrying its own `data`, which is what makes a card
+ * possible: a title and a URL come from the ref, and the date and location come from the event's
+ * fields. Its media resolve through the same `media` map every other block uses, so a thumbnail
+ * costs no extra request.
+ */
+import { queryKey } from '@taprootcms/astro';
+import type {
+  DeliveryItemRef,
+  DeliveryMedia,
+  DeliveryQueryResult,
+} from '@taprootcms/astro';
+import TaprootImage from '@taprootcms/astro/components/TaprootImage.astro';
+
+interface Props {
+  heading?: string | null;
+  /** The saved rule. Present so a template *could* describe its own listing; unused here. */
+  events?: unknown;
+  /** The block envelope, which is where the id half of the key comes from. */
+  block: { id: string; type: string };
+  queries?: Record<string, DeliveryQueryResult>;
+  references?: Record<string, DeliveryItemRef>;
+  media?: Record<string, DeliveryMedia>;
+}
+
+const { heading, block, queries = {}, references = {}, media = {} } = Astro.props;
+
+const answer = queries[queryKey(block.id, 'events')];
+const matched = (answer?.ids ?? [])
+  .map((id) => references[id])
+  .filter((ref): ref is DeliveryItemRef => Boolean(ref));
+
+/** Formatted here rather than in the CMS: a date's presentation is a template's business. */
+const when = (value: unknown) =>
+  typeof value === 'string' && value
+    ? new Date(value).toLocaleString('en-GB', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
+---
+
+{
+  /*
+    Nothing rendered when nothing matches. A heading over an empty list reads as a broken page,
+    where an absent section reads as a section that has nothing to say yet — which is the truth.
+  */
+  matched.length > 0 && (
+    <section class="event-listing">
+      {heading && <h2>{heading}</h2>}
+
+      <ul>
+        {matched.map((event) => {
+          const image = typeof event.data?.image === 'string' ? media[event.data.image] : undefined;
+          const starts = when(event.data?.starts_at);
+
+          return (
+            <li>
+              {image && <TaprootImage asset={image} ratio={16 / 9} />}
+              <h3>
+                <a href={event.path}>{event.title}</a>
+              </h3>
+              {starts && <p class="when">{starts}</p>}
+              {typeof event.data?.location === 'string' && event.data.location && (
+                <p class="where">{event.data.location}</p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  )
+}
+
+<style>
+  .event-listing {
+    margin: 2rem 0;
+  }
+  .event-listing ul {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .event-listing h3 {
+    margin: 0.5rem 0 0.25rem;
+    font-size: 1.05rem;
+  }
+  .event-listing .when,
+  .event-listing .where {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9375rem;
+  }
+</style>

@@ -1,8 +1,16 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
-import { newId, repeaterRowFields, type FieldRow, type RepeaterRow } from '@taprootcms/core';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import {
+  isFieldVisible,
+  newId,
+  repeaterRowFields,
+  type FieldRow,
+  type RepeaterRow,
+} from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './FieldControl.js';
+import { CollapseAll } from './CollapseAll.js';
+import { useCollapsible } from './useCollapsible.js';
 import type { MediaOption } from '../../mediaOptions.js';
 import type { RelationTarget } from '../../relationOptions.js';
 
@@ -54,6 +62,14 @@ export function RepeaterField({
   invalid = false,
 }: Props) {
   const [status, setStatus] = useState('');
+  /**
+   * Rows collapse, the way blocks always have.
+   *
+   * A repeater is often the longest thing on a screen — a staff list runs to dozens of rows, each
+   * carrying several inputs — so an all-expanded repeater buries every field below it. The pattern
+   * is `BlockListEditor`'s, shared through `useCollapsible` rather than written twice.
+   */
+  const { collapsed, toggle, collapseAll, expandAll } = useCollapsible();
 
   const subFields = repeaterRowFields(field);
   const atLimit = maxItems !== undefined && value.length >= maxItems;
@@ -102,6 +118,17 @@ export function RepeaterField({
     setStatus(`Entry added at position ${value.length + 1}.`);
   }
 
+  /** Both controls are idempotent, so the outcome is announced rather than left to be inferred. */
+  function onExpandAll() {
+    expandAll();
+    setStatus(`All ${value.length} ${value.length === 1 ? 'entry' : 'entries'} expanded.`);
+  }
+
+  function onCollapseAll() {
+    collapseAll(value.map((row) => row.id));
+    setStatus(`All ${value.length} ${value.length === 1 ? 'entry' : 'entries'} collapsed.`);
+  }
+
   return (
     <div
       id={id}
@@ -112,6 +139,11 @@ export function RepeaterField({
         invalid ? 'border-danger' : 'border-border-strong'
       } ${disabled ? 'opacity-90' : ''}`}
     >
+      {/* From two rows up: with one row the pair duplicates that row's own disclosure. */}
+      {value.length > 1 && (
+        <CollapseAll label="entries" onExpandAll={onExpandAll} onCollapseAll={onCollapseAll} />
+      )}
+
       {value.length === 0 ? (
         <p className="text-sm text-content-subtle">
           No entries yet.
@@ -126,26 +158,51 @@ export function RepeaterField({
                   The position is the row's only name. Without it every control in every row would
                   announce identically, and a screen reader's list of form fields would be a wall of
                   the same three labels repeated.
+
+                  It is a disclosure button but deliberately **not** a heading, where the block
+                  editor's equivalent is an `<h3>`. A block is a section of the page being composed,
+                  so heading navigation through them is the page's structure; a repeater's rows are
+                  one field's value and are not document sections. A repeater can also sit inside a
+                  block, where the correct level would depend on a nesting depth this component has
+                  no way to know.
                 */}
-                <span className="text-xs font-medium text-content-subtle">
-                  Entry {index + 1} of {value.length}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => toggle(row.id)}
+                  aria-expanded={!collapsed.has(row.id)}
+                  aria-controls={`repeater-panel-${row.id}`}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs font-medium text-content-subtle transition-colors hover:bg-surface-sunken hover:text-content"
+                >
+                  {collapsed.has(row.id) ? (
+                    <ChevronDown aria-hidden="true" size={14} />
+                  ) : (
+                    <ChevronUp aria-hidden="true" size={14} />
+                  )}
+                  <span className="truncate">
+                    Entry {index + 1} of {value.length}
+                  </span>
+                </button>
 
                 {!disabled && (
                   <div className="flex gap-1">
+                    {/*
+                      Arrows for moving, chevrons for the disclosure — following the block editor.
+                      These were chevrons too until the row gained a disclosure, at which point one
+                      glyph in one row meant both "reorder this" and "open this".
+                    */}
                     <IconButton
                       label={`Move entry ${index + 1} up`}
                       disabled={index === 0}
                       onClick={() => move(index, index - 1)}
                     >
-                      <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                      <ArrowUp className="h-4 w-4" aria-hidden="true" />
                     </IconButton>
                     <IconButton
                       label={`Move entry ${index + 1} down`}
                       disabled={index === value.length - 1}
                       onClick={() => move(index, index + 1)}
                     >
-                      <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                      <ArrowDown className="h-4 w-4" aria-hidden="true" />
                     </IconButton>
                     <IconButton
                       label={`Remove entry ${index + 1}`}
@@ -160,8 +217,19 @@ export function RepeaterField({
                 )}
               </div>
 
-              <div className="space-y-3">
-                {subFields.map((sub) => (
+              <div
+                id={`repeater-panel-${row.id}`}
+                hidden={collapsed.has(row.id)}
+                className="space-y-3"
+              >
+                {/*
+                  Per row, against that row's own values — so "show the closing time unless we are
+                  closed that day" hides it on Sunday and leaves Monday alone. The same scope
+                  `validateRepeater` recurses with.
+                */}
+                {subFields
+                  .filter((sub) => isFieldVisible(sub, subFields, row.data))
+                  .map((sub) => (
                   <FieldControl
                     key={sub.id}
                     field={sub}

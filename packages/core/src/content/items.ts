@@ -14,6 +14,7 @@ import type {
 import { now, parseJson, stringifyJson } from '../db/values.js';
 import { newId } from '../ids.js';
 import { validateItemData } from '../validation/fields.js';
+import type { ItemSort } from './itemSort.js';
 import {
   buildRevisionStatement,
   getRevision,
@@ -22,6 +23,7 @@ import {
   RevisionError,
 } from './revisions.js';
 import { planAssignmentIndex } from './taxonomies.js';
+import { planValueIndex, type IndexedValueKind } from './derivedIndex.js';
 import { blockTypeRegistry } from './types.js';
 import {
   buildCollectionPath,
@@ -85,6 +87,16 @@ export function hydrateItem(row: ContentItemRow): ContentItem {
 export interface ListItemsOptions extends ItemFilters {
   limit?: number;
   offset?: number;
+  /** Defaults to `path`, which is what every caller got before this existed. */
+  sort?: ItemSort;
+  /**
+   * Which of the item's own fields `field_asc` / `field_desc` order by, and how it compares.
+   *
+   * The kind decides the column, and getting it wrong is silent rather than loud: sorted as text,
+   * `10` comes before `9` and a numeric ordering is simply wrong in a way that looks plausible.
+   * Callers get it from the field definition — `indexedValueKind` — rather than guessing.
+   */
+  sortField?: { apiId: string; kind: IndexedValueKind };
 }
 
 /** The narrowing part of a list query, without paging. */
@@ -126,6 +138,31 @@ export interface ItemFilters {
    * property the caller actually wants, and the one `kindHasPublicPath` names.
    */
   contentTypeKinds?: ContentTypeKind[];
+  /**
+   * Narrow by an item's own field values, through the derived value index.
+   *
+   * The reason the index exists: "events whose `starts_at` is after now" has no other SQL path,
+   * because `data` is TEXT. Several filters are ANDed — each is its own `EXISTS`, so an item has to
+   * satisfy all of them, and a multi-value field satisfying one counts once rather than
+   * multiplying the row.
+   */
+  valueFilters?: ItemValueFilter[];
+}
+
+/**
+ * One condition on an indexed field value.
+ *
+ * Dates only, so far, and stated as a bound rather than as "upcoming": *when* now is belongs to the
+ * caller, not to stored data. A `dateFilter: 'upcoming'` saved on a page would otherwise be a
+ * timestamp frozen at whatever moment somebody last pressed save — the same booby trap a stale
+ * `publish_at` is.
+ */
+export interface ItemValueFilter {
+  /** The field's `api_id`. */
+  field: string;
+  operator: 'after' | 'before';
+  /** ISO 8601, compared against `value_date`. */
+  value: string;
 }
 
 /**
@@ -243,6 +280,30 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
           );
   }
 
+  /**
+   * Value filters, each its own correlated EXISTS against the derived value index.
+   *
+   * EXISTS rather than a join for the reason the taxonomy filter states one line up: a multi-value
+   * field satisfying the condition twice must still count the item once. ANDed, because two
+   * conditions on a listing mean both — "upcoming *and* in this department".
+   */
+  for (const filter of filters.valueFilters ?? []) {
+    q = q.where((eb) =>
+      eb.exists(
+        eb
+          .selectFrom('content_item_values')
+          .select('content_item_values.content_item_id')
+          .whereRef('content_item_values.content_item_id', '=', 'content_items.id')
+          .where('content_item_values.field_api_id', '=', filter.field)
+          .where(
+            'content_item_values.value_date',
+            filter.operator === 'after' ? '>=' : '<=',
+            filter.value,
+          ),
+      ),
+    );
+  }
+
   return q;
 }
 
@@ -256,14 +317,89 @@ export async function listItems(
     .select((eb) => eb.fn.countAll<number>().as('count'))
     .executeTakeFirst();
 
-  const rows = await query
-    .selectAll()
-    .orderBy('path')
+  const rows = await applyItemSort(query.selectAll(), options.sort ?? 'path', options.sortField)
     .limit(options.limit ?? 50)
     .offset(options.offset ?? 0)
     .execute();
 
   return { items: rows.map(hydrateItem), total: Number(totalRow?.count ?? 0) };
+}
+
+/**
+ * Apply one of the named orders.
+ *
+ * Lives here rather than in `applyItemFilters` on purpose: that function is typed against the
+ * *pre-`select`* builder so the listing and the status facets can share it byte for byte, and a
+ * facet count has no ordering. Putting `orderBy` there would make the counts pay for a sort they
+ * discard, and would make the shared predicate stop being purely a predicate.
+ *
+ * Every order ends with `path` as a tiebreak so paging is stable — without one, two items sharing a
+ * timestamp can swap places between page 1 and page 2 and an item is silently shown twice or not at
+ * all.
+ *
+ * `coalesce` rather than a bare column, because SQLite sorts NULL as the smallest value and Postgres
+ * sorts it as the largest: a draft with no `published_at` would lead the list on one dialect and
+ * trail it on the other, which is the sort of difference that only ever shows up in production.
+ */
+function applyItemSort<Q extends { orderBy: (...args: any[]) => Q }>(
+  query: Q,
+  sort: ItemSort,
+  sortField?: ListItemsOptions['sortField'],
+): Q {
+  /**
+   * Ordering by one of the item's own values, through a correlated scalar subquery.
+   *
+   * A subquery rather than a join, so an item with no value for the field still appears — a join
+   * would silently drop every event whose date nobody filled in, which reads as content going
+   * missing rather than as a listing being ordered.
+   *
+   * The column follows the field's kind. Sorted as text, `10` comes before `9`, and a numeric
+   * ordering that is wrong in a plausible-looking way is worse than one that is obviously broken.
+   *
+   * With no `sortField` this falls through to `path` rather than erroring, because the field it
+   * named can be deleted from the content type long after a query was saved.
+   */
+  if ((sort === 'field_asc' || sort === 'field_desc') && sortField) {
+    const column =
+      sortField.kind === 'date'
+        ? sql.ref('value_date')
+        : sortField.kind === 'number'
+          ? sql.ref('value_num')
+          : sql.ref('value_text');
+
+    const direction = sort === 'field_asc' ? sql`asc` : sql`desc`;
+
+    return query
+      .orderBy(
+        sql`(select ${column} from content_item_values
+             where content_item_values.content_item_id = content_items.id
+               and content_item_values.field_api_id = ${sortField.apiId}
+             limit 1) ${direction}`,
+      )
+      .orderBy('path', 'asc');
+  }
+
+  switch (sort) {
+    case 'title':
+      return query.orderBy('title', 'asc').orderBy('path', 'asc');
+    case 'newest':
+      return query.orderBy(sql`coalesce(published_at, created_at)`, 'desc').orderBy('path', 'asc');
+    case 'oldest':
+      return query.orderBy(sql`coalesce(published_at, created_at)`, 'asc').orderBy('path', 'asc');
+    case 'recently_updated':
+      return query.orderBy('updated_at', 'desc').orderBy('path', 'asc');
+    // Reached only when no `sortField` was supplied — the branch above handles the real case, and
+    // falling back beats refusing a query whose date field somebody has since deleted.
+    case 'field_asc':
+    case 'field_desc':
+    case 'path':
+      return query.orderBy('path', 'asc');
+    default: {
+      const exhaustive: never = sort;
+      void exhaustive;
+      return query.orderBy('path', 'asc');
+    }
+  }
 }
 
 /**
@@ -510,6 +646,9 @@ export async function createItem(
 
   const assignments = await planAssignmentIndex(db, row.id, fields, validation.data ?? {});
   assertTermsExist(assignments.missing);
+  // Beside the taxonomy index and never apart from it: two derived tables rebuilt at different
+  // write points is one of them going quietly stale.
+  const values = planValueIndex(db, row.id, fields, validation.data ?? {});
 
   // Batched rather than a bare insert so the item, its first revision, and its taxonomy index
   // cannot diverge — an item whose history begins one save late is a gap that can never be
@@ -517,6 +656,7 @@ export async function createItem(
   await handle.batch([
     db.insertInto('content_items').values(row),
     ...assignments.statements,
+    ...values,
     buildRevisionStatement(db, {
       contentItemId: row.id,
       revisionNumber: 1,
@@ -698,6 +838,14 @@ export async function updateItem(
   const assignments = await planAssignmentIndex(db, id, fields, data);
   assertTermsExist(assignments.missing);
   statements.push(...assignments.statements);
+  /**
+   * The value index, rebuilt from the same `data` in the same batch.
+   *
+   * Note this is the *item's own* update path only. The cascading path move below rewrites
+   * descendants' `path` and touches nothing in their `data`, so reindexing them would add rows to a
+   * batch that already carries a statement per descendant — for values that cannot have changed.
+   */
+  statements.push(...planValueIndex(db, id, fields, data));
 
   const sequence = await revisionSequence(db, id);
   const after = { title, slug, status, data, seo };

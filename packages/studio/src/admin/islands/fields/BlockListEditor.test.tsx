@@ -219,6 +219,53 @@ describe('editing a block', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('hides a collapsed block’s fields rather than only relabelling its toggle', async () => {
+    // `aria-expanded` is what the button *says*; `hidden` on the panel is what makes it true.
+    // Asserting only the first is asserting the label, which is how a disclosure ships inert.
+    const user = userEvent.setup();
+    const { container } = setup({ value: blocks });
+
+    await user.click(screen.getByRole('button', { name: /Quote 2 of 3/ }));
+
+    expect(container.querySelector('#block-panel-b')?.hasAttribute('hidden')).toBe(true);
+    expect(container.querySelector('#block-panel-a')?.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('collapses and expands every block at once', async () => {
+    const user = userEvent.setup();
+    const { container } = setup({ value: blocks });
+
+    await user.click(screen.getByRole('button', { name: 'Collapse all blocks' }));
+    for (const id of ['a', 'b', 'c']) {
+      expect(container.querySelector(`#block-panel-${id}`)?.hasAttribute('hidden')).toBe(true);
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Expand all blocks' }));
+    for (const id of ['a', 'b', 'c']) {
+      expect(container.querySelector(`#block-panel-${id}`)?.hasAttribute('hidden')).toBe(false);
+    }
+  });
+
+  it('announces a bulk collapse, since both controls are idempotent', async () => {
+    // Pressing "Collapse all" twice does nothing the second time, so silence would be
+    // indistinguishable from a broken button.
+    const user = userEvent.setup();
+    const { container } = setup({ value: blocks });
+
+    await user.click(screen.getByRole('button', { name: 'Collapse all blocks' }));
+
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toMatch(
+      /all 3 blocks collapsed/i,
+    );
+  });
+
+  it('offers no bulk controls for a single block', () => {
+    // One block already has its own disclosure; a pair of buttons above it is two more controls
+    // for something one already does.
+    setup({ value: [blocks[0]!] });
+    expect(screen.queryByRole('button', { name: /^Collapse all/ })).toBeNull();
+  });
+
   it('uses headings so the block list reads as the page structure it is', () => {
     setup({ value: blocks });
     expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(3);

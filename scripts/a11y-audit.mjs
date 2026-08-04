@@ -171,6 +171,59 @@ const richestItem = (items ?? [])
 if (richestItem) ROUTES.push(`/admin/content/${richestItem.id}`);
 
 /**
+ * And the items with the most *composed* rows, which field count does not find.
+ *
+ * Picking by field count fixed one version of this trap and left another: a content type can
+ * declare a dozen fields while the item stored against it has no blocks placed and no repeater
+ * entries, so the block list and the repeater render their empty states and every collapsible panel
+ * — with the fields inside it — is absent from the run. Measured on the seeded database: the
+ * field-count winner had **zero** of either, while blocks and repeater rows lived on three other
+ * items entirely.
+ *
+ * The two envelopes are counted separately on purpose. They sit on different items here, so one
+ * combined "most composed" score picks the block-heavy page and leaves repeater rows unaudited —
+ * the same one-axis mistake one level down.
+ */
+function composedRows(value, depth = 0) {
+  // Deep enough for a block inside a block inside a repeater row; `MAX_BLOCK_DEPTH` is 5.
+  if (depth > 6 || !value || typeof value !== 'object') return { blocks: 0, rows: 0 };
+
+  const total = { blocks: 0, rows: 0 };
+  const add = (part) => {
+    total.blocks += part.blocks;
+    total.rows += part.rows;
+  };
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      // A block instance is `{id, type, data}` and a repeater row is `{id, data}` — the absence of
+      // `type` is what tells them apart, and both are what renders as a collapsible panel.
+      if (entry && typeof entry === 'object' && 'id' in entry && 'data' in entry) {
+        if ('type' in entry) total.blocks += 1;
+        else total.rows += 1;
+      }
+      add(composedRows(entry, depth + 1));
+    }
+    return total;
+  }
+
+  for (const entry of Object.values(value)) add(composedRows(entry, depth + 1));
+  return total;
+}
+
+for (const envelope of ['blocks', 'rows']) {
+  const best = (items ?? [])
+    .slice()
+    .sort((a, b) => composedRows(b.data)[envelope] - composedRows(a.data)[envelope])[0];
+
+  // Skipped silently when the seed composes nothing of that kind: a missing route is not a
+  // violation, and an item with an empty block list is exactly what this block exists to avoid.
+  if (!best || composedRows(best.data)[envelope] === 0) continue;
+  const route = `/admin/content/${best.id}`;
+  if (!ROUTES.includes(route)) ROUTES.push(route);
+}
+
+/**
  * The same editor with its live preview pane open.
  *
  * Worth a second visit because the pane changes the editor's whole structure — the sidebar panels

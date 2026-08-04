@@ -208,6 +208,61 @@ describe('editing a row', () => {
   });
 });
 
+describe('collapsing', () => {
+  /**
+   * Rows had no collapse at all until Phase 5A, while blocks had it from the start — so a staff
+   * list of thirty rows buried every field below it and the two composition editors behaved
+   * differently for no reason anyone could state.
+   */
+  it('collapses and expands a row', async () => {
+    const user = userEvent.setup();
+    const { container } = setup({ value: rows });
+
+    const toggle = screen.getByRole('button', { name: 'Entry 2 of 2' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+    await user.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // The panel, not just the label — a disclosure that only relabels itself is inert.
+    expect(container.querySelector('#repeater-panel-b')?.hasAttribute('hidden')).toBe(true);
+    expect(container.querySelector('#repeater-panel-a')?.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('collapses and expands every row at once', async () => {
+    const user = userEvent.setup();
+    const { container } = setup({ value: rows });
+
+    await user.click(screen.getByRole('button', { name: 'Collapse all entries' }));
+    for (const id of ['a', 'b']) {
+      expect(container.querySelector(`#repeater-panel-${id}`)?.hasAttribute('hidden')).toBe(true);
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Expand all entries' }));
+    for (const id of ['a', 'b']) {
+      expect(container.querySelector(`#repeater-panel-${id}`)?.hasAttribute('hidden')).toBe(false);
+    }
+  });
+
+  it('announces a bulk collapse, since both controls are idempotent', async () => {
+    const user = userEvent.setup();
+    const { container } = setup({ value: rows });
+
+    await user.click(screen.getByRole('button', { name: 'Collapse all entries' }));
+
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toMatch(
+      /all 2 entries collapsed/i,
+    );
+  });
+
+  it('still collapses in preview mode, because reading is not editing', () => {
+    // The move and remove buttons go when `disabled`; the disclosure stays, since a long read-only
+    // repeater is exactly where collapsing helps most.
+    setup({ value: rows, disabled: true });
+    expect(screen.getByRole('button', { name: 'Entry 1 of 2' })).toBeTruthy();
+  });
+});
+
 describe('accessibility', () => {
   it('has no violations', async () => {
     const { container } = setup({ value: rows });

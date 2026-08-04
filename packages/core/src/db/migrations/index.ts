@@ -20,6 +20,8 @@ import * as m0014 from './0014_preview_tokens.js';
 import * as m0015 from './0015_preview_draft.js';
 import * as m0016 from './0016_settings.js';
 import * as m0017 from './0017_singleton_preview_path.js';
+import * as m0018 from './0018_field_visibility.js';
+import * as m0019 from './0019_item_values.js';
 
 /**
  * The migration registry.
@@ -50,6 +52,8 @@ export const migrations: Record<string, Migration> = {
   '0015_preview_draft': m0015,
   '0016_settings': m0016,
   '0017_singleton_preview_path': m0017,
+  '0018_field_visibility': m0018,
+  '0019_item_values': m0019,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

@@ -62,6 +62,7 @@ describe('what it writes', () => {
       'README.md',
       'src/worker.ts',
       'scripts/migrate.ts',
+      'scripts/reindex.ts',
       'scripts/_db.ts',
       'scripts/_env.ts',
     ]) {
@@ -185,6 +186,7 @@ describe('the template stays in step with apps/studio', () => {
   const SHARED = [
     'src/worker.ts',
     'scripts/migrate.ts',
+    'scripts/reindex.ts',
     'scripts/_db.ts',
     'scripts/_env.ts',
     'astro.config.mjs',

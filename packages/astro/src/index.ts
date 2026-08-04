@@ -214,6 +214,14 @@ export {
   applyTermHrefs,
   resolveCrop,
   cropFrame,
+  /**
+   * How a listing finds its results: `queries[queryKey(block.id, 'events')]`.
+   *
+   * Exported rather than left to be spelled by hand, because the failure mode of getting it wrong
+   * is a lookup that returns `undefined` — an empty listing on a page whose payload is complete,
+   * with nothing anywhere reporting a problem.
+   */
+  queryKey,
 } from '@taprootcms/core/pure';
 
 export type {
@@ -223,9 +231,11 @@ export type {
   DeliveryMedia,
   DeliveryMenuItem,
   DeliveryMenuTarget,
+  DeliveryQueryResult,
   DeliveryResult,
   DeliverySchema,
   DeliveryTermRef,
+  ItemSort,
   MenuLink,
 } from '@taprootcms/core/pure';
 

@@ -269,6 +269,10 @@ function packageJson({ name, starter, local }) {
     astro: 'astro',
     'db:migrate': 'node --experimental-strip-types ./scripts/migrate.ts',
     'db:migrate:remote': 'node --experimental-strip-types ./scripts/migrate.ts --remote',
+    // Needed once after migration 0019 on a database that already holds content — see the
+    // generated README. Without it a scaffolded project has no way to complete a documented
+    // upgrade step, which is the sort of gap only a scaffolded project ever hits.
+    'db:reindex': 'node --experimental-strip-types ./scripts/reindex.ts',
     ...(starter === 'minimal'
       ? { 'db:seed': 'node --experimental-strip-types ./scripts/seed.ts' }
       : {}),
@@ -462,6 +466,7 @@ screen that creates the first administrator${
     starter === 'minimal' ? '\n| `npm run db:seed` | Create the starter content. Safe to re-run |' : ''
   }
 | \`npm run db:migrate:remote\` | Apply them to your deployed D1 database |
+| \`npm run db:reindex\` | Rebuild the listing index. Run once after a migration says to; safe to re-run |
 | \`npm run preview\` | Build and serve through \`wrangler dev\` — the real Workers runtime |
 | \`npm run deploy\` | Build and \`wrangler deploy\` |
 

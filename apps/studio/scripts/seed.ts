@@ -240,7 +240,9 @@ const page = await ensureType(
       help_text: 'Composed blocks rendered under the body.',
       // Named by `api_id` rather than by id, so the list survives a block type being recreated and
       // reads meaningfully in the stored config.
-      config: { allowedBlocks: ['hero', 'call_to_action', 'prose', 'quote', 'gallery'] },
+      config: {
+        allowedBlocks: ['hero', 'call_to_action', 'prose', 'quote', 'gallery', 'event_listing'],
+      },
     },
   ],
 );
@@ -498,6 +500,20 @@ const event = await ensureType(
     },
     {
       /**
+       * Events carry departments too, which is what makes the query block worth demonstrating: a
+       * listing filtered to one department is the case, and it cannot be shown with a taxonomy that
+       * only pages use.
+       */
+      api_id: 'departments',
+      label: 'Departments',
+      type: 'taxonomy',
+      required: false,
+      localized: false,
+      help_text: 'What this event is about. A listing filtered by a parent finds these too.',
+      config: { taxonomyId: departments.taxonomy.id, multiple: true },
+    },
+    {
+      /**
        * A repeater, seeded for the same reason as the relation below: an editor nobody's demo data
        * reaches is an editor nobody notices is broken.
        *
@@ -567,6 +583,61 @@ const event = await ensureType(
   ],
 );
 
+/**
+ * The block the `query` field exists for.
+ *
+ * Seeded *after* the event type because it points at it — a block type is a content type, so the
+ * ordering constraint is the same one every relation field has.
+ *
+ * A heading beside a listing, which is also the argument for `query` being a *field* rather than a
+ * block type of its own: the block composes the two and the site styles the pair. And it shows the
+ * split that makes a listing reusable — what may be asked is fixed here, once, while each editor
+ * placing this block picks their own department and count.
+ */
+const eventListing = await ensureType(
+  {
+    api_id: 'event_listing',
+    name: 'Event listing',
+    name_plural: 'Event listings',
+    description: 'Upcoming events, chosen by a rule rather than by hand.',
+    kind: 'block',
+    icon: null,
+    url_prefix: null,
+    title_field: null,
+  },
+  [
+    {
+      api_id: 'heading',
+      label: 'Heading',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: null,
+      config: { maxLength: 120 },
+    },
+    {
+      api_id: 'events',
+      label: 'Events',
+      type: 'query',
+      required: false,
+      localized: false,
+      help_text: 'Published events matching this appear automatically — nobody edits this page.',
+      config: {
+        targetContentTypeId: event.type.id,
+        taxonomyId: departments.taxonomy.id,
+        /**
+         * The event's *own* start date, not the day it was published — which is the whole reason
+         * the derived value index exists. Without this the listing could only offer "newest", and
+         * an events page ordered by publication date is an events page in the wrong order.
+         */
+        dateFieldApiId: 'starts_at',
+        maxResults: 12,
+        defaultLimit: 3,
+      },
+    },
+  ],
+);
+
 const banner = await ensureType(
   {
     api_id: 'weather_banner',
@@ -588,6 +659,15 @@ const banner = await ensureType(
       help_text: null,
       config: { defaultValue: false },
     },
+    /**
+     * The two fields below are conditional on the switch above, which is what the feature is for:
+     * a banner nobody is showing has no message and no severity, and leaving both on screen asks an
+     * editor to fill in something with no effect.
+     *
+     * `required` is deliberately false on both, so this demonstrates the *visibility* rule without
+     * also depending on the relaxation — a seed that needed both to be right would not say which
+     * one had broken.
+     */
     {
       api_id: 'message',
       label: 'Message',
@@ -596,6 +676,7 @@ const banner = await ensureType(
       localized: false,
       help_text: null,
       config: { multiline: true, maxLength: 300 },
+      visible_when: { field: 'enabled', operator: 'is_checked' },
     },
     {
       api_id: 'severity',
@@ -612,6 +693,7 @@ const banner = await ensureType(
           { label: 'Closure', value: 'closure' },
         ],
       },
+      visible_when: { field: 'enabled', operator: 'is_checked' },
     },
   ],
 );
@@ -980,6 +1062,27 @@ await ensureItem(
         },
         {
           id: newId(),
+          /**
+           * The query block, on a page where its point is obvious: an editor never lists these
+           * events by hand, and publishing a new one adds it here on its own.
+           *
+           * `termIds` is left empty deliberately — the demo wants the listing to fill itself, and a
+           * department filter on a college-wide "Visit" page would be an odd thing to seed. The
+           * filter is one click away in the editor, which is where somebody should see it work.
+           */
+          type: 'event_listing',
+          data: {
+            heading: 'While you are here',
+            /**
+             * The case the feature was asked for: still to come, soonest first. Both halves are
+             * resolved at read time — "still to come" against the clock rather than a stored
+             * timestamp, and the order against the events' own dates through the value index.
+             */
+            events: { termIds: [], sort: 'field_asc', limit: 3, dateFilter: 'upcoming' },
+          },
+        },
+        {
+          id: newId(),
           type: 'call_to_action',
           data: {
             text: 'Tours fill up quickly in the spring.',
@@ -1077,7 +1180,7 @@ await ensureItem(
     status: 'published',
     userId: admin.id,
     data: {
-      starts_at: '2026-04-11T14:00:00.000Z',
+      starts_at: '2030-04-11T14:00:00.000Z',
       location: 'Riverbend Quad',
       audience: 'prospective',
       body: 'Tour campus, meet faculty, and sit in on a class.',
@@ -1098,6 +1201,11 @@ await ensureItem(
       // The relation, pointing at a page that exists — so the editor opens on a resolved title
       // rather than on an empty control that looks the same whether or not the feature works.
       host_page: admissionsId,
+      /**
+       * Filed under a *child* term, which is what makes branch expansion demonstrable: a listing
+       * filtered to "Student Services" has to find this even though it is tagged "Admissions".
+       */
+      departments: [termId('Admissions')],
     },
   },
   '/events/spring-open-house',
@@ -1113,12 +1221,13 @@ await ensureItem(
     status: 'published',
     userId: admin.id,
     data: {
-      starts_at: '2026-03-03T23:00:00.000Z',
+      starts_at: '2030-03-03T23:00:00.000Z',
       location: 'Halloway Hall',
       audience: 'prospective',
       body: 'A walk-through of the aid application, with counsellors on hand.',
       capacity: 80,
       host_page: aidId,
+      departments: [termId('Financial Aid')],
     },
   },
   '/events/financial-aid-night',
@@ -1130,6 +1239,13 @@ await ensureItem(
  * Dated rather than relative so reseeding is idempotent — a `now + 7 days` would write a different
  * value on every run and make the row look edited when nothing touched it. Visitors do not see
  * this one, which is the point: it demonstrates the status rather than the sweep.
+ *
+ * **Fixed dates go stale, and these had.** Every date here was originally a year or so ahead and
+ * had quietly slipped into the past, which cost more than it looks: the scheduled item had already
+ * published, so the demo no longer showed the status it exists to show, and the events listing —
+ * which filters to what is still to come — had almost nothing left to list. Pushed far enough out
+ * that it will not need thinking about again soon. If a seeded date is in the past, that is the bug,
+ * not the feature reading it.
  */
 await ensureItem(
   handle,
@@ -1139,10 +1255,10 @@ await ensureItem(
     contentTypeId: event.type.id,
     title: 'Summer Orientation',
     status: 'scheduled',
-    publishAt: '2026-08-01T08:00:00.000Z',
+    publishAt: '2030-08-01T08:00:00.000Z',
     userId: admin.id,
     data: {
-      starts_at: '2026-08-24T13:00:00.000Z',
+      starts_at: '2030-08-24T13:00:00.000Z',
       location: 'Halloway Hall',
       audience: 'current',
       body: 'Two days of advising, registration, and campus tours for incoming students.',

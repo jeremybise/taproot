@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import {
+  isFieldVisible,
   primaryTransition,
   slugify,
   transitionLabel,
@@ -526,7 +527,20 @@ export default function ItemEditor({
             </p>
           )}
 
-          {fields.map((field) => (
+          {/*
+            Conditionally hidden fields are filtered out here rather than being passed to
+            `FieldControl` for it to hide itself. Filtering in the parent is what keeps
+            `FieldControl` a component that renders one field and knows nothing about its siblings —
+            and it means a hidden field's control never mounts, so a richtext editor inside one is
+            not built and torn down as somebody ticks a box.
+
+            `isFieldVisible` is the same function `validateItemData` calls on the server. Two
+            implementations would eventually disagree, and the shape of that disagreement is a field
+            an editor cannot see and cannot save without.
+          */}
+          {fields
+            .filter((field) => isFieldVisible(field, fields, data))
+            .map((field) => (
             <FieldControl
               key={field.id}
               field={field}
@@ -542,7 +556,7 @@ export default function ItemEditor({
               canPromote={canPublish}
               media={media}
             />
-          ))}
+            ))}
         </section>
       </div>
 

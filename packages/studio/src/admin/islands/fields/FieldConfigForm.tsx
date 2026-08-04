@@ -1,11 +1,14 @@
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   FIELD_TYPE_META,
   REPEATER_SUB_FIELD_TYPES,
   type ContentTypeRow,
   type FieldType,
   type TaxonomyRow,
+  type VisibilityCondition,
 } from '@taprootcms/core';
+
+import { VisibilityEditor } from './VisibilityEditor.js';
 
 /**
  * Per-field-type option forms.
@@ -534,10 +537,6 @@ const RelationConfig: ConfigForm = ({ config, onChange, contentTypes, currentCon
         onChange={(reverseLabel) => onChange({ ...config, reverseLabel })}
       />
 
-      <p className="rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-xs text-content-subtle">
-        The reference picker for content items arrives in the taxonomies and relations tranche.
-        Configuring the field now is safe — the definition is stored and validated.
-      </p>
     </div>
   );
 };
@@ -577,6 +576,154 @@ const TaxonomyConfig: ConfigForm = ({ config, onChange, taxonomies }) => (
     )}
   </div>
 );
+
+/**
+ * What the admin fixes about a query; the editor fills in the rest on each placement.
+ *
+ * The split is the feature — see `fieldConfigSchemas.query`. Everything here bounds what may be
+ * asked, so one "Faculty" block type can serve twenty department pages with each page's editor
+ * choosing their own term.
+ */
+const QueryConfig: ConfigForm = ({ config, onChange, contentTypes, taxonomies }) => {
+  const id = useId();
+  const target = typeof config.targetContentTypeId === 'string' ? config.targetContentTypeId : '';
+
+  /**
+   * The target type's date fields, fetched rather than passed in.
+   *
+   * `contentTypes` here is the list endpoint's output, which returns types *without* their fields —
+   * the same detail that silently broke the a11y audit's route selection. Deriving the options from
+   * it would mean an always-empty picker, so the fields are asked for when a target is chosen.
+   */
+  const [dateFields, setDateFields] = useState<{ api_id: string; label: string }[]>([]);
+
+  useEffect(() => {
+    if (!target) {
+      setDateFields([]);
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/taproot/content-types/${target}/fields`, { headers: { accept: 'application/json' } })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('failed'))))
+      .then((body: { fields: { api_id: string; label: string; type: string }[] }) => {
+        if (cancelled) return;
+        setDateFields(body.fields.filter((field) => field.type === 'date'));
+      })
+      // An unreachable server leaves the picker empty rather than the form broken; the stored value
+      // is untouched either way.
+      .catch(() => !cancelled && setDateFields([]));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [target]);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label htmlFor={`${id}-target`} className="block text-sm font-medium">
+          Content type to list
+        </label>
+        <p id={`${id}-target-hint`} className="mt-0.5 text-xs text-content-subtle">
+          What the listing is made of — Events, Staff profiles. Singletons and block types are not
+          offered, because neither has items a visitor can open.
+        </p>
+        <select
+          id={`${id}-target`}
+          aria-describedby={`${id}-target-hint`}
+          className={inputClass}
+          value={typeof config.targetContentTypeId === 'string' ? config.targetContentTypeId : ''}
+          onChange={(e) => onChange({ ...config, targetContentTypeId: e.target.value || null })}
+        >
+          <option value="">— Choose a content type —</option>
+          {contentTypes
+            .filter((type) => type.kind === 'page' || type.kind === 'collection')
+            .map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.name_plural}
+              </option>
+            ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor={`${id}-taxonomy`} className="block text-sm font-medium">
+          Let editors narrow by
+        </label>
+        <p id={`${id}-taxonomy-hint`} className="mt-0.5 text-xs text-content-subtle">
+          Which taxonomy the editor may filter on when they place this block. Choosing a term always
+          includes everything filed beneath it, so picking “Sciences” finds a page filed under
+          “Biology”.
+        </p>
+        <select
+          id={`${id}-taxonomy`}
+          aria-describedby={`${id}-taxonomy-hint`}
+          className={inputClass}
+          value={typeof config.taxonomyId === 'string' ? config.taxonomyId : ''}
+          onChange={(e) => onChange({ ...config, taxonomyId: e.target.value || null })}
+        >
+          <option value="">— No term filter —</option>
+          {taxonomies.map((taxonomy) => (
+            <option key={taxonomy.id} value={taxonomy.id}>
+              {taxonomy.name_plural}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor={`${id}-date`} className="block text-sm font-medium">
+          Date field
+        </label>
+        <p id={`${id}-date-hint`} className="mt-0.5 text-xs text-content-subtle">
+          Which date decides “still to come”, and what “soonest first” orders by — an event’s start
+          date, not the day it was published. Without one, the listing offers neither.
+        </p>
+        <select
+          id={`${id}-date`}
+          aria-describedby={`${id}-date-hint`}
+          className={inputClass}
+          value={typeof config.dateFieldApiId === 'string' ? config.dateFieldApiId : ''}
+          onChange={(e) => onChange({ ...config, dateFieldApiId: e.target.value || null })}
+        >
+          <option value="">— No date filter —</option>
+          {dateFields.map((field) => (
+            <option key={field.api_id} value={field.api_id}>
+              {field.label}
+            </option>
+          ))}
+        </select>
+        {target && dateFields.length === 0 && (
+          <p className="mt-1.5 text-xs text-content-subtle">
+            That type has no date fields, so there is nothing to filter or order by yet.
+          </p>
+        )}
+      </div>
+
+      <Row>
+        <NumberInput
+          label="Results by default"
+          hint="What a newly placed block asks for."
+          value={config.defaultLimit}
+          onChange={(defaultLimit) => onChange({ ...config, defaultLimit })}
+        />
+        <NumberInput
+          label="Most an editor may ask for"
+          hint="A ceiling, not a limit. Asking for more is quietly reduced to this."
+          value={config.maxResults}
+          onChange={(maxResults) => onChange({ ...config, maxResults })}
+        />
+      </Row>
+
+      <p className="rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-xs text-content-subtle">
+        A query stores the rule, never the answer. Results are worked out fresh on every page view,
+        so publishing a new item adds it to every listing that matches without anyone editing a
+        page.
+      </p>
+    </div>
+  );
+};
 
 const BlockConfig: ConfigForm = ({ config, onChange, blockTypes = [] }) => {
   const allowed = Array.isArray(config.allowedBlocks) ? (config.allowedBlocks as string[]) : [];
@@ -800,6 +947,30 @@ const RepeaterConfig: ConfigForm = ({ config, onChange, ...rest }) => {
                     </div>
                   </div>
 
+                  {/*
+                    A sub-field's condition names another sub-field in the same row, never a field
+                    on the item around it — the row is the scope `validateRepeater` recurses with.
+                    Stored as the condition object rather than a JSON string, because this whole
+                    definition already lives inside the repeater's config.
+                  */}
+                  <div className="mt-3 border-t border-border pt-3">
+                    <VisibilityEditor
+                      idPrefix={rowId}
+                      value={(sub.visible_when as VisibilityCondition | null) ?? null}
+                      siblings={subFields
+                        .filter((_, position) => position !== index)
+                        .map((candidate) => ({
+                          api_id: String(candidate.api_id ?? ''),
+                          label: String(candidate.label ?? candidate.api_id ?? ''),
+                          type: (typeof candidate.type === 'string'
+                            ? candidate.type
+                            : 'text') as FieldType,
+                        }))
+                        .filter((candidate) => candidate.api_id !== '')}
+                      onChange={(visible_when) => patch(index, { visible_when })}
+                    />
+                  </div>
+
                   <div className="mt-3 border-t border-border pt-3">
                     <FieldConfigForm
                       type={subType}
@@ -877,6 +1048,7 @@ export const fieldConfigForms: Record<FieldType, ConfigForm> = {
   link: LinkConfig,
   block: BlockConfig,
   repeater: RepeaterConfig,
+  query: QueryConfig,
 };
 
 export function FieldConfigForm({ type, ...props }: ConfigFormProps & { type: FieldType }) {

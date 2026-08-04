@@ -1,4 +1,5 @@
 import CallToAction from './CallToAction.astro';
+import EventListing from './EventListing.astro';
 import Gallery from './Gallery.astro';
 import Hero from './Hero.astro';
 import Prose from './Prose.astro';
@@ -22,4 +23,5 @@ export const BLOCK_COMPONENTS = {
   prose: Prose,
   quote: Quote,
   gallery: Gallery,
+  event_listing: EventListing,
 };

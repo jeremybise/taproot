@@ -3,7 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 4.6 complete.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 4.6 complete, and Phase 5A–5B.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
@@ -381,8 +381,58 @@ npm test
 
 ## What's next
 
-**Phase 5 — integrations — is next.** Webhooks and a tracking script manager. API keys already
-shipped in 3.75, which could not be done without them.
+**Phase 5 is under way** — editing, querying, and assistance, in seven parts. Integrations moved to
+Phase 6 and the form builder to Phase 10; see [SCOPE.md](SCOPE.md) for the whole band and why it is
+ordered the way it is.
+
+**5A — expand and collapse — is done.** Blocks have collapsed to a summary row since Phase 2 and
+repeater entries never did, so a staff list of thirty rows buried every field below it. Both now
+collapse the same way, with an "Expand all" / "Collapse all" pair once there is more than one.
+
+Two things came out of building it that were not visible from the plan. The default has to stay
+expanded, and not because it reads better: `npm run a11y` audits the server-rendered markup, and a
+collapsed panel is `hidden`, which axe skips — so collapsing long lists by default would quietly
+drop every field inside every block from the run while it still reported zero. And the audit was
+already missing both editors, for a reason worth writing down: it picks the item editor by **field
+count**, which is a fact about the content type, while composition is a fact about the **item** — the
+field-count winner on the seeded database had no blocks placed and no repeater entries at all. It now
+also picks the block-heaviest and row-heaviest items, counted separately, because they are different
+items and one combined score leaves repeaters unaudited.
+
+**5B — conditional fields — is done.** A field can now say when it appears: *show the message only
+when the banner is switched on*. The seeded weather banner already had exactly that shape and showed
+its message and severity whether or not anybody had enabled it, which is the whole case in one
+screen.
+
+The two decisions worth knowing, because both could reasonably have gone the other way. A hidden
+field is **not required** — otherwise somebody is blocked by an input they cannot see. And a hidden
+field's value is **kept**, not cleared: clearing would mean adding a condition on the content-type
+screen silently wiped that field across every item the next time anyone saved one, with nothing in
+the revision history showing an author doing it. Untick the box and tick it again and your text is
+still there. What your site renders is still its own decision — Taproot ships no templates.
+
+**5C — the query field — is done.** A block can hold a *rule* instead of a hand-picked list: *events
+still to come, soonest first*; *faculty in this department*. Publishing a new event adds it to every
+listing that matches, with nobody editing a page. The editor shows what the rule currently returns —
+the count and the first few titles — because a rule you cannot see the effect of is a form you have
+to publish to test. The seeded **Visit** page carries one, and `apps/web` renders it as cards with
+dates and locations.
+
+Three decisions shape it. The admin fixes *what may be asked* — which content type, which taxonomy,
+which date decides "still to come", how many at most — and each editor placing the block picks their
+own term, window and count, which is what lets one "Faculty" block serve twenty department pages. A
+query stores the rule and **never** the answer, so restoring an old revision restores the rule and
+the rule answers with today's content. And "still to come" is stored as an intention rather than a
+date: it is worked out against the clock every time the page is read, so a listing does not quietly
+stop working the day after somebody edits it.
+
+Sorting by an event's *own* start date rather than by when it was published needed a small index
+behind the scenes, rebuilt whenever an item is saved. **If you are upgrading an existing site, run
+`npm run db:reindex` once** — until you do, listings that filter or order by a field value will
+behave as though nothing matches. Nothing is lost; it just has not been indexed yet.
+
+**Next in the band:** full-text search (5D), with media multi-upload (5E), menu link-picking (5F)
+and AI-assisted alt text (5G) independent of it.
 
 **Phase 4.6 — the admin UI pass — is done.** Part A: one sticky action bar per screen, status
 transitions behind a promoted action plus a menu, add-to-release moved into the Publishing panel

@@ -1,4 +1,4 @@
-import { deleteField, updateField } from '@taprootcms/core';
+import { deleteField, updateField, visibilityCondition } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { handle, json, noContent, readJson } from '../_shared.js';
@@ -28,12 +28,18 @@ const patchSchema = z.strictObject(
     position: z.number().int().nonnegative().optional(),
     // No `.default()` — absent must stay absent so `updateField` keeps the stored config.
     config: z.record(z.string(), z.unknown()).optional(),
+    /**
+     * `nullish`, so an explicit `null` can clear the condition. Absent keeps it — the same
+     * three-state handling `updateField` relies on, and the only way to make a conditional field
+     * unconditional again.
+     */
+    visible_when: visibilityCondition.nullish(),
   },
   {
     error: (issue) =>
       issue.code === 'unrecognized_keys'
-        ? "Only label, help_text, required, localized, position, and config can be changed. A field's " +
-          'type and api_id are fixed after creation.'
+        ? 'Only label, help_text, required, localized, position, config, and visible_when can be ' +
+          "changed. A field's type and api_id are fixed after creation."
         : undefined,
   },
 );

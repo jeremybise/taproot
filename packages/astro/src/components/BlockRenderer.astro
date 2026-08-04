@@ -24,7 +24,7 @@
  * unmapped block must not take down the page around it — and shows a visible note in development,
  * because a silent gap while building is how a block goes missing from a live page unnoticed.
  */
-import type { DeliveryMedia } from '@taprootcms/core/pure';
+import type { DeliveryItemRef, DeliveryMedia, DeliveryQueryResult } from '@taprootcms/core/pure';
 
 /** The stored shape of one block. `data` always holds the fields; `ref` means the library owns them. */
 interface BlockInstance {
@@ -48,9 +48,27 @@ interface Props {
    * Before the split these templates queried the database directly, which a consumer cannot do.
    */
   media?: Record<string, DeliveryMedia>;
+  /**
+   * The delivery response's `queries` and `references` maps, forwarded for the same reason `media`
+   * is: a block holding a listing stores the *rule*, and the matching items are already in the
+   * response.
+   *
+   * Both are needed together and neither is useful alone — `queries` gives a block its matched ids,
+   * `references` turns each id into a card. Forwarding only the first is the shape of mistake that
+   * produces an empty listing on a page whose payload is complete.
+   */
+  queries?: Record<string, DeliveryQueryResult>;
+  references?: Record<string, DeliveryItemRef>;
 }
 
-const { blocks, components = {}, as = null, media = {} } = Astro.props;
+const {
+  blocks,
+  components = {},
+  as = null,
+  media = {},
+  queries = {},
+  references = {},
+} = Astro.props;
 
 /**
  * Tolerate a value that is not a block list.
@@ -85,7 +103,15 @@ const Wrapper = as;
       ) : null;
     }
 
-    const rendered = <Component {...block.data} block={block} media={media} />;
+    const rendered = (
+      <Component
+        {...block.data}
+        block={block}
+        media={media}
+        queries={queries}
+        references={references}
+      />
+    );
 
     return Wrapper ? (
       <Wrapper data-taproot-block={block.type}>{rendered}</Wrapper>

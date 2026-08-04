@@ -89,6 +89,15 @@ const item = result.kind === 'item' ? result.item : null;
 const media = result.kind === 'item' ? result.media : {};
 const breadcrumbTrail = result.kind === 'item' ? result.breadcrumbs : [];
 const children = result.kind === 'item' ? result.children : [];
+/**
+ * Answers to this page's `query` fields, and the items they matched.
+ *
+ * Both go to `BlockRenderer` together: `queries` gives a listing block its matched ids and
+ * `references` turns each id into a card. Forwarding one without the other renders an empty
+ * listing on a page whose payload is complete, which is the hardest kind of bug to see.
+ */
+const queries = result.kind === 'item' ? result.queries : {};
+const references = result.kind === 'item' ? result.references : {};
 
 const breadcrumbs = [
   { label: 'Home', href: '/' },
@@ -243,6 +252,8 @@ if (previewToken) {
             blocks={item.data[field.apiId]}
             components={BLOCK_COMPONENTS}
             media={media}
+            queries={queries}
+            references={references}
           />
         ))}
 

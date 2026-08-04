@@ -1,5 +1,6 @@
 import {
   FIELD_TYPE_META,
+  isItemSort,
   type BlockInstance,
   type FieldRow,
   type RepeaterRow,
@@ -14,6 +15,7 @@ import { RichTextEditor } from './RichTextEditor.js';
 import { RelationField } from './RelationField.js';
 import { LinkField, type LinkValue } from './LinkField.js';
 import { RepeaterField } from './RepeaterField.js';
+import { QueryField, type QueryValue } from './QueryField.js';
 import { MediaField } from '../media/MediaField.js';
 import type { MediaOption } from '../../mediaOptions.js';
 import type { RelationTarget } from '../../relationOptions.js';
@@ -205,8 +207,9 @@ export function FieldControl({
       }
 
       default:
-        // richtext, media, block, relation, link, repeater. `link` puts `id` on a `role="group"`,
-        // which is not labelable — it is named through `aria-labelledby` like the others here.
+        // richtext, media, block, relation, link, repeater, query. `link` and `query` put `id` on a
+        // `role="group"`, which is not labelable — both are named through `aria-labelledby` like the
+        // others here.
         return false;
     }
   }
@@ -537,6 +540,41 @@ export function FieldControl({
             media={media}
             minItems={numberOr(config.minItems, undefined)}
             maxItems={numberOr(config.maxItems, undefined)}
+            invalid={Boolean(errors?.length)}
+            disabled={preview}
+          />
+        );
+      }
+
+      case 'query': {
+        const taxonomyId = stringOr(config.taxonomyId, undefined);
+        const saved = (value ?? {}) as Partial<QueryValue>;
+
+        /**
+         * Defaults are applied here as well as in the value schema, because a block placed a second
+         * ago has `{}` for this field until something writes to it — and a control rendering
+         * `undefined` into a number input is an uncontrolled-input warning and an empty box where a
+         * sensible number belongs.
+         */
+        return (
+          <QueryField
+            id={id}
+            labelledBy={labelId}
+            describedBy={describedBy || undefined}
+            targetContentTypeId={stringOr(config.targetContentTypeId, undefined) ?? null}
+            terms={taxonomyId ? (termsByTaxonomy?.[taxonomyId] ?? []) : []}
+            maxResults={numberOr(config.maxResults, undefined) ?? 24}
+            dateFieldApiId={stringOr(config.dateFieldApiId, undefined) ?? null}
+            value={{
+              termIds: stringArrayOr(saved.termIds, []) ?? [],
+              sort: isItemSort(saved.sort) ? saved.sort : 'path',
+              limit: numberOr(saved.limit, undefined) ?? numberOr(config.defaultLimit, undefined) ?? 6,
+              dateFilter:
+                saved.dateFilter === 'upcoming' || saved.dateFilter === 'past'
+                  ? saved.dateFilter
+                  : 'any',
+            }}
+            onChange={(next) => onChange(next)}
             invalid={Boolean(errors?.length)}
             disabled={preview}
           />
