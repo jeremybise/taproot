@@ -475,6 +475,30 @@ in-process, but reaching into a site's cache means an authenticated outbound cal
 site mounts, which is the outbound-HTTP layer Phase 6 already owns. Until then a site's HTML is
 bounded by its own `s-maxage`, exactly as before.
 
+**Phase 5.6 — responsive images — is done.** `TaprootImage` shipped one `<img>` at the source's full
+width, so a phone got whatever an editor dragged in. It now emits a `srcset` and the CMS media route
+resizes to match. Measured on one real page: four images went from 2,182 KB to 195 KB, and sharper.
+
+Setup is one binding — `"images": { "binding": "IMAGES" }` — and **no domain of your own**; it works
+on a `workers.dev` subdomain. Without it nothing breaks, because the route serves the stored original,
+which is also why Node development needs nothing. Sites get the benefit by passing `sizes`, and more
+of it with `crop="server"`, which asks the CMS for the cropped rectangle so no hidden pixels are
+downloaded. That mode degrades to a hotspot-framed original wherever the transform cannot happen, so
+its worst case is an approximate crop rather than the wrong picture.
+
+Four things went wrong on the way and every one was found by measuring rather than by a test, which
+is the same lesson the cache headers taught. **The encoding quality was never set**, and the binding
+defaults to near-lossless — a 170 KB JPEG came back as a 610 KB WebP, so the feature meant to make
+pages lighter was making them heavier, silently, for three releases. **`sizes` was rescaled by
+splitting on the last space**, which takes `57px)` out of `calc(50vw - 57px)` and scales one term:
+valid CSS computing the wrong number, and only visible in rendered HTML. **The ladder capped a crop
+at the rung below it**, discarding a quarter of the detail that existed. And **`npm install @latest`
+resolved a stale version**, so one deploy shipped the previous release's code and looked like a
+Cloudflare bug.
+
+**If you set `TAPROOT_MEDIA_URL` to an R2 custom domain, media bypasses the Worker route and the
+resizing goes with it, silently.** Pick one or the other — see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 **Phase 4.6 — the admin UI pass — is done.** Part A: one sticky action bar per screen, status
 transitions behind a promoted action plus a menu, add-to-release moved into the Publishing panel
 where it no longer throws away unsaved edits, and a sidebar user menu.

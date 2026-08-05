@@ -71,16 +71,47 @@ npx wrangler r2 bucket create taproot-media
 The bucket name is already in `wrangler.jsonc` as `taproot-media`. As with D1, the **binding** name
 `MEDIA` is what `storageFromEnv()` looks for — change the bucket name freely, but leave the binding.
 
-**Giving the bucket a public URL is strongly recommended, and no longer required.** Media works
-without one: image URLs default to `/api/taproot/media/file/…`, a route that reads the object out
-of R2 and serves it. That used to default to `/media`, which nothing served — so skipping this step
-produced uploads that succeeded, rows that listed, and every `<img>` pointing at a 404, a
-configuration gap presenting as a broken picture.
+**Do not give the bucket a public URL unless you have read step 2c.** Media works without one: image
+URLs default to `/api/taproot/media/file/…`, a route that reads the object out of R2 and serves it.
+That used to default to `/media`, which nothing served — so skipping this step produced uploads that
+succeeded, rows that listed, and every `<img>` pointing at a 404, a configuration gap presenting as a
+broken picture.
 
-Do it anyway if you can. The fallback bills a Worker invocation per image and cannot match serving
-from Cloudflare's edge. Attach a custom domain in the dashboard (R2 → your bucket → Settings →
-Public access), then set `TAPROOT_MEDIA_URL` (step 4) to that origin — which routes around the
-fallback entirely.
+A custom domain on the bucket serves from Cloudflare's edge with no Worker invocation even on a cold
+cache, which is faster — but it **turns image resizing off**, because the resizing lives in the route
+it bypasses. Step 2c is the trade-off in full.
+
+---
+
+## 2c. Add the Images binding
+
+```jsonc
+// apps/studio/wrangler.jsonc
+"images": {
+  "binding": "IMAGES"
+}
+```
+
+That is the whole setup. **Nothing to create, and no domain of your own** — it works on a
+`workers.dev` subdomain. Cloudflare's free allowance is 5,000 unique transformations a month, counted
+per image per size, and a cached one is not re-billed.
+
+With it, the media route resizes on the way out, so a visitor on a phone is not sent the 2000-pixel
+photograph an editor uploaded. Without it nothing breaks — the stored original is served, so pages
+are heavier and never wrong. That is also why local development on Node needs nothing here.
+
+**This and `TAPROOT_MEDIA_URL` are mutually exclusive, and nothing warns you.** Pointing that at an
+R2 custom domain makes media bypass the Worker route — the whole point of it — and the resizing lives
+*in* that route, so setting it silently returns to serving full-size originals. Pick one:
+
+| | Images binding | R2 custom domain |
+|---|---|---|
+| Needs a zone on your account | No | Yes |
+| Resizing | Yes | Only via `/cdn-cgi/image/`, which needs the zone too |
+| Worker invocation per image | Cold cache only | Never |
+
+The binding is the right default and what `create-taproot` writes. Revisit it when you have a real
+domain and enough traffic for cold-cache invocations to matter.
 
 ---
 
@@ -215,10 +246,12 @@ Add to the `vars` block in `apps/studio/wrangler.jsonc`:
 ```jsonc
 "vars": {
   "NODE_ENV": "production",
-  "TAPROOT_ORIGIN": "https://your-domain",
-  "TAPROOT_MEDIA_URL": "https://media.your-domain"
+  "TAPROOT_ORIGIN": "https://your-domain"
 }
 ```
+
+`TAPROOT_MEDIA_URL` is deliberately absent. Set it only if you chose an R2 custom domain over the
+Images binding in step 2c — it turns resizing off, silently.
 
 `TAPROOT_ORIGIN` must match the domain the site is actually served from — it is what OAuth redirect
 URIs are built from, so a mismatch breaks sign-in.
@@ -528,6 +561,17 @@ administrative unlock, by design.
 
 **Media uploads succeed but images 404** — the R2 bucket has no public URL, or `TAPROOT_MEDIA_URL`
 does not point at it. See step 2.
+
+**Images render but are never resized** — either the `IMAGES` binding is missing (step 2c; check
+`npx wrangler deploy --dry-run` lists `env.IMAGES`), or `TAPROOT_MEDIA_URL` is set and media is
+bypassing the route that does the resizing. Confirm by requesting a variant directly:
+`curl -sI '<image url>?w=320&f=webp'` should answer `content-type: image/webp` and a much smaller
+`content-length`. Note it can legitimately answer the original for a minute after a deploy while the
+new version rolls out — and because the response is `immutable`, a request made *during* a rollout
+can cache the old answer under the new URL. Wait for the rollout before testing a variant URL.
+
+**A resized image is bigger than the original** — you are on `@taprootcms/core` older than 0.1.20,
+which never set an encoding quality and let the binding encode near-lossless. Upgrade.
 
 **Everything 500s right after deploy** — usually a missing `DB` binding. Run
 `npx wrangler deploy --dry-run` and confirm `env.DB` is listed.

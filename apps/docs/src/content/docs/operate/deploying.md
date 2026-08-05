@@ -33,6 +33,7 @@ The site is useless without it, and you will need a key from it.
 - A **D1 database** for content
 - An **R2 bucket** for uploads
 - A **KV namespace** — which Taproot itself never reads; see below
+- The **Images binding** for resizing, which needs nothing created and no domain; see below
 - `wrangler` — already a dev dependency
 
 ### The order
@@ -189,15 +190,54 @@ bounded by the TTL rather than purged. Same asymmetry Settings → System alread
 scheduling: it fails stale for a minute, never wrong forever.
 :::
 
+## Image resizing
+
+Add the Images binding and the CMS resizes media on the way out, so a visitor on a phone is not sent
+the 2000-pixel photograph an editor uploaded:
+
+```jsonc
+// wrangler.jsonc
+"images": {
+  "binding": "IMAGES"
+}
+```
+
+That is the entire setup. **There is nothing to create and no domain of your own is required** — it
+works on a `workers.dev` subdomain. Cloudflare's free allowance is 5,000 unique transformations a
+month, counted per image per size, and a cached one is not re-billed.
+
+`create-taproot` writes this binding for you. On an older project, add it and redeploy.
+
+Without it nothing breaks — the media route serves the stored original, so pages are heavier and
+never wrong. That is also why local development on Node needs nothing here.
+
+:::tip
+Sites get the benefit by passing `sizes` to `TaprootImage`, and more of it with `crop="server"`.
+See [images and media](/build/images/).
+:::
+
 ## Media URLs
 
-Out of the box, uploads are served by the CMS Worker itself. That works, and it costs a Worker
-invocation, an R2 read **and a database row read per image** — on a page with a dozen images, that is
-a dozen of each.
+Out of the box, uploads are served by the CMS Worker itself. On a cache miss that costs a Worker
+invocation, an R2 read **and a database row read per image**; on a hit it costs none of them, because
+the response is `immutable` and Cloudflare answers it from the edge — provided you have
+[enabled caching](#caching).
 
-Put a **custom domain on the R2 bucket** and set `TAPROOT_MEDIA_URL` to it, and images come from the
-edge instead, with none of the three. Strongly recommended for anything with real traffic; still not
-required, because a deployment without it works rather than breaking.
+You can instead put a **custom domain on the R2 bucket** and set `TAPROOT_MEDIA_URL` to it, and
+images come from the edge with no Worker involved even on a cold cache.
+
+:::caution
+**A custom domain and the Images binding are mutually exclusive.** `TAPROOT_MEDIA_URL` makes media
+bypass the Worker route entirely — that is the whole point of it — and the resizing lives *in* that
+route. Setting it silently goes back to serving full-size originals, with no error anywhere.
+
+Pick one:
+
+- **The binding** (no domain, resizing works, a Worker invocation only on a cold cache). Right for
+  almost everyone, and the default a scaffolded project starts with.
+- **A custom domain plus Cloudflare's URL-based transformations**, which need a zone on your account
+  and a dashboard toggle under Images → Transformations.
+:::
 
 The delivery API returns **absolute** image URLs either way, so the site never needs to know where
 media lives.
@@ -205,8 +245,7 @@ media lives.
 :::note
 `TAPROOT_MEDIA_URL` used to default to `/media`, which nothing served — so an R2 deployment without
 a custom domain produced successful uploads and images that 404'd. It now defaults to a route that
-actually serves the files, so the broken-picture state is gone; the custom domain is purely a speed
-choice.
+actually serves the files, so the broken-picture state is gone.
 :::
 
 ## Generating types for the site

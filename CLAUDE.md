@@ -1040,6 +1040,55 @@ many), *Block*, *Reusable Block*, *Content Type*.
     wrapper on purpose**: the maths only avoids distorting the image if the box carries the same
     ratio the rectangle was resolved for, so a caller setting its own `aspect-ratio` would
     letterboxed the image inside a frame it was not cropped for.
+- **The media route resizes, and `imageVariants.ts` is the vocabulary both sides spell.** It lives
+  where `pure.ts` re-exports it for the reason `cacheTags.ts` does: the consumer builds `?w=`/`?ar=`
+  /`?f=` and the route parses them, and a disagreement is **silent** — every visitor served the
+  full-size original while the page looks right and every test passes. Seven things hold it up, and
+  four of them were bugs first:
+  - **The width ladder is closed and the ratio is quantised, as cost control rather than taste.**
+    Cloudflare bills a unique transformation per image per parameter set against 5,000 free a month,
+    so a URL taking any integer or any float is a URL where one crawler burns the allowance and
+    fills the edge cache with near-identical entries. A width between rungs snaps **up** — snapping
+    down answers a reasonable request with a silently blurrier picture. `ar` is quantised on the way
+    *out* as well as in, or a consumer sending `16/9` unrounded builds `ar=1.7777777777777777`, the
+    route answers `1.78`, and every candidate misses the cache while still rendering correctly.
+  - **The ladder also offers the ceiling itself.** Rungs are round numbers and a real image is not:
+    a 3.5:1 photo cropped to 4:3 leaves 605 usable pixels whose largest rung is 480, so a quarter of
+    the detail that exists would never be offered. Deterministic per asset and ratio, so it costs
+    one cache entry rather than opening the width up.
+  - **Format is in the URL and never negotiated from `Accept`.** These responses are stored in a
+    shared cache keyed on the URL, and `Vary` is honoured there only for `Accept-Encoding` — an
+    `f=auto` would serve the first visitor's format to everyone behind them, which is the admin-HTML
+    cache leak one level down.
+  - **`OUTPUT_QUALITY` is not optional.** Left unset the binding encodes near-lossless and **a
+    resize comes back larger than the source**: a 170 KB JPEG measured 610 KB re-encoded at 1536
+    wide, about one byte per pixel against the source's 0.23. Nothing errors and the picture looks
+    right, so it is invisible without weighing bytes — it shipped in three releases. Set whether or
+    not a format was named, because a resize alone re-encodes in the source's own format.
+  - **`resizeImage` fails open, always.** No binding, an unresizable type, an allowance reached, a
+    throw — every one serves the stored original. That is what makes the whole feature safe on Node
+    and on any Worker without the binding: heavier pages, never broken ones. SVG and GIF stay on the
+    untouched path deliberately — rasterising an SVG throws away the thing it is good at and is the
+    one type here whose bytes are also a script vector, and a GIF resize flattens an animation.
+  - **`sizes` describes the container and `scaleSizes` bridges it to the element.** Under `crop:css`
+    the `<img>` is blown up by `1 / rect.width`, so a caller's `sizes` passed through unmodified
+    picks one rung too soft on exactly the layouts where the crop was doing the most work. It lives
+    in **core**, not the `.astro` file, because it shipped wrong: splitting an entry on its last
+    space takes `57px)` out of `calc(50vw - 57px)` and scales one term, which is valid CSS computing
+    the wrong number. String arithmetic inside a component is reachable by no suite in this repo —
+    the same blind spot as auditing a closed `<dialog>`.
+  - **`crop="server"` is opt-in and `object-fit: cover` is its safety net, not its mechanism.** A
+    cropped file already carries the box's ratio so cover is a no-op; when the transform did not
+    happen the original arrives and `object-position` frames it on the hotspot. So the failure mode
+    is an approximate crop, never a wrong picture — which is the only reason the mode can be offered
+    at all. The route resolves the rectangle with the same `resolveCrop` the admin preview uses and
+    applies it as a pixel `trim` **before** the resize, two chained transforms because the order is
+    the point; `fit: 'crop'` with a `gravity` focal point would have been fewer lines and would
+    quietly ignore the crop an editor dragged.
+- **`TAPROOT_MEDIA_URL` and the Images binding are mutually exclusive, and nothing warns.** Pointing
+  it at an R2 custom domain makes media bypass the Worker route — the whole point of it — and the
+  resize lives *in* that route, so setting it silently returns to full-size originals. The binding
+  needs no domain and works on `workers.dev`; only URL-based `/cdn-cgi/image/` needs a zone.
 - **Image dimensions are read from header bytes on upload**, not decoded — the crop maths needs the
   source's real proportions, and every library that could decode is a native dependency. An
   unrecognised format returns null and the editor degrades rather than the upload failing.

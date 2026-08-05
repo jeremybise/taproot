@@ -49,6 +49,24 @@ const { item, media } = result;
 <h1>{item.title}</h1>
 ```
 
+## Images
+
+`TaprootImage` resolves the hotspot and crop an editor set, and emits a responsive `srcset` the CMS
+resizes to match.
+
+```astro
+<TaprootImage
+  asset={media[item.data.hero]}
+  ratio={16 / 9}
+  sizes="(min-width: 1024px) 50vw, 100vw"
+  crop="server"
+/>
+```
+
+`sizes` describes the **container**, not the `<img>` — the component knows the crop factor and
+rewrites your lengths itself. `crop="server"` asks the CMS for the cropped rectangle so no hidden
+pixels are downloaded; it degrades to a hotspot-framed original wherever the CMS cannot transform.
+
 ## What it deliberately does not do
 
 **It never touches a database.** This package imports `@taprootcms/core/pure` at runtime — crop
