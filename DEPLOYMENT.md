@@ -199,6 +199,14 @@ the content is intact and simply not indexed yet. It is safe to re-run at any ti
 from `content_items.data`, which remains the source of truth. New and edited items index themselves
 as part of the same write, so this is a one-off for content that already existed.
 
+**A project scaffolded before 0.1.22 has to update one file first.** `scripts/reindex.ts` is a
+scaffolded copy rather than a shared module, and 0.1.22 renamed the export it imports —
+`reindexValues` became `reindexDerived`, because the command now rebuilds two derived tables rather
+than one. An old copy fails on `does not provide an export named 'reindexValues'`, and it fails
+*after* the migration and the deploy have gone through, which is the worst moment to find it. Copy
+`scripts/reindex.ts` from a fresh `npm create taproot` (or from `apps/studio/scripts/` in this
+repository) — it is the only file affected, and `--remote` lives in `scripts/_db.ts` beside it.
+
 **Settings → System says whether it is needed.** Under *Search index* it reports how many content
 items have never been indexed; anything above zero on a database with content in it means this has
 not been run. That number does not fall on its own — nothing sweeps it — and the symptom without it
