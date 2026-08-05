@@ -391,6 +391,18 @@ function wranglerConfig(name) {
     }
   ],
 
+  // --- Images ----------------------------------------------------------------
+  // Resizes media on the way out, so a visitor on a phone is not sent a 2000px photograph.
+  // Nothing to create — the binding is the whole setup, and it works on a workers.dev subdomain
+  // with no domain of your own. Cloudflare's free allowance is 5,000 unique transformations a
+  // month, counted per image per size, and a cached one is not re-billed.
+  //
+  // Safe to delete. The media route serves the stored original whenever this is absent, so removing
+  // it costs bytes and never correctness — which is also why a Node deployment needs nothing here.
+  "images": {
+    "binding": "IMAGES"
+  },
+
   "vars": {
     "NODE_ENV": "production"
   }

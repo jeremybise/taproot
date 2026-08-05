@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './imageSize.js';
+export * from './images.js';
 export { LocalStorageAdapter } from './local.js';
 export type { LocalStorageConfig } from './local.js';
 export { R2StorageAdapter } from './r2.js';

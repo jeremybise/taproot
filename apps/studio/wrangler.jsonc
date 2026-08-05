@@ -93,6 +93,14 @@
     }
   ],
 
+  // --- Images ----------------------------------------------------------------
+  // Resizes media on the way out. The binding is the whole setup — it needs no domain of your own
+  // and works on a workers.dev subdomain. Absent, the media route serves the stored original, which
+  // is why `npm run dev` on Node needs nothing here.
+  "images": {
+    "binding": "IMAGES"
+  },
+
   "vars": {
     "NODE_ENV": "production"
   }

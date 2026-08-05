@@ -6,6 +6,7 @@ import {
   storageFromEnv,
   type AuthConfig,
   type D1DatabaseLike,
+  type ImagesBindingLike,
   type Mailer,
   type R2BucketLike,
   type StorageAdapter,
@@ -24,6 +25,14 @@ import type { Principal } from './guards.js';
 export interface TaprootContext {
   db: TaprootDb;
   storage: StorageAdapter;
+  /**
+   * The image resizer, when the deployment has one.
+   *
+   * Carried here rather than read from the environment in the route, following the rule this
+   * interface's own comment states: nothing below reaches for bindings directly. Undefined is a
+   * supported state, not a misconfiguration — see `resizeImage`.
+   */
+  images?: ImagesBindingLike;
   auth: AuthConfig;
   /** How mail leaves, or that it does not. See `resolveMailer`. */
   mail: Mailer;
@@ -61,6 +70,12 @@ export interface TaprootContext {
 export interface RuntimeBindings {
   DB?: D1DatabaseLike;
   MEDIA?: R2BucketLike;
+  /**
+   * Cloudflare Images. Optional in the strongest sense — the media route resizes when it is bound
+   * and serves the stored original when it is not, so a Node deployment and an operator who never
+   * added the binding both get correct pages rather than broken ones.
+   */
+  IMAGES?: ImagesBindingLike;
 }
 
 /**
@@ -103,6 +118,7 @@ export async function createContext(
   return {
     db: await resolveDb(env, bindings),
     storage: storageFromEnv(env, bindings),
+    images: bindings.IMAGES,
     auth: resolveAuthConfig(env),
     mail: resolveMailer(env),
     invalidated,
@@ -146,6 +162,8 @@ export async function readRuntimeEnv(): Promise<{
         bindings.DB = value as D1DatabaseLike;
       } else if (key === 'MEDIA') {
         bindings.MEDIA = value as R2BucketLike;
+      } else if (key === 'IMAGES') {
+        bindings.IMAGES = value as ImagesBindingLike;
       }
     }
   } catch {

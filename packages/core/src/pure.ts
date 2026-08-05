@@ -21,6 +21,13 @@
  */
 
 export * from './content/imageCrop.js';
+
+/**
+ * `imageVariants` — the `?w=` / `?f=` vocabulary the media route answers and a consumer builds
+ * `srcset` from. Shared for the reason `cacheTags` is: a spelling that differs between the two
+ * sides fails silently, serving every visitor the full-size original while every test passes.
+ */
+export * from './content/imageVariants.js';
 export * from './content/menuHrefs.js';
 /**
  * `queryKey` — how a consumer finds a listing's results in the response's `queries` map.

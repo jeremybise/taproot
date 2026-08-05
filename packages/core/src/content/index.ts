@@ -14,6 +14,7 @@ export * from './sanitizeHtml.js';
 export * from './accessibility.js';
 export * from './accessibilityReport.js';
 export * from './imageCrop.js';
+export * from './imageVariants.js';
 export * from './media.js';
 export * from './reusableBlocks.js';
 export * from './richTextRefs.js';

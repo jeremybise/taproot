@@ -1,3 +1,4 @@
+import { parseMediaVariant, resizeImage } from '@taprootcms/core';
 import type { APIContext } from 'astro';
 
 import { getTaproot } from '../../../runtime/guards.js';
@@ -57,6 +58,43 @@ export async function GET(context: APIContext): Promise<Response> {
     .executeTakeFirst();
 
   if (!row) return new Response('Not found', { status: 404 });
+
+  /**
+   * Resize, if this URL asked for it and the deployment can.
+   *
+   * The width and format are read off the URL rather than negotiated, because this response is
+   * stored in a shared cache keyed on the URL and `Vary` is honoured there only for
+   * `Accept-Encoding` — a format chosen from `Accept` would be the first visitor's format served to
+   * everyone behind them. `parseMediaVariant` snaps the width to a fixed ladder, which is what stops
+   * a crawler walking `?w=1` upward from minting an unbounded number of billable transformations and
+   * cache entries.
+   *
+   * `resizeImage` answers `undefined` for every reason it might not work — no binding, an
+   * unresizable type, an allowance reached, a throw — and the original is served instead. That is
+   * what makes this safe on a Node deployment and on a Worker with no Images binding: the page is
+   * heavier, never broken.
+   */
+  const variant = parseMediaVariant(context.url.searchParams);
+  const resized = await resizeImage(taproot.images, bytes, row.mime_type, variant);
+
+  if (resized) {
+    return new Response(resized.bytes as BodyInit, {
+      headers: {
+        'content-type': resized.contentType,
+        // Same reasoning as below: the key carries the asset's id and the variant is in the query,
+        // so this exact URL can never mean different bytes.
+        'cache-control': 'public, max-age=31536000, immutable',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        /*
+         * No `content-disposition` on a transformed variant, deliberately: the stored filename
+         * carries the *source* extension, so a re-encoded image would advertise itself as a `.png`
+         * while being WebP. A wrong filename is worse than none, and nothing downloads a srcset
+         * candidate by name.
+         */
+      },
+    });
+  }
 
   return new Response(bytes as BodyInit, {
     headers: {

@@ -1,5 +1,12 @@
 ---
-import { cropFrame, resolveCrop, type DeliveryMedia } from '@taprootcms/core/pure';
+import {
+  cropFrame,
+  mediaVariantUrl,
+  resolveCrop,
+  variantWidthsFor,
+  type DeliveryMedia,
+  type MediaVariantFormat,
+} from '@taprootcms/core/pure';
 
 /**
  * An image rendered at a target aspect ratio, honouring its stored focal point and crop.
@@ -50,6 +57,35 @@ interface Props {
    * it on every image states a preference nobody expressed.
    */
   fetchpriority?: 'high' | 'low' | 'auto';
+  /**
+   * How wide this image's **container** is at each breakpoint — an ordinary `sizes` list.
+   *
+   * Describe the box you placed, not the `<img>` inside it. The element is deliberately larger than
+   * its container (it is scaled up so the crop rectangle fills the frame), and this component knows
+   * that factor while the caller should not have to: `sizes` is rescaled on the way out. Getting it
+   * the other way round is how responsive images end up one breakpoint too soft on exactly the
+   * layouts that needed them.
+   *
+   * The default assumes full width, which is right for a hero and too generous for a half-width
+   * card — passing something like `"(min-width: 1024px) 50vw, 100vw"` is the single highest-value
+   * thing a caller can do here.
+   */
+  sizes?: string;
+  /**
+   * Override the offered widths. Pass `[]` to emit no `srcset` at all.
+   *
+   * The default is the shared ladder, filtered to the source's own width so nothing is upscaled.
+   */
+  widths?: number[];
+  /**
+   * Re-encode to this format. `'original'` keeps whatever was uploaded.
+   *
+   * WebP by default because it is universally supported and typically halves a photograph, and
+   * because the alternative — `'original'` — means a PNG screenshot an editor dragged in is served
+   * to every visitor as a PNG. A deployment that cannot transform ignores the parameter and serves
+   * the original, so this is never a correctness risk, only a size one.
+   */
+  format?: MediaVariantFormat | 'original';
   class?: string;
 }
 
@@ -59,6 +95,9 @@ const {
   alt,
   loading = 'lazy',
   fetchpriority,
+  sizes = '100vw',
+  widths,
+  format = 'webp',
   class: className,
 } = Astro.props;
 
@@ -68,21 +107,80 @@ const {
  * Adapted here rather than changing the core function, which the admin's preview calls with rows
  * straight out of the database. One of the two has to bend, and it should be the newer shape.
  */
-const frame = cropFrame(
-  resolveCrop(
-    {
-      width: asset.width,
-      height: asset.height,
-      hotspot_x: asset.hotspot?.x ?? null,
-      hotspot_y: asset.hotspot?.y ?? null,
-      crop_top: asset.crop?.top ?? null,
-      crop_right: asset.crop?.right ?? null,
-      crop_bottom: asset.crop?.bottom ?? null,
-      crop_left: asset.crop?.left ?? null,
-    },
-    ratio,
-  ),
+const rect = resolveCrop(
+  {
+    width: asset.width,
+    height: asset.height,
+    hotspot_x: asset.hotspot?.x ?? null,
+    hotspot_y: asset.hotspot?.y ?? null,
+    crop_top: asset.crop?.top ?? null,
+    crop_right: asset.crop?.right ?? null,
+    crop_bottom: asset.crop?.bottom ?? null,
+    crop_left: asset.crop?.left ?? null,
+  },
+  ratio,
 );
+
+const frame = cropFrame(rect);
+
+/**
+ * Responsive candidates, and the one piece of arithmetic that makes them correct.
+ *
+ * A `w` descriptor is the candidate's real width, and the browser compares it against the width the
+ * `<img>` **element** will occupy — which here is not the container. The element is blown up by
+ * `1 / rect.width` so the crop rectangle fills the frame, so a box laid out at 640 CSS px holds an
+ * `<img>` laid out at `640 × scale`. Handing the browser the container's `sizes` unmodified would
+ * have it shop for a 640px image and paint it across an element wider than that: every cropped
+ * image on the site one rung too soft, on exactly the layouts where the crop was doing the most
+ * work. So the caller describes the container, which is what they can see, and the factor is
+ * applied here, where it is known.
+ *
+ * `src` is the largest candidate rather than `asset.url`: any browser old enough to ignore `srcset`
+ * would otherwise be the only one still downloading the full-size original.
+ */
+const scale = rect.width > 0 ? 1 / rect.width : 1;
+const candidateWidths = widths ?? variantWidthsFor(asset.width);
+const variantFormat = format === 'original' ? undefined : format;
+
+const srcset =
+  candidateWidths.length > 0
+    ? candidateWidths
+        .map(
+          (width) => `${mediaVariantUrl(asset.url, { width, format: variantFormat })} ${width}w`,
+        )
+        .join(', ')
+    : undefined;
+
+const src = srcset
+  ? mediaVariantUrl(asset.url, {
+      width: candidateWidths[candidateWidths.length - 1],
+      format: variantFormat,
+    })
+  : asset.url;
+
+/**
+ * Rescale a `sizes` list from container widths to element widths.
+ *
+ * Each comma-separated entry is an optional media condition followed by a length, so only the
+ * trailing token is touched — wrapping the whole entry would produce `calc((min-width: 40em) 50vw)`,
+ * which is not a length and which browsers drop silently, falling back to `100vw` and quietly
+ * undoing the entire feature. Left alone when there is no crop to compensate for, so the common
+ * case emits the `sizes` the caller wrote.
+ */
+const elementSizes =
+  Math.abs(scale - 1) < 0.005
+    ? sizes
+    : sizes
+        .split(',')
+        .map((entry) => {
+          const trimmed = entry.trim();
+          const boundary = trimmed.lastIndexOf(' ');
+          const condition = boundary === -1 ? '' : trimmed.slice(0, boundary).trim();
+          const length = boundary === -1 ? trimmed : trimmed.slice(boundary + 1);
+          const scaled = `calc(${length} * ${scale.toFixed(4)})`;
+          return condition ? `${condition} ${scaled}` : scaled;
+        })
+        .join(', ');
 
 /**
  * Alt text comes from the library, where it is authored once and reused everywhere the asset
@@ -95,7 +193,9 @@ const altText = alt ?? asset.alt ?? '';
 
 <div class:list={['taproot-image', className]} style={`--taproot-image-ratio:${ratio}`}>
   <img
-    src={asset.url}
+    src={src}
+    srcset={srcset}
+    sizes={srcset ? elementSizes : undefined}
     alt={altText}
     loading={loading}
     fetchpriority={fetchpriority}
