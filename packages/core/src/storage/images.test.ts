@@ -32,7 +32,7 @@ describe('resizeImage', () => {
 
     expect(result?.contentType).toBe('image/webp');
     expect(images.calls.transform).toEqual([{ width: 640, fit: 'scale-down' }]);
-    expect(images.calls.output).toEqual([{ format: 'image/webp' }]);
+    expect(images.calls.output).toEqual([{ quality: 82, format: 'image/webp' }]);
   });
 
   /**

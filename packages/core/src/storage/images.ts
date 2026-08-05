@@ -29,6 +29,22 @@ export interface ImageResultLike {
   contentType(): string;
 }
 
+/**
+ * Encoding quality, and it is not optional in practice.
+ *
+ * Left unset, the binding encodes at something close to visually lossless and **a resize can come
+ * back larger than the file it started from**: a 1600×454 JPEG of 170 KB re-encoded to WebP
+ * measured 610 KB, and even cropped to 605×454 it measured 285 KB — about one byte per pixel, where
+ * the source JPEG was 0.23. Every one of those is a page made heavier by the feature meant to make
+ * it lighter, and nothing errors, so it is invisible without weighing the bytes.
+ *
+ * 82 is the usual sweet spot for photographic WebP — indistinguishable at a glance and typically a
+ * third smaller than the equivalent JPEG. It is a constant rather than a URL parameter deliberately:
+ * a `q=` would be another unbounded dimension on a URL that is both a cache key and a billing key,
+ * and quality is a decision a CMS should make once rather than delegate to every call site.
+ */
+const OUTPUT_QUALITY = 82;
+
 /** Our short format names to the MIME types the binding wants. */
 const OUTPUT_MIME: Record<MediaVariantFormat, string> = {
   webp: 'image/webp',
@@ -99,9 +115,15 @@ export async function resizeImage(
       pipeline = pipeline.transform({ width: variant.width, fit: 'scale-down' });
     }
 
-    const result = await pipeline.output(
-      variant.format ? { format: OUTPUT_MIME[variant.format] } : {},
-    );
+    /**
+     * Quality is set whether or not a format was named. A resize alone re-encodes in the source's
+     * own format, so leaving it off there would inflate exactly the requests that asked only to be
+     * made smaller.
+     */
+    const result = await pipeline.output({
+      quality: OUTPUT_QUALITY,
+      ...(variant.format ? { format: OUTPUT_MIME[variant.format] } : {}),
+    });
 
     return { bytes: result.image(), contentType: result.contentType() };
   } catch (error) {
