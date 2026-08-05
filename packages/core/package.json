@@ -1,6 +1,6 @@
 {
   "name": "@taprootcms/core",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Framework-agnostic data layer, auth, and content services for Taproot",
   "license": "MIT",
   "type": "module",
