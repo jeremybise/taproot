@@ -594,6 +594,81 @@ const event = await ensureType(
  * split that makes a listing reusable — what may be asked is fixed here, once, while each editor
  * placing this block picks their own department and count.
  */
+/**
+ * A staff directory, which is the shape a listing with `include=data` exists for.
+ *
+ * Every other seeded type is read one item at a time through `resolve`. This one is read *as a set*
+ * — twenty cards on one page, each needing a photo, a job title and a department — which is the read
+ * that used to cost one request per person and now costs one. Seeded because the feature is
+ * otherwise invisible on a fresh clone: nothing in a college demo made of pages and events asks the
+ * delivery API for field values in bulk.
+ *
+ * `department` is `multiple` deliberately. Somebody with a joint appointment is the case a facet
+ * gets wrong — a filter that reads the first value silently loses the second, on exactly the people
+ * most likely to be looked up.
+ */
+const person = await ensureType(
+  {
+    api_id: 'person',
+    name: 'Person',
+    name_plural: 'People',
+    description: 'A member of staff, listed in the directory. Flat, with URLs under /people.',
+    kind: 'collection',
+    icon: null,
+    url_prefix: 'people',
+    title_field: 'title',
+  },
+  [
+    {
+      api_id: 'position',
+      label: 'Position',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: 'Job title, as it should appear under their name.',
+      config: {},
+    },
+    {
+      api_id: 'photo',
+      label: 'Photo',
+      type: 'media',
+      required: false,
+      localized: false,
+      help_text: null,
+      // Single, and portrait in practice — which is what makes the hotspot worth setting, since a
+      // directory card crops these square.
+      config: { accept: ['image/*'] },
+    },
+    {
+      api_id: 'department',
+      label: 'Department',
+      type: 'taxonomy',
+      required: false,
+      localized: false,
+      help_text: 'One or more. Somebody can sit in two.',
+      config: { taxonomyId: departments.taxonomy.id, multiple: true },
+    },
+    {
+      api_id: 'email',
+      label: 'Email',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: null,
+      config: {},
+    },
+    {
+      api_id: 'phone',
+      label: 'Phone',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: null,
+      config: {},
+    },
+  ],
+);
+
 const eventListing = await ensureType(
   {
     api_id: 'event_listing',
@@ -839,6 +914,16 @@ await ensureAsset(
   null,
   'Open day',
 );
+
+/**
+ * Portraits for the directory, one per person.
+ *
+ * Portrait rather than landscape, and each with its own hotspot, because a directory card crops
+ * these to a square — which is the arrangement where a stored focal point is the difference between
+ * a face and a chin. Generated per person so the grid is not six copies of one image, which would
+ * hide exactly that.
+ */
+const portrait = (hue: number) => placeholderPng(hue, 900, 1200);
 
 // --- Content items ----------------------------------------------------------
 
@@ -1266,6 +1351,111 @@ await ensureItem(
   },
   '/events/summer-orientation',
 );
+
+/**
+ * The directory, seeded as a set rather than as a few examples.
+ *
+ * Six is the smallest number that makes the facet do something visible: enough that filtering
+ * removes cards rather than reordering them, spread across both branches of the department tree so
+ * "Academics" is demonstrably a *branch* count and not a term count, and with one joint appointment
+ * so a multi-value taxonomy is on screen rather than merely supported.
+ *
+ * Hotspots are set high and off-centre because the card crops square from a portrait: without one,
+ * every face is cropped at the chin, which is the failure the focal point exists to prevent and the
+ * one nobody sees until there are faces.
+ */
+const people: {
+  name: string;
+  position: string;
+  departments: string[];
+  email: string;
+  phone: string;
+  hue: number;
+}[] = [
+  {
+    name: 'Marguerite Okafor',
+    position: 'Registrar',
+    departments: ['Student Services'],
+    email: 'm.okafor@example.edu',
+    phone: '+1 555 0141',
+    hue: 190,
+  },
+  {
+    name: 'Tomas Reinholt',
+    position: 'Director of Admissions',
+    departments: ['Admissions'],
+    email: 't.reinholt@example.edu',
+    phone: '+1 555 0142',
+    hue: 24,
+  },
+  {
+    name: 'Priya Raghunathan',
+    position: 'Professor of Biology',
+    // The joint appointment. A facet that reads the first value drops her from Humanities, and she
+    // is exactly the person somebody browsing either department expects to find.
+    departments: ['Sciences', 'Humanities'],
+    email: 'p.raghunathan@example.edu',
+    phone: '+1 555 0143',
+    hue: 145,
+  },
+  {
+    name: 'Daniel Osei',
+    position: 'Financial Aid Counsellor',
+    departments: ['Financial Aid'],
+    email: 'd.osei@example.edu',
+    phone: '+1 555 0144',
+    hue: 275,
+  },
+  {
+    name: 'Wren Callaghan',
+    position: 'Lecturer in Classics',
+    departments: ['Humanities'],
+    email: 'w.callaghan@example.edu',
+    phone: '+1 555 0145',
+    hue: 330,
+  },
+  {
+    name: 'Ingrid Halvorsen',
+    position: 'Laboratory Manager',
+    departments: ['Sciences'],
+    email: 'i.halvorsen@example.edu',
+    phone: '+1 555 0146',
+    hue: 62,
+  },
+];
+
+for (const entry of people) {
+  const slug = entry.name.toLowerCase().replace(/[^a-z]+/g, '-');
+
+  const photo = await ensureAsset(
+    `${slug}.png`,
+    portrait(entry.hue),
+    { width: 900, height: 1200 },
+    `${entry.name}, ${entry.position}.`,
+    entry.name,
+    { x: 0.5, y: 0.28 },
+  );
+
+  await ensureItem(
+    handle,
+    person.type,
+    person.fields,
+    {
+      contentTypeId: person.type.id,
+      title: entry.name,
+      status: 'published',
+      userId: admin.id,
+      data: {
+        position: entry.position,
+        photo,
+        department: entry.departments.map(termId).filter(Boolean),
+        email: entry.email,
+        phone: entry.phone,
+      },
+    },
+    `/people/${slug}`,
+  );
+}
 
 const bannerExists = await handle.db
   .selectFrom('content_items')

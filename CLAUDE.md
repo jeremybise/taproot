@@ -305,6 +305,17 @@ one. Four things hold it up:
   one flatten somebody else's shape. An unknown taxonomy is a **404** rather than an empty list,
   since "no terms yet" is an ordinary state that would hide a misspelled `api_id` forever.
 
+**A uuid a consumer cannot resolve is a dead end, and the schema is where that is fixed.** A
+`taxonomy` field's `config` names its vocabulary by `taxonomyId` and a `relation`'s names its target
+by `targetContentTypeId`, so a site reading the content model held ids with nothing on its side of
+the wire to match them against — found by pointing the new terms endpoint at a real deployment and
+getting a 404 for every name worth guessing. `DeliverySchema` now carries `taxonomies` and every
+`DeliveryTypeSchema` carries `id`. Resolved **there and not into each field's config**, because
+`toDeliveryField` also builds the `fields` array on every `resolve`: enriching it would put a
+taxonomy lookup on the hot path of every page view to answer a question only a schema reader asks.
+`deliverTaxonomyTerms` separately accepts an `api_id` **or** an id, the same way `?term=` accepts a
+slug or an id — a slug and a uuid cannot be mistaken for each other.
+
 **Several `term` parameters mean OR, and each is still its whole branch.** `ItemFilters.termIds` has
 always been a list with those semantics; the route was narrowing it to one. The single-term `term`
 echo in the response is unchanged and stays singular — it exists so a term *archive* can render the

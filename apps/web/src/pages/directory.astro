@@ -1,0 +1,235 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { TaprootImage } from '@taprootcms/astro/components';
+import { applyTermHrefs } from '@taprootcms/astro';
+import { taproot, termHref } from '../taproot.ts';
+
+export const prerender = false;
+
+/**
+ * The staff directory — the worked example for a listing that carries field values.
+ *
+ * Every other page here reads one item at a time through `resolve`. This one reads a *set*: eighteen
+ * cards, each needing a photo, a job title and a department. Before `data: true` that was one request
+ * per person, which is the N+1 the delivery API exists to prevent — so this page is the reason that
+ * option exists, and the shape to copy.
+ *
+ * Two requests in total, whatever the directory's size: the people, and the departments to filter
+ * them by.
+ */
+const TAXONOMY = 'department';
+const PER_PAGE = 24;
+
+/**
+ * The chosen departments, as slugs, straight from the URL.
+ *
+ * In the query string rather than in a cookie or client state, because that is what makes a filtered
+ * directory a link somebody can send: "here are our biologists" has to survive being pasted into an
+ * email. It also means the whole page works with JavaScript off — the form below is a plain `GET`.
+ */
+const selected = Astro.url.searchParams.getAll(TAXONOMY).filter(Boolean);
+
+const [people, taxonomy, nav] = await Promise.all([
+  taproot.items({
+    type: 'person',
+    taxonomy: TAXONOMY,
+    /**
+     * Several terms mean *any* of them, expanded to whole branches server-side. Ticking two
+     * departments widens the list, and ticking "Academics" finds somebody filed under "Sciences".
+     */
+    term: selected,
+    sort: 'title',
+    // The whole point: field values and the maps their ids resolve through, in one request.
+    data: true,
+    limit: PER_PAGE,
+  }),
+  /**
+   * The facet's own options, counted for the type this grid shows.
+   *
+   * Asking the CMS rather than hard-coding the list is the difference between a filter that follows
+   * the content and one that goes stale, silently, the first time an editor adds a department.
+   * `type` matters: without it the counts would include every page and event tagged the same way,
+   * and a checkbox would promise more than clicking it delivers.
+   */
+  taproot.terms(TAXONOMY, { counts: true, type: 'person' }),
+  taproot.menu('main').then((entries) => applyTermHrefs(entries, termHref)),
+]);
+
+/** Terms with nothing under them are still offered — see the note in the markup. */
+const options = taxonomy.terms;
+const depthOf = (parentId: string | null): number => {
+  let depth = 0;
+  let current = parentId;
+  while (current) {
+    depth += 1;
+    current = options.find((term) => term.id === current)?.parentId ?? null;
+  }
+  return depth;
+};
+
+Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+---
+
+<SiteLayout title="Directory" description="Who works at Riverbend, and where to find them." nav={nav}>
+  <h1>Directory</h1>
+
+  <form method="get" action="/directory" class="filters">
+    <fieldset>
+      <legend>Department</legend>
+
+      {
+        options.map((term) => (
+          <label class="option" style={`--depth: ${depthOf(term.parentId)}`}>
+            <input
+              type="checkbox"
+              name={TAXONOMY}
+              value={term.slug}
+              checked={selected.includes(term.slug)}
+            />
+            <span>
+              {term.name} <span class="count">({term.itemCount})</span>
+            </span>
+          </label>
+        ))
+      }
+    </fieldset>
+
+    {
+      /*
+        A submit button rather than an onchange handler, because the page has no JavaScript at all
+        and a filter that only works with it would be a filter that sometimes does nothing. "Clear"
+        is a plain link to the unfiltered URL for the same reason.
+      */
+    }
+    <p class="actions">
+      <button type="submit">Filter</button>
+      {selected.length > 0 && <a href="/directory">Clear</a>}
+    </p>
+  </form>
+
+  <p role="status">
+    {people.total} {people.total === 1 ? 'person' : 'people'}
+    {selected.length > 0 && ' matching your filter'}
+  </p>
+
+  {
+    people.items.length === 0 ? (
+      <p>Nobody matches that filter yet.</p>
+    ) : (
+      <ul class="grid">
+        {people.items.map((entry) => {
+          /*
+            Ids in `data`, objects in the maps — the same contract `resolve` follows, which is what
+            keeps one image used by two people serialised once.
+          */
+          const photo = entry.data?.photo ? people.media?.[entry.data.photo as string] : undefined;
+          const departments = ((entry.data?.department as string[] | undefined) ?? [])
+            .map((id) => people.terms?.[id]?.name)
+            .filter(Boolean);
+
+          return (
+            <li>
+              {photo && (
+                /*
+                  Square from a portrait source, which is where the editor's focal point earns its
+                  keep: without it every face is cropped at the chin.
+                */
+                <TaprootImage
+                  asset={photo}
+                  ratio={1}
+                  sizes="(min-width: 46rem) 14rem, 40vw"
+                  crop="server"
+                />
+              )}
+              <h2>
+                <a href={entry.path}>{entry.title}</a>
+              </h2>
+              {entry.data?.position && <p class="position">{entry.data.position}</p>}
+              {departments.length > 0 && <p class="departments">{departments.join(' · ')}</p>}
+              {entry.data?.email && (
+                <p>
+                  <a href={`mailto:${entry.data.email}`}>{entry.data.email}</a>
+                </p>
+              )}
+              {entry.data?.phone && <p class="phone">{entry.data.phone}</p>}
+            </li>
+          );
+        })}
+      </ul>
+    )
+  }
+</SiteLayout>
+
+<style>
+  .filters {
+    margin-block: 1.5rem 2rem;
+    border: 1px solid var(--rule);
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+  }
+
+  .filters fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.5rem;
+  }
+
+  .filters legend {
+    font-weight: 600;
+    padding: 0;
+  }
+
+  .option {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    /* Children sit under their parent, which is what `parentId` is for. */
+    margin-inline-start: calc(var(--depth) * 1rem);
+  }
+
+  .count {
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-block-end: 0;
+  }
+
+  .grid {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 1.75rem 1.25rem;
+  }
+
+  .grid h2 {
+    font-size: 1rem;
+    margin-block: 0.6rem 0.15rem;
+  }
+
+  .grid p {
+    margin-block: 0.15rem;
+    font-size: 0.875rem;
+  }
+
+  .position {
+    color: var(--muted);
+  }
+
+  .departments {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  .phone {
+    font-variant-numeric: tabular-nums;
+  }
+</style>

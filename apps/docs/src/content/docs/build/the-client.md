@@ -225,7 +225,14 @@ a second query server-side, so it is opt-in.
 counts every kind of content tagged Biology, while clicking it returns only people — a facet
 disagreeing with its own filter. With it, the two describe the same set.
 
-The first argument takes the taxonomy's `api_id` **or its id**, which is what a `taxonomy` field carries in `config.taxonomyId` — so you can go straight from a field in the schema to its terms without looking the name up. A slug and a uuid cannot be mistaken for each other.
+The first argument takes the taxonomy's `api_id` **or its id**, which is what a `taxonomy` field
+carries in `config.taxonomyId` — so you can go straight from a field in the schema to its terms
+without looking the name up. A slug and a uuid cannot be mistaken for each other. `schema()` also
+lists every taxonomy with both, if you would rather map one to the other yourself.
+
+`apps/web/src/pages/directory.astro` in the Taproot repository is a working page built on these two
+methods: a card grid with photos, a department facet with counts, checkbox state in the URL, and no
+JavaScript.
 
 A taxonomy that does not exist is a **404**, not an empty list: a taxonomy with no terms yet is an
 ordinary state, so answering one for a misspelled `api_id` would hide the typo indefinitely.
@@ -315,6 +322,18 @@ whether a taxonomy's terms have public pages is your call and not the CMS's. See
 
 The whole content model. Read by the type generator; rarely useful at request time. See
 [Preview and types](/build/preview-and-types/).
+
+```ts
+{ contentTypes: [ { id, apiId, name, namePlural, kind, urlPrefix, fields } ],
+  blockTypes:   [ … ],
+  taxonomies:   [ { id, apiId, name, namePlural, hierarchical } ] }
+```
+
+`taxonomies` is what makes the uuids inside a field's `config` resolvable — a `taxonomy` field names
+its vocabulary by `taxonomyId`, and a `relation` or `query` field names its target type by
+`targetContentTypeId`, which is why `contentTypes` carries `id` as well as `apiId`. The taxonomies'
+*terms* are not here: a vocabulary can hold hundreds and the schema is read to learn the model —
+[`terms()`](#termstaxonomyapiid-options) answers that, with counts.
 
 ## Errors
 

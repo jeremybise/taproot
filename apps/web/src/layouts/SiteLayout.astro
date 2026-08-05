@@ -142,11 +142,15 @@ const isCurrent = (href: string) => path === href;
         justify-content: space-between;
         gap: 0.5rem 1rem;
       }
-      a.search-link {
+      .site-links {
+        display: flex;
+        gap: 1rem;
         font-size: 0.9375rem;
+      }
+      .site-links a {
         text-decoration: none;
       }
-      a.search-link:hover {
+      .site-links a:hover {
         text-decoration: underline;
       }
       nav.primary {
@@ -217,12 +221,16 @@ const isCurrent = (href: string) => path === href;
         {
           /*
             Beside the navigation rather than in it. The menu's entries come from the CMS and
-            reference content items; `/search` is a route this site serves itself, so putting it in
-            the menu would mean an editor could remove the only way to reach a page the CMS does not
-            know exists — and could not put it back, because there is nothing there to point at.
+            reference content items; `/search` and `/directory` are routes this site serves itself,
+            so putting them in the menu would mean an editor could remove the only way to reach a
+            page the CMS does not know exists — and could not put it back, because there is nothing
+            there to point at.
           */
         }
-        <a href="/search" class="search-link">Search</a>
+        <span class="site-links">
+          <a href="/directory">Directory</a>
+          <a href="/search">Search</a>
+        </span>
 
         {
           nav.length > 0 && (

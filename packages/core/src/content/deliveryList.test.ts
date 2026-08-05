@@ -5,7 +5,12 @@ import { migrateToLatest } from '../db/migrations/index.js';
 import { createContentType, createField } from './types.js';
 import { createItem } from './items.js';
 import { createTaxonomy, createTerm, termIdsForBranch } from './taxonomies.js';
-import { deliverItems, deliverTaxonomyTerms, resolveDelivery } from './delivery.js';
+import {
+  deliverItems,
+  deliverTaxonomyTerms,
+  deliverySchema,
+  resolveDelivery,
+} from './delivery.js';
 import type { ContentTypeRow, FieldRow, TermRow } from '../db/schema.js';
 import type { StorageAdapter } from '../storage/types.js';
 
@@ -143,7 +148,7 @@ beforeEach(async () => {
     await field('text', 'role', {}, 0),
     await field('media', 'photo', {}, 1),
     // Several departments per person, which is the case a directory actually has.
-    await field('taxonomy', 'departments', { taxonomyApiId: 'department', multiple: true }, 2),
+    await field('taxonomy', 'departments', { taxonomyId: taxonomy.id, multiple: true }, 2),
     await field('richtext', 'bio', {}, 3),
     await field('block', 'sections', {}, 4),
   ];
@@ -424,6 +429,31 @@ describe('the terms a facet is built from', () => {
     // a term that does not exist, which is what an editor is about to file something under.
     expect(taxonomy!.terms.every((term) => term.itemCount === 0)).toBe(true);
     expect(taxonomy!.terms).toHaveLength(3);
+  });
+});
+
+describe('what the schema hands a consumer', () => {
+  it('lists the taxonomies, so a field’s stored id resolves to something', async () => {
+    /**
+     * The gap this closes, found by pointing the terms endpoint at a real deployment: a `taxonomy`
+     * field's schema entry carries `config.taxonomyId` and no name, so a consumer reading the model
+     * held a uuid with nothing on its side of the wire to match it against. Every name worth
+     * guessing answered 404.
+     *
+     * Resolved *here* rather than into each field's config on purpose: `toDeliveryField` also builds
+     * the `fields` array on every `resolve`, so enriching it would put a taxonomy lookup on the hot
+     * path of every page view to answer a question only a schema reader asks.
+     */
+    const schema = await deliverySchema(handle.db);
+    const personSchema = schema.contentTypes.find((type) => type.apiId === 'person')!;
+    const field = personSchema.fields.find((entry) => entry.apiId === 'departments')!;
+
+    const named = schema.taxonomies.find((entry) => entry.id === field.config.taxonomyId);
+    expect(named?.apiId).toBe('department');
+    expect(named?.hierarchical).toBe(true);
+
+    // And the same for a relation's target, which names a content type by id.
+    expect(personSchema.id).toBe(personType.id);
   });
 });
 

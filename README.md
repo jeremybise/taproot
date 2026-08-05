@@ -473,6 +473,23 @@ number has to describe the rows clicking it returns — summing a child's count 
 double-counts anyone filed under both, which is exactly what a cross-appointment is. Pass the type
 your grid is narrowed to, or "Biology (12)" sits beside a grid showing one.
 
+The seed now carries a **staff directory** — a `person` collection, six people across both branches
+of the department tree, one of them jointly appointed — and `apps/web` renders it at `/directory`:
+a card grid with photos cropped square to each editor's focal point, a department facet with counts,
+the ticked boxes in the URL so a filtered directory is a link somebody can send, and no JavaScript.
+It is there because the feature was otherwise invisible on a fresh clone: nothing in a demo made of
+pages and events asks the delivery API for field values in bulk. Academics reads **(3)** rather than
+(4) on that data, which is the de-duplication being demonstrated rather than described.
+
+Two things that only showed up when the endpoint met a real deployment. A taxonomy can be named by
+**id as well as `api_id`**, because a `taxonomy` field's schema entry carries `config.taxonomyId` and
+no name — so a consumer reading the content model held a uuid and could not reach its own terms; the
+first four names worth guessing all answered 404. And `schema()` now lists **`taxonomies`**, and
+gives each content type its `id`, so every uuid a field's config mentions resolves to something
+without a second endpoint. Resolved there rather than inside each field, because `toDeliveryField`
+also builds the `fields` array on every `resolve` — enriching it would put a lookup on the hot path
+of every page view to answer a question only a schema reader asks.
+
 **Next in the band:** media multi-upload (5E), menu link-picking (5F) and AI-assisted alt text (5G),
 all independent of each other.
 

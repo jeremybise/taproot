@@ -34,6 +34,7 @@ import {
   buildTermTree,
   getTaxonomy,
   getTaxonomyByApiId,
+  listTaxonomies,
   listTerms,
   type TermNode,
 } from './taxonomies.js';
@@ -646,6 +647,14 @@ function toListItem(item: {
 // ---------------------------------------------------------------------------
 
 export interface DeliveryTypeSchema {
+  /**
+   * The row id, which is what a `relation` or `query` field's `config` names its target by.
+   *
+   * Sent so a consumer reading the model can follow that reference. Without it `config` hands over a
+   * uuid with nothing on this side of the wire to match it against — the caller has to open the
+   * admin and read the name off a screen, which is the manual step a schema exists to remove.
+   */
+  id: string;
   apiId: string;
   name: string;
   namePlural: string;
@@ -654,9 +663,34 @@ export interface DeliveryTypeSchema {
   fields: DeliveryField[];
 }
 
+/**
+ * A taxonomy, as the schema lists it.
+ *
+ * Its terms are deliberately not here: a vocabulary can hold hundreds, the schema is read to learn
+ * the *model*, and `GET /delivery/taxonomy/{apiIdOrId}/terms` answers the other question — with
+ * counts, and narrowed to the type a facet sits beside.
+ */
+export interface DeliveryTaxonomySummary {
+  id: string;
+  apiId: string;
+  name: string;
+  namePlural: string;
+  hierarchical: boolean;
+}
+
 export interface DeliverySchema {
   contentTypes: DeliveryTypeSchema[];
   blockTypes: DeliveryTypeSchema[];
+  /**
+   * Every taxonomy, which is what makes a `taxonomy` field's `config.taxonomyId` resolvable.
+   *
+   * The alternative was resolving it *into* each field's config as a `taxonomyApiId`, and it was
+   * rejected on cost: `toDeliveryField` also builds the `fields` array on every `resolve`, so the
+   * lookup would land on the hot path of every page view to serve a question only a schema reader
+   * asks. Listing them once here costs one query on an endpoint that is `no-store` and read at build
+   * time — and answers "what taxonomies exist" as well, which nothing else did.
+   */
+  taxonomies: DeliveryTaxonomySummary[];
 }
 
 /**
@@ -681,7 +715,19 @@ export async function deliverySchema(db: Kysely<Database>): Promise<DeliverySche
     .orderBy('name')
     .execute();
 
-  if (types.length === 0) return { contentTypes: [], blockTypes: [] };
+  // Loaded regardless of whether any type carries a taxonomy field: a site with vocabularies and no
+  // field using them yet is an ordinary state, and this endpoint is where "what exists" is answered.
+  const taxonomies = (await listTaxonomies(db)).map(
+    (taxonomy): DeliveryTaxonomySummary => ({
+      id: taxonomy.id,
+      apiId: taxonomy.api_id,
+      name: taxonomy.name,
+      namePlural: taxonomy.name_plural,
+      hierarchical: taxonomy.hierarchical === 1,
+    }),
+  );
+
+  if (types.length === 0) return { contentTypes: [], blockTypes: [], taxonomies };
 
   const fields = await db
     .selectFrom('fields')
@@ -703,6 +749,7 @@ export async function deliverySchema(db: Kysely<Database>): Promise<DeliverySche
   }
 
   const shape = (type: (typeof types)[number]): DeliveryTypeSchema => ({
+    id: type.id,
     apiId: type.api_id,
     name: type.name,
     namePlural: type.name_plural,
@@ -714,6 +761,7 @@ export async function deliverySchema(db: Kysely<Database>): Promise<DeliverySche
   return {
     contentTypes: types.filter((type) => type.kind !== 'block').map(shape),
     blockTypes: types.filter((type) => type.kind === 'block').map(shape),
+    taxonomies,
   };
 }
 

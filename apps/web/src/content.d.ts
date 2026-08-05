@@ -80,8 +80,6 @@ export interface EventData {
   body?: string;
   /** Maximum attendees. Leave blank for unlimited. */
   capacity?: number;
-  /** What this event is about. A listing filtered by a parent finds these too. */
-  departments?: TermId[];
   /** Sessions within the event, in the order they run. */
   schedule?: {
     id: string;
@@ -91,23 +89,32 @@ export interface EventData {
       room?: string;
     };
   }[];
-  /** Where people sign up — a page here, a file, or an external booking system. */
-  registration_link?: ({ kind: "item"; id: ContentItemId; label?: string; newTab: boolean; noFollow: boolean } | { kind: "media"; id: MediaId; label?: string; newTab: boolean; noFollow: boolean } | { kind: "url"; href: string; label?: string; newTab: boolean; noFollow: boolean });
   /** The department or programme page this event belongs to. */
   host_page?: ContentItemId;
+  /** Where people sign up — a page here, a file, or an external booking system. */
+  registration_link?: ({ kind: "item"; id: ContentItemId; label?: string; newTab: boolean; noFollow: boolean } | { kind: "media"; id: MediaId; label?: string; newTab: boolean; noFollow: boolean } | { kind: "url"; href: string; label?: string; newTab: boolean; noFollow: boolean });
 }
 /** Weather Banner — `weather_banner` (singleton). */
 export interface WeatherBannerData {
   enabled?: boolean;
-  /** Shown when `enabled` is checked — so it may be absent. */
   message?: string;
-  /** Shown when `enabled` is checked — so it may be absent. */
   severity?: "info" | "warning" | "closure";
+}
+/** Person — `person` (collection). */
+export interface PersonData {
+  /** Job title, as it should appear under their name. */
+  position?: string;
+  photo?: MediaId;
+  /** One or more. Somebody can sit in two. */
+  department?: TermId[];
+  email?: string;
+  phone?: string;
 }
 /** Every content type, keyed by `api_id`. */
 export interface TaprootContentTypes {
   page: PageData;
   event: EventData;
   weather_banner: WeatherBannerData;
+  person: PersonData;
 }
 export type TaprootContentTypeId = keyof TaprootContentTypes;

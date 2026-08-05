@@ -90,6 +90,7 @@ export type {
   DeliveryResult,
   DeliverySchema,
   DeliveryTaxonomy,
+  DeliveryTaxonomySummary,
   DeliveryTaxonomyTerm,
   DeliveryTermRef,
   DeliveryTypeSchema,
