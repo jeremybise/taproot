@@ -181,6 +181,27 @@ through a path nobody tested. Things that follow:
   through a short-lived cookie rather than a query string. Keys are **revoked, never deleted** —
   audit entries name them by id.
 
+**Caching is opt-in, and a response that says nothing gets `private, no-store`.**
+`applyDefaultCacheControl` in [responseCache.ts](packages/studio/src/runtime/responseCache.ts) is the
+one place that holds, called from the middleware before anything else touches the response. The
+inverse — silence meaning "do what you like" — is how a signed-in admin's HTML ended up in
+Cloudflare's shared cache and was served to anonymous requests: measured as `CF-Cache-Status: HIT`,
+`Age: 437`, on a request carrying no cookie, returning item titles, paths and ids. **The origin was
+never wrong** and still 302s an unauthenticated request to the login screen; the edge was answering
+before the origin was consulted, which is why every auth test passed throughout. Four things follow:
+- **No admin screen may be made cacheable**, and the check is `has('cache-control')`, so a route that
+  genuinely is cacheable — the delivery API, `media/file/[...key]`'s `immutable` — keeps its own
+  header untouched. Setting one on an admin page is how this comes back.
+- **The stamp goes on before the refreshed session cookie is appended.** A `set-cookie` on a response
+  a shared cache will store is not a content leak but an account handover, and ordering is the only
+  thing that rules it out.
+- **It returns a response rather than mutating one.** `Response.redirect()` builds immutable headers
+  and `set` throws `TypeError: immutable` on them, which is why the rebuild exists — and why the
+  `append` for the session cookie was latently unsafe on a redirect before this.
+- **`vary` does not save you.** Cloudflare's cache honours `Vary` only for `Accept-Encoding`, so
+  `vary: authorization` on a `public` response is documentation, not a cache key. Delivery survives
+  that because published content is the same for every key, not because the header worked.
+
 **A cache header does nothing on Cloudflare until the Worker opts in, and the ETag must be answered
 before the page is resolved.** Both halves shipped wrong for a phase and both looked right.
 `cache-control: public, max-age=0, s-maxage=60` had been on every delivery response and every

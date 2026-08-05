@@ -11,6 +11,7 @@ import {
 import { createContext, readRuntimeEnv } from './context.js';
 import { apiKeyPrincipal, userPrincipal } from './guards.js';
 import { purgeInvalidated } from './purge.js';
+import { applyDefaultCacheControl } from './responseCache.js';
 
 /**
  * Builds the Taproot context for every request and resolves the session.
@@ -70,7 +71,19 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   (context.locals as { taproot: typeof taproot }).taproot = taproot;
 
-  const response = await next();
+  /**
+   * Stamped before anything else touches the response, and before the session cookie below.
+   *
+   * A refreshed session cookie riding on a response a shared cache is willing to store is the worst
+   * version of this bug — the leak stops being "somebody reads the admin" and becomes "somebody is
+   * handed a live session". Going first means there is no ordering in which a `set-cookie` exists on
+   * a response that has not already been marked unstorable.
+   *
+   * The return value is load-bearing: an immutable-headers response comes back rebuilt, and the
+   * `append` below would have thrown on the original.
+   */
+  const response = applyDefaultCacheControl(await next());
+
   if (refreshedCookie) {
     response.headers.append('set-cookie', refreshedCookie);
   }
