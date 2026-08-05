@@ -32,6 +32,7 @@ import {
 import { resolveMenu, type ResolvedMenuItem } from './menus.js';
 import {
   buildTermTree,
+  getTaxonomy,
   getTaxonomyByApiId,
   listTerms,
   type TermNode,
@@ -876,13 +877,21 @@ export interface DeliverTermsOptions {
  * hard-code the list and went stale, silently, the moment an editor added one. `undefined` for a
  * taxonomy that does not exist, so the route can 404 rather than answer an empty list — which would
  * read as "no terms yet" and hide a misspelled `api_id` indefinitely.
+ *
+ * **Takes an `api_id` or an id**, exactly as `?term=` takes a slug or an id, and for a sharper
+ * reason than symmetry: a `taxonomy` field's schema entry carries `config.taxonomyId` and no
+ * `api_id`, so a consumer that reads the content model — which is the one that most wants this
+ * endpoint — holds the uuid and nothing else. Accepting only the name meant going from a field to
+ * its terms was impossible without a human reading the admin. They cannot collide: an `api_id` is a
+ * slug and an id is a uuid.
  */
 export async function deliverTaxonomyTerms(
   db: Kysely<Database>,
-  apiId: string,
+  apiIdOrId: string,
   options: DeliverTermsOptions = {},
 ): Promise<DeliveryTaxonomy | undefined> {
-  const taxonomy = await getTaxonomyByApiId(db, apiId);
+  const taxonomy =
+    (await getTaxonomyByApiId(db, apiIdOrId)) ?? (await getTaxonomy(db, apiIdOrId));
   if (!taxonomy) return undefined;
 
   const rows = await listTerms(db, taxonomy.id);

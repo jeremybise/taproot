@@ -225,6 +225,8 @@ a second query server-side, so it is opt-in.
 counts every kind of content tagged Biology, while clicking it returns only people — a facet
 disagreeing with its own filter. With it, the two describe the same set.
 
+The first argument takes the taxonomy's `api_id` **or its id**, which is what a `taxonomy` field carries in `config.taxonomyId` — so you can go straight from a field in the schema to its terms without looking the name up. A slug and a uuid cannot be mistaken for each other.
+
 A taxonomy that does not exist is a **404**, not an empty list: a taxonomy with no terms yet is an
 ordinary state, so answering one for a misspelled `api_id` would hide the typo indefinitely.
 

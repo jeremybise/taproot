@@ -303,6 +303,21 @@ describe('the terms a facet is built from', () => {
     expect(biology!.itemCount).toBeUndefined();
   });
 
+  it('takes the taxonomy by id as well as by name', async () => {
+    /**
+     * The consumer most likely to want this endpoint is the one reading the content model — and a
+     * `taxonomy` field's schema entry carries `config.taxonomyId` and no `api_id`. Accepting only
+     * the name made "here is a field, show me its terms" impossible without a human opening the
+     * admin to look the name up. An `api_id` is a slug and an id is a uuid, so neither can be
+     * mistaken for the other.
+     */
+    const byName = await deliverTaxonomyTerms(handle.db, 'department');
+    const byId = await deliverTaxonomyTerms(handle.db, department.id);
+
+    expect(byId).toEqual(byName);
+    expect(byId!.terms).toHaveLength(3);
+  });
+
   it('is undefined for a taxonomy that does not exist', async () => {
     // The route turns this into a 404. An empty list would read as "no terms yet", which is a real
     // state — so a misspelled api_id would hide until somebody happened to add a term.
