@@ -241,7 +241,16 @@ const page = await ensureType(
       // Named by `api_id` rather than by id, so the list survives a block type being recreated and
       // reads meaningfully in the stored config.
       config: {
-        allowedBlocks: ['hero', 'call_to_action', 'prose', 'quote', 'gallery', 'event_listing'],
+        allowedBlocks: [
+          'hero',
+          'call_to_action',
+          'prose',
+          'quote',
+          'gallery',
+          'video',
+          'embedded_form',
+          'event_listing',
+        ],
       },
     },
   ],
@@ -429,6 +438,83 @@ const gallery = await ensureType(
       localized: false,
       help_text: null,
       config: { maxLength: 200 },
+    },
+  ],
+);
+
+/**
+ * The two embed shapes, seeded as separate block types on purpose.
+ *
+ * One "embed anything" block with a mode picker would have been fewer lines and is the raw-HTML
+ * instinct wearing a different hat: sizing belongs to the *field's* config precisely so an editor
+ * pasting a link never has to reason about aspect ratios, and so each of these can carry its own
+ * template, its own label and its own help text.
+ */
+const video = await ensureType(
+  {
+    api_id: 'video',
+    name: 'Video',
+    name_plural: 'Videos',
+    description: 'A video from an approved host, in a 16:9 frame.',
+    kind: 'block',
+    icon: null,
+    url_prefix: null,
+    title_field: null,
+  },
+  [
+    {
+      api_id: 'video',
+      label: 'Video',
+      type: 'embed',
+      required: true,
+      localized: false,
+      help_text: 'Paste the address of the video’s embed page, not the page you watch it on.',
+      config: {
+        // `youtube-nocookie.com` is here because it is what a site that cares what gets set before
+        // somebody presses play will actually embed from.
+        allowedHosts: ['youtube.com', 'youtube-nocookie.com', 'player.vimeo.com'],
+        sizing: { mode: 'ratio', ratio: 16 / 9 },
+      },
+    },
+    {
+      api_id: 'caption',
+      label: 'Caption',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: null,
+      config: { maxLength: 200 },
+    },
+  ],
+);
+
+const embeddedForm = await ensureType(
+  {
+    api_id: 'embedded_form',
+    name: 'Embedded form',
+    name_plural: 'Embedded forms',
+    description: 'A form hosted elsewhere, in a frame that grows with its content.',
+    kind: 'block',
+    icon: null,
+    url_prefix: null,
+    title_field: null,
+  },
+  [
+    {
+      api_id: 'form',
+      label: 'Form',
+      type: 'embed',
+      required: true,
+      localized: false,
+      help_text:
+        'The form’s own address. It has to report its height for the frame to grow — see the handbook.',
+      config: {
+        // Nothing real to point the demo at, so the list is a placeholder an operator replaces.
+        // Empty would be the honest alternative and would make the field refuse every address,
+        // which reads as broken rather than as unconfigured.
+        allowedHosts: ['docs.google.com'],
+        sizing: { mode: 'auto', minHeight: 480 },
+      },
     },
   ],
 );
@@ -1144,6 +1230,24 @@ await ensureItem(
           data: {
             images: galleryImages,
             caption: 'A few corners of the campus you will walk through on the tour.',
+          },
+        },
+        {
+          id: newId(),
+          type: 'video',
+          data: {
+            video: {
+              /*
+                A real, stable embed address, so a fresh clone shows the frame working rather than a
+                grey box. `youtube-nocookie.com` for the reason the block type's allowlist mentions
+                it — the demo should not set anything before a visitor presses play.
+              */
+              url: 'https://www.youtube-nocookie.com/embed/aqz-KE-bpKQ',
+              // Not "Video". The a11y checker warns about a title that names the kind of thing
+              // rather than this one, and the seed should not ship the mistake it warns about.
+              title: 'Big Buck Bunny, the open-source short film',
+            },
+            caption: 'The kind of thing a media course puts together in its final year.',
           },
         },
         {

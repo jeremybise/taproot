@@ -1,9 +1,11 @@
 import CallToAction from './CallToAction.astro';
+import EmbeddedForm from './EmbeddedForm.astro';
 import EventListing from './EventListing.astro';
 import Gallery from './Gallery.astro';
 import Hero from './Hero.astro';
 import Prose from './Prose.astro';
 import Quote from './Quote.astro';
+import Video from './Video.astro';
 
 /**
  * This site's block templates, keyed by the block type's `api_id`.
@@ -23,5 +25,7 @@ export const BLOCK_COMPONENTS = {
   prose: Prose,
   quote: Quote,
   gallery: Gallery,
+  video: Video,
+  embedded_form: EmbeddedForm,
   event_listing: EventListing,
 };

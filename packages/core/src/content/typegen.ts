@@ -147,6 +147,16 @@ function singleType(field: DeliveryField, blockTypeNames: Map<string, string>): 
       // member of the union alone.
       return kinds.length > 1 ? `(${variants})` : variants;
     }
+    /**
+     * The address and the frame's name, which is the whole stored value.
+     *
+     * Neither member is optional. `url` and `title` are both required by the value schema, so a
+     * stored embed always carries both — and the sizing an editor sees is not here at all because
+     * it belongs to the *field's* config, not to this value. A consumer reads it from the schema or,
+     * far more likely, from the `<TaprootEmbed>` props it already writes.
+     */
+    case 'embed':
+      return '{ url: string; title: string }';
     case 'block':
       return blockTypeNames.size > 0
         ? `TaprootBlock`

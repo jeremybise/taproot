@@ -47,6 +47,16 @@ export * from './content/queryKeys.js';
  * showing last week's front page. Importless, so it costs a consumer's bundle nothing.
  */
 export * from './content/cacheTags.js';
+/**
+ * `embeds` — the sizing modes, the height ceiling, and the default `postMessage` height parser.
+ *
+ * Shared for the reason the two above are: `<TaprootEmbed>` clamps a height reported by another
+ * origin and switches on a sizing mode the CMS stored, and a second copy of either is how the frame
+ * a site renders stops matching the frame the admin configured. The host allowlist travels with them
+ * even though only the server enforces it — one spelling of "is this domain covered" is worth more
+ * than the bytes, and a consumer that wants to explain a blocked embed has the same answer.
+ */
+export * from './content/embeds.js';
 export type { ItemSort } from './content/itemSort.js';
 /**
  * The query parameter a preview link travels in.

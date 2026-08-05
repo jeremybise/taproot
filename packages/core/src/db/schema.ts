@@ -316,6 +316,28 @@ export type FieldType =
   | 'taxonomy'
   | 'relation'
   | 'link'
+  /**
+   * A third-party page framed in an `<iframe>` — a video, a map, a form.
+   *
+   * **The alternative was a raw HTML field, and it was rejected rather than deferred.** Richtext is
+   * sanitised inside `validateItemData` precisely because a stored value rendered with `set:html` is
+   * stored XSS against every visitor and every editor; a field type whose whole purpose is to skip
+   * that would be the first write path in Taproot that does. It would also hand script execution to
+   * `contributor`, the lowest role there is, since roles are flat and site-wide — and gating it
+   * would need "a field only some roles may edit", which does not exist here.
+   *
+   * So this stores a **URL and a title**, never markup, and the consumer's `TaprootEmbed` builds the
+   * frame. That is what lets the `<iframe>`'s `sandbox`, `title`, `referrerpolicy` and host be facts
+   * the CMS guarantees rather than things an author remembered. The two differ only in whether an
+   * allowlist exists, and the allowlist is the cheap part.
+   *
+   * Anything with a *protocol* rather than just a URL — a vendor script that measures the parent
+   * page, an embed injected by a `<script>` in the host document — is a block component on the site,
+   * where a developer writes it in git. `BLOCK_COMPONENTS` is that escape hatch and is strictly
+   * better than a raw HTML field for the purpose: arbitrary JS, reviewed, and no author can inject
+   * anything.
+   */
+  | 'embed'
   | 'block'
   | 'repeater'
   /**

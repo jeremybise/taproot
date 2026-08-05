@@ -9,7 +9,8 @@ npm install @taprootcms/astro
 
 **This is the half a website installs.** The CMS server is a separate deployment — scaffold one with
 `npm create taproot` — and a site never installs it. What you get here is a typed client, a
-`BlockRenderer`, and a `TaprootImage` that honours the focal point an editor set.
+`BlockRenderer`, a `TaprootImage` that honours the focal point an editor set, and a `TaprootEmbed`
+that frames third-party video, maps and forms.
 
 ## Setup
 
@@ -66,6 +67,32 @@ resizes to match.
 `sizes` describes the **container**, not the `<img>` — the component knows the crop factor and
 rewrites your lengths itself. `crop="server"` asks the CMS for the cropped rectangle so no hidden
 pixels are downloaded; it degrades to a hotspot-framed original wherever the CMS cannot transform.
+
+## Embeds
+
+An `embed` field stores `{ url, title }` and never markup — Taproot has no raw HTML field, so the
+frame's `sandbox`, `title` and `referrerpolicy` are guarantees rather than things an author
+remembered.
+
+```astro
+<TaprootEmbed embed={item.data.video} sizing={{ mode: 'ratio', ratio: 16 / 9 }} />
+```
+
+Three sizing modes, because a ratio describes only one of the three things people embed: `ratio` for
+video, `fixed` for a known height, and `auto` for forms that grow as they are filled in. Under
+`auto` the frame reports its height by `postMessage` — Taproot checks that the message came from
+*that* frame and clamps the number, and your site supplies the parse for any vendor the built-in
+one cannot read:
+
+```js
+document.addEventListener('taproot:embed:message', (event) => {
+  const { data, origin, setHeight } = event.detail;
+  if (origin === 'https://forms.example.edu') setHeight(data.px);
+});
+```
+
+An embed that needs a script on *your* page is a block component instead, not this field. See the
+handbook for that and for the two limits worth knowing up front.
 
 ## Listings and facets
 

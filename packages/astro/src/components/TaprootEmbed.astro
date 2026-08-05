@@ -1,0 +1,228 @@
+---
+import type { EmbedSizing, EmbedValue } from '@taprootcms/core/pure';
+
+/**
+ * A third-party page framed safely — the delivery half of the `embed` field.
+ *
+ * **The frame's attributes are the whole point of this component.** The field stores a URL and a
+ * title and never markup, precisely so that `sandbox`, `title`, `referrerpolicy` and the host are
+ * things the system guarantees rather than things an author remembered. A site that hand-wrote
+ * `<iframe src={value.url}>` would get the storage safety and none of the rendering safety, which is
+ * half the reason the field type exists.
+ *
+ * **What this does not cover.** An embed with a *protocol* rather than just a URL — a vendor script
+ * that measures the host page, or one that injects its own frame — is a block component the site
+ * writes, in git, where a developer can see it. `BLOCK_COMPONENTS` is that escape hatch and is the
+ * right answer for exactly the cases this is the wrong one for.
+ */
+interface Props {
+  /** An `embed` field's value from a delivery response. */
+  embed: EmbedValue;
+  /**
+   * How the frame gets its height, from the field's config.
+   *
+   * Defaulted so a caller that has not plumbed the schema through still renders something sensible,
+   * and so the common case — a video — needs one prop.
+   */
+  sizing?: EmbedSizing;
+  /**
+   * `allow`, the frame's permissions policy.
+   *
+   * Empty by default. Every entry is a capability handed to another origin, so the useful default is
+   * none of them — a site that wants `autoplay` or `clipboard-write` for a particular provider is
+   * making a decision this component should not make on its behalf.
+   */
+  allow?: string;
+  /**
+   * Fullscreen, which is separate from `allow` because a video wants it and almost nothing else
+   * does. On by default: a video frame that cannot go fullscreen reads as broken, and fullscreen is
+   * the one capability a visitor asks for explicitly by pressing a button.
+   */
+  allowFullscreen?: boolean;
+  /**
+   * The `sandbox` attribute, wholesale.
+   *
+   * Overriding replaces the default rather than adding to it, so a caller who needs `allow-downloads`
+   * writes the whole list and can see what they are granting. `null` removes the attribute entirely
+   * and is a last resort — an unsandboxed frame may navigate the page it sits in.
+   */
+  sandbox?: string | null;
+  loading?: 'lazy' | 'eager';
+  class?: string;
+}
+
+/**
+ * The default sandbox.
+ *
+ * Chosen by what an embed genuinely needs rather than by what is safest to write down: a form needs
+ * `allow-forms` and its own scripts, a map needs scripts and its own storage, and a video needs to
+ * open a popup for "watch on YouTube". What is deliberately **absent** is `allow-top-navigation` —
+ * the frame may not navigate the page it sits in, which is the single abuse worth ruling out and the
+ * same flag `PreviewPane` omits for the same reason. `allow-downloads` is absent too, and is the
+ * most likely reason a caller ever overrides this.
+ */
+const DEFAULT_SANDBOX =
+  'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation';
+
+const {
+  embed,
+  sizing = { mode: 'ratio', ratio: 16 / 9 },
+  allow,
+  allowFullscreen = true,
+  sandbox,
+  loading = 'lazy',
+  class: className,
+} = Astro.props;
+
+/**
+ * `allow-scripts` with `allow-same-origin` is safe **only** across origins.
+ *
+ * Together on a same-origin frame the pair is not a sandbox at all: the framed document can reach
+ * into this one and remove its own `sandbox` attribute. Cross-origin it is fine and necessary — the
+ * frame gets its *own* origin's storage and none of this page's, which is the reasoning `PreviewPane`
+ * already writes down. A site embedding its own domain is the case nobody thinks about, so the flag
+ * is dropped rather than trusted.
+ *
+ * **Consequence, stated rather than worked around: `auto` cannot size a same-origin embed.** Without
+ * `allow-same-origin` the frame's origin is opaque, so it reports `"null"` and the origin check below
+ * can never match. Accepting `"null"` to "fix" it would accept it from *any* sandboxed frame
+ * anywhere, which is the check deleting itself. A site framing its own page wants a component.
+ */
+let frameOrigin: string | null = null;
+try {
+  frameOrigin = new URL(embed.url).origin;
+} catch {
+  frameOrigin = null;
+}
+
+const sameOrigin = frameOrigin !== null && frameOrigin === Astro.url.origin;
+const resolvedSandbox =
+  sandbox !== undefined
+    ? sandbox
+    : sameOrigin
+      ? DEFAULT_SANDBOX.replace(' allow-same-origin', '')
+      : DEFAULT_SANDBOX;
+
+const auto = sizing.mode === 'auto';
+
+/**
+ * The wrapper carries the height in every mode, so the frame is always `height: 100%` and there is
+ * one place a height comes from. Under `auto` the initial value is `minHeight` and the script raises
+ * it — never lowers it below that, because a frame that reports nothing must stay usable.
+ */
+const wrapperStyle =
+  sizing.mode === 'ratio'
+    ? `aspect-ratio:${sizing.ratio}`
+    : sizing.mode === 'fixed'
+      ? `height:${sizing.height}px`
+      : `height:${sizing.minHeight}px`;
+---
+
+<div
+  class:list={['taproot-embed', className]}
+  style={wrapperStyle}
+  data-taproot-embed={auto ? 'auto' : undefined}
+  data-embed-origin={auto ? frameOrigin : undefined}
+  data-embed-min={auto ? String(sizing.minHeight) : undefined}
+>
+  <iframe
+    src={embed.url}
+    title={embed.title}
+    loading={loading}
+    sandbox={resolvedSandbox ?? undefined}
+    allow={allow}
+    allowfullscreen={allowFullscreen}
+    referrerpolicy="strict-origin-when-cross-origin"></iframe>
+</div>
+
+<style>
+  .taproot-embed {
+    display: block;
+    width: 100%;
+  }
+
+  .taproot-embed > iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+</style>
+
+{/*
+  Deliberately **not** wrapped in `auto &&`. Astro extracts and bundles `<script>` at compile time,
+  so a runtime conditional around one does not reliably keep it off the page — and a script that is
+  sometimes there is worse than one that is always there and does nothing. It exits on its own below
+  when the page holds no auto-sizing embed, which is the honest version of the same saving.
+
+  One listener per document rather than per instance, because every instance would otherwise be
+  woken by every message on the page and re-do the same identity check.
+*/}
+<script>
+  import { MAX_EMBED_HEIGHT, parseEmbedHeight } from '@taprootcms/core/pure';
+
+  /**
+   * Apply a height reported by a framed page.
+   *
+   * **Two checks, and the first is the one that matters.** `event.source` identifies the frame that
+   * sent the message; `event.origin` says where it came from. Origin alone is not enough — two
+   * embeds from one provider on a single page share an origin, so an origin-only check lets either
+   * resize the other. And nothing may be trusted from the payload: any page may `postMessage` to a
+   * window it holds a handle on, so a frame name carried inside the message is a claim rather than
+   * evidence.
+   *
+   * The site supplies the *parse* and Taproot supplies the security, which is the split
+   * `resolveMenu`'s `termHref` callback already makes. There is no standard message shape here —
+   * iframe-resizer posts a colon-delimited string, other vendors post `{ height }`, and whoever
+   * built a given form posted whatever they liked — so a `taproot:embed:message` event is dispatched
+   * first and `parseEmbedHeight` is only what happens when nothing answered it.
+   */
+  const frames = new Map<Window, HTMLElement>();
+
+  for (const wrapper of document.querySelectorAll<HTMLElement>('[data-taproot-embed="auto"]')) {
+    const frame = wrapper.querySelector('iframe');
+    if (frame?.contentWindow) frames.set(frame.contentWindow, wrapper);
+
+    /* A frame can be replaced — a reload from inside, a provider swapping its own src — taking its
+       window with it, so the map is refreshed on load rather than built once and trusted. */
+    frame?.addEventListener('load', () => {
+      if (frame.contentWindow) frames.set(frame.contentWindow, wrapper);
+    });
+  }
+
+  if (frames.size > 0) {
+    window.addEventListener('message', (event) => {
+      const wrapper = event.source ? frames.get(event.source as Window) : undefined;
+      if (!wrapper) return;
+      if (event.origin !== wrapper.dataset.embedOrigin) return;
+
+      const min = Number(wrapper.dataset.embedMin) || 0;
+      let handled = false;
+
+      /**
+       * The bound lives here rather than in the site's handler, so a site that overrides the parse
+       * cannot accidentally opt out of it. A reported height is input from another origin.
+       */
+      const setHeight = (value: number) => {
+        if (!Number.isFinite(value) || value <= 0) return;
+        wrapper.style.height = `${Math.max(min, Math.min(Math.round(value), MAX_EMBED_HEIGHT))}px`;
+        handled = true;
+      };
+
+      wrapper.dispatchEvent(
+        new CustomEvent('taproot:embed:message', {
+          bubbles: true,
+          detail: { data: event.data, origin: event.origin, setHeight },
+        }),
+      );
+
+      if (handled) return;
+
+      const parsed = parseEmbedHeight(event.data);
+      /* `null` leaves the frame exactly where it is. Guessing a height would collapse a working
+         embed the first time the page received a message meant for somebody else, and pages
+         receive those constantly. */
+      if (parsed !== null) setHeight(parsed);
+    });
+  }
+</script>

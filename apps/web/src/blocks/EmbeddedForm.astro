@@ -1,0 +1,55 @@
+---
+import { TaprootEmbed } from '@taprootcms/astro/components';
+import type { EmbedValue } from '@taprootcms/astro';
+
+/**
+ * A block template for a form hosted somewhere else, in a frame that grows with its content.
+ *
+ * **This is the worked example for the `auto` sizing mode**, and specifically for the seam it hangs
+ * on. `TaprootEmbed` owns the security — that a height came from *this* frame, that it is a number,
+ * that it is clamped — and the site owns the *parse*, because there is no standard here: one vendor
+ * posts `{ height }`, another a colon-delimited string, and whoever built a given form posted
+ * whatever they liked. That is the same split as `resolveMenu`'s `termHref` callback.
+ *
+ * The default parser below covers the common shapes, so most forms need nothing at all. The script
+ * at the bottom is what a site adds when a provider does something of its own — commented out
+ * because there is no such provider in the demo, and a live listener nobody needs is a thing to
+ * copy wrongly.
+ *
+ * **A form whose provider needs its own script on *this* page is not this block.** That is a
+ * protocol rather than a URL, and it belongs in a bespoke component where a developer writes the
+ * handshake in git — which is the escape hatch this whole field type is designed to leave open.
+ */
+interface Props {
+  form?: EmbedValue | null;
+}
+
+const { form } = Astro.props;
+---
+
+{
+  form?.url && (
+    <div class="embedded-form">
+      <TaprootEmbed embed={form} sizing={{ mode: 'auto', minHeight: 480 }} loading="eager" />
+    </div>
+  )
+}
+
+{/*
+  What a site adds when its provider posts something the default parser cannot read. `setHeight`
+  applies the clamp, so overriding the parse cannot accidentally opt out of the bound.
+
+  <script>
+    document.addEventListener('taproot:embed:message', (event) => {
+      const { data, origin, setHeight } = (event as CustomEvent).detail;
+      if (origin !== 'https://forms.example.edu') return;
+      if (data?.kind === 'vendor:height') setHeight(data.px);
+    });
+  </script>
+*/}
+
+<style>
+  .embedded-form {
+    margin: 2rem 0;
+  }
+</style>

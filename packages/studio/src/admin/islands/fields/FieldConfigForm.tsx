@@ -494,6 +494,242 @@ const LinkConfig: ConfigForm = ({ config, onChange }) => {
   );
 };
 
+/**
+ * Common embed providers, offered as one-click presets.
+ *
+ * **Presets, not a default.** The stored `allowedHosts` starts empty and empty admits nothing, so a
+ * field is fail-closed until somebody decides — see `embedValueSchema` in core. Baking these in as
+ * the default would have Taproot assert which providers a site uses, which is the same thing the
+ * `termHref` callback exists to avoid, one level down. Offering them costs a click and asserts
+ * nothing.
+ *
+ * Each entry lists the host that actually serves the *frame*, which is often not the one in the
+ * address bar: a Vimeo video is embedded from `player.vimeo.com`, and a YouTube embed from
+ * `youtube-nocookie.com` if the site cares about what it sets before somebody presses play.
+ */
+const EMBED_PRESETS: { label: string; hosts: string[] }[] = [
+  { label: 'YouTube', hosts: ['youtube.com', 'youtube-nocookie.com'] },
+  { label: 'Vimeo', hosts: ['player.vimeo.com'] },
+  { label: 'Google Maps', hosts: ['google.com'] },
+  { label: 'Google Forms & Docs', hosts: ['docs.google.com'] },
+];
+
+/**
+ * An embed field's two decisions: which domains it may frame, and how the frame gets its height.
+ *
+ * Both belong to the *admin* rather than to each editor — see the `embed` config schema in core for
+ * why one field cannot hold a video on one page and a form on another, and why that is the right
+ * consequence rather than a limitation to work around.
+ */
+const EmbedConfig: ConfigForm = ({ config, onChange }) => {
+  const hostsId = useId();
+  const modeName = useId();
+
+  const hosts = Array.isArray(config.allowedHosts) ? (config.allowedHosts as string[]) : [];
+  const sizing =
+    typeof config.sizing === 'object' && config.sizing !== null
+      ? (config.sizing as { mode?: string; ratio?: number; height?: number; minHeight?: number })
+      : {};
+  const mode = sizing.mode === 'fixed' || sizing.mode === 'auto' ? sizing.mode : 'ratio';
+
+  /**
+   * One host per line, because that is the shape somebody pastes and the shape they can read back.
+   * Split on any whitespace or comma so a comma-separated paste — which is what a person who has
+   * written a CSP header will type — lands correctly rather than becoming one impossible host.
+   */
+  const splitHosts = (raw: string) =>
+    raw
+      .split(/[\s,]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+  /**
+   * The textarea shows what was **typed**, not the normalised list read back.
+   *
+   * Rendering `hosts.join('\n')` is the obvious version and is broken: the separator is stripped by
+   * the split on the same keystroke that produced it, so typing `youtube.com, player.vimeo.com`
+   * loses the comma and the space as they are typed and stores the single impossible host
+   * `youtube.complayer.vimeo.com`. Normalising a controlled input on every keystroke destroys
+   * whatever the author is in the middle of typing.
+   *
+   * Local text wins only while it still *means* the stored list. When they disagree, something
+   * other than this box wrote the config — a different field selected into the same form instance —
+   * and the store is the truth. That comparison is why this needs no effect and no remount key.
+   */
+  const [typed, setTyped] = useState(() => hosts.join('\n'));
+  const shown = sameHosts(splitHosts(typed), hosts) ? typed : hosts.join('\n');
+
+  const setHosts = (raw: string) => {
+    setTyped(raw);
+    onChange({ ...config, allowedHosts: splitHosts(raw) });
+  };
+
+  const setMode = (next: 'ratio' | 'fixed' | 'auto') =>
+    onChange({
+      ...config,
+      sizing:
+        next === 'ratio'
+          ? { mode: 'ratio', ratio: sizing.ratio ?? 16 / 9 }
+          : next === 'fixed'
+            ? { mode: 'fixed', height: sizing.height ?? 600 }
+            : { mode: 'auto', minHeight: sizing.minHeight ?? 400 },
+    });
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <label htmlFor={hostsId} className="block text-sm font-medium">
+          Approved sites
+        </label>
+        <p id={`${hostsId}-hint`} className="mt-0.5 text-xs text-content-subtle">
+          One domain per line. A domain covers everything under it, so <code>youtube.com</code> also
+          allows <code>www.youtube.com</code>. Editors cannot embed anything from a site that is not
+          listed here.
+        </p>
+        <textarea
+          id={hostsId}
+          rows={4}
+          value={shown}
+          aria-describedby={`${hostsId}-hint`}
+          onChange={(e) => setHosts(e.target.value)}
+          className={`${inputClass} font-mono`}
+          placeholder="youtube.com"
+        />
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-content-subtle">Add:</span>
+          {EMBED_PRESETS.map((preset) => {
+            const already = preset.hosts.every((host) => hosts.includes(host));
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                disabled={already}
+                onClick={() =>
+                  onChange({
+                    ...config,
+                    allowedHosts: [...hosts, ...preset.hosts.filter((h) => !hosts.includes(h))],
+                  })
+                }
+                className="rounded-md border border-border px-2 py-1 text-xs text-content-muted transition-colors hover:bg-surface-sunken hover:text-content disabled:opacity-40"
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/*
+        A radio group rather than a `<select>` or hand-built tabs. Three options, each needing a
+        sentence of explanation that a `<select>` has nowhere to put — and the house rule about
+        custom widgets settles the rest: this is the platform's own single-choice control.
+      */}
+      <fieldset>
+        <legend className="text-sm font-medium">Frame height</legend>
+        <div className="mt-2 space-y-2.5">
+          <SizingChoice
+            name={modeName}
+            value="ratio"
+            checked={mode === 'ratio'}
+            onSelect={setMode}
+            label="Keep an aspect ratio"
+            hint="Right for video and most maps. Needs no JavaScript on the site."
+          />
+          <SizingChoice
+            name={modeName}
+            value="fixed"
+            checked={mode === 'fixed'}
+            onSelect={setMode}
+            label="A fixed height"
+            hint="A stated number of pixels, whatever the frame contains."
+          />
+          <SizingChoice
+            name={modeName}
+            value="auto"
+            checked={mode === 'auto'}
+            onSelect={setMode}
+            label="Let the embed report its height"
+            hint="For forms that grow as somebody fills them in. The embedded page has to send its height, and the site has to be built to listen — see the handbook."
+          />
+        </div>
+
+        <div className="mt-3">
+          {mode === 'ratio' && (
+            <NumberInput
+              label="Ratio (width ÷ height)"
+              hint="1.778 is 16:9, 1.333 is 4:3, 1 is square."
+              value={sizing.ratio ?? 16 / 9}
+              min={0}
+              onChange={(ratio) => onChange({ ...config, sizing: { mode: 'ratio', ratio } })}
+            />
+          )}
+          {mode === 'fixed' && (
+            <NumberInput
+              label="Height in pixels"
+              value={sizing.height ?? 600}
+              min={1}
+              onChange={(height) => onChange({ ...config, sizing: { mode: 'fixed', height } })}
+            />
+          )}
+          {mode === 'auto' && (
+            <NumberInput
+              label="Minimum height in pixels"
+              hint="What the frame stands at before the embed reports, and what it keeps if it never does."
+              value={sizing.minHeight ?? 400}
+              min={1}
+              onChange={(minHeight) => onChange({ ...config, sizing: { mode: 'auto', minHeight } })}
+            />
+          )}
+        </div>
+      </fieldset>
+    </div>
+  );
+};
+
+function sameHosts(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((entry, index) => entry === b[index]);
+}
+
+function SizingChoice({
+  name,
+  value,
+  checked,
+  onSelect,
+  label,
+  hint,
+}: {
+  name: string;
+  value: 'ratio' | 'fixed' | 'auto';
+  checked: boolean;
+  onSelect: (value: 'ratio' | 'fixed' | 'auto') => void;
+  label: string;
+  hint: string;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-start gap-2">
+      <input
+        id={id}
+        type="radio"
+        name={name}
+        checked={checked}
+        aria-describedby={`${id}-hint`}
+        onChange={() => onSelect(value)}
+        className="mt-1"
+      />
+      <div>
+        <label htmlFor={id} className="text-sm font-medium">
+          {label}
+        </label>
+        <p id={`${id}-hint`} className="text-xs text-content-subtle">
+          {hint}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 const RelationConfig: ConfigForm = ({ config, onChange, contentTypes, currentContentTypeId }) => {
   const targetId = useId();
   return (
@@ -1046,6 +1282,7 @@ export const fieldConfigForms: Record<FieldType, ConfigForm> = {
   taxonomy: TaxonomyConfig,
   relation: RelationConfig,
   link: LinkConfig,
+  embed: EmbedConfig,
   block: BlockConfig,
   repeater: RepeaterConfig,
   query: QueryConfig,

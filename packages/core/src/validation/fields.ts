@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+import {
+  DEFAULT_EMBED_RATIO,
+  MAX_EMBED_HEIGHT,
+  embedHostAllowed,
+  type EmbedSizing,
+} from '../content/embeds.js';
 import { htmlToText, safeUrl, sanitizeHtml } from '../content/sanitizeHtml.js';
 import type { FieldRow, FieldType } from '../db/schema.js';
 import { parseJson, stringifyJson } from '../db/values.js';
@@ -54,6 +60,9 @@ export const REPEATER_SUB_FIELD_TYPES = [
   // A row of buttons is the case this whole field type was added for, and a repeater is how a row
   // of anything is spelled here.
   'link',
+  // Same argument: a gallery of videos is one field holding several embeds, and each row can then
+  // carry its own caption.
+  'embed',
 ] as const satisfies readonly FieldType[];
 
 export type RepeaterSubFieldType = (typeof REPEATER_SUB_FIELD_TYPES)[number];
@@ -203,6 +212,114 @@ export function linkValueSchema(allowedKinds: LinkKind[] = []): z.ZodType {
   );
 }
 
+/**
+ * The three sizing modes, as a schema over the shape `embeds.ts` publishes.
+ *
+ * The type is annotated rather than inferred so the two cannot drift: `pure.ts` re-exports
+ * `EmbedSizing` for `<TaprootEmbed>` to read, and a mode added to the schema without being added
+ * there is a payload the consumer has no branch for. Annotating makes that a compile error here
+ * instead of a frame with no height on the site.
+ */
+const embedSizing: z.ZodType<EmbedSizing, unknown> = z
+  .discriminatedUnion('mode', [
+    z.strictObject({
+      mode: z.literal('ratio'),
+      ratio: z.number().positive().max(100).default(DEFAULT_EMBED_RATIO),
+    }),
+    z.strictObject({
+      mode: z.literal('fixed'),
+      height: z.number().int().positive().max(MAX_EMBED_HEIGHT).default(600),
+    }),
+    z.strictObject({
+      mode: z.literal('auto'),
+      minHeight: z.number().int().positive().max(MAX_EMBED_HEIGHT).default(400),
+    }),
+  ])
+  .default({ mode: 'ratio', ratio: DEFAULT_EMBED_RATIO });
+
+/**
+ * One embed's stored value: an address and the frame's accessible name. Never markup.
+ *
+ * `title` is not decoration. An `<iframe>` is an interactive element and its accessible name is the
+ * only thing a screen reader can announce about it (WCAG 4.1.2, 2.4.1) — "iframe" is what an
+ * untitled one is announced as, which is why asking for it at authoring time is the same move as
+ * upload-in-place asking for alt text. It relaxes under `requireComplete: false` like any other
+ * minimum, and the advisory checker reports it afterwards; a half-typed form must not be unsavable.
+ *
+ * The address is refused unless it is `https:` **and** on the field's allowlist:
+ *
+ * - `http:` is refused rather than upgraded. A browser blocks an insecure frame inside a secure
+ *   page, so storing one produces an embed that is guaranteed never to appear — and silently
+ *   rewriting an author's address to a scheme the other end may not serve is a different page.
+ * - An **empty allowlist admits nothing**, deliberately unlike `media`'s `accept` and `link`'s
+ *   `allowedKinds`, where empty means anything. Those two bound a picker over content this CMS
+ *   already holds; this one is the boundary against framing an arbitrary third-party origin, and
+ *   the tempting fallthrough is the dangerous one — the same reason an empty `ItemFilters.termIds`
+ *   matches nothing. So a field created and never configured embeds nothing at all, and the message
+ *   below names the screen that fixes it rather than leaving somebody to guess. Defaulting the list
+ *   to a few well-known video hosts was the alternative and is not Taproot's opinion to hold: the
+ *   config form offers them as one-click presets instead, which reaches the same place without the
+ *   CMS asserting which providers a site uses.
+ */
+export function embedValueSchema(
+  allowedHosts: readonly string[] = [],
+  options: { requireComplete?: boolean } = {},
+): z.ZodType {
+  const requireComplete = options.requireComplete ?? true;
+
+  const title = z.string().max(300);
+
+  return z.strictObject({
+    url: z
+      .string()
+      .transform((value) => value.trim())
+      .superRefine((value, ctx) => {
+        if (value === '') {
+          if (requireComplete) {
+            ctx.addIssue({ code: 'custom', message: 'An address is required.' });
+          }
+          return;
+        }
+
+        let parsed: URL;
+        try {
+          parsed = new URL(value);
+        } catch {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Must be a full web address, including https://.',
+          });
+          return;
+        }
+
+        if (parsed.protocol !== 'https:') {
+          ctx.addIssue({
+            code: 'custom',
+            message:
+              'Embeds must use https://. A browser refuses to frame an insecure page inside a secure one, so this would never appear.',
+          });
+          return;
+        }
+
+        if (!embedHostAllowed(parsed.hostname, allowedHosts)) {
+          ctx.addIssue({
+            code: 'custom',
+            message:
+              allowedHosts.length === 0
+                ? 'This field has no approved sites yet. An administrator adds them under the field’s settings.'
+                : `${parsed.hostname} is not an approved site for this field. Approved: ${allowedHosts.join(', ')}.`,
+          });
+        }
+      }),
+    title: requireComplete
+      ? title.min(1, {
+          error:
+            'Describe what this embed is. Screen readers announce it, and an untitled frame is announced as “iframe”.',
+        })
+      : title,
+  });
+}
+
 export const fieldConfigSchemas = {
   text: z.object({
     minLength: z.number().int().nonnegative().optional(),
@@ -270,6 +387,27 @@ export const fieldConfigSchemas = {
      * variant. A `multiple` here would be a second way to spell the same thing, with a stored shape
      * that follows the config for no gain.
      */
+  }),
+  /**
+   * What the *admin* fixes about an embed, in the field builder.
+   *
+   * Both keys belong here rather than on the value, and for the same reason the `query` field splits
+   * the same way: an editor pasting a YouTube link should not have to reason about aspect ratios or
+   * approved domains. A "Video" field is configured `ratio` once and every editor who uses it gets
+   * a 16:9 frame; a "Request information" field is configured `auto` once.
+   *
+   * The consequence is that one field cannot hold a video on one page and a form on another, and
+   * that is the right consequence — those are two block types with two templates and two labels,
+   * which is what user-defined types are for. One generic "embed anything" field is the raw-HTML
+   * instinct wearing a different hat.
+   */
+  embed: z.object({
+    /**
+     * Domains this field may frame. **Empty admits nothing** — see `embedValueSchema` for why this
+     * inverts the convention `media.accept` and `link.allowedKinds` follow.
+     */
+    allowedHosts: z.array(z.string().min(1)).default([]),
+    sizing: embedSizing,
   }),
   block: z.object({
     /** Block types allowed in this field. Empty means all. */
@@ -376,6 +514,11 @@ export const FIELD_TYPE_META: Record<FieldType, FieldTypeMeta> = {
   taxonomy: { type: 'taxonomy', label: 'Taxonomy', description: 'Terms from a taxonomy tree.' },
   relation: { type: 'relation', label: 'Relation', description: 'A reference to other content items.' },
   link: { type: 'link', label: 'Link', description: 'A page, a file, or a web address — with optional label.' },
+  embed: {
+    type: 'embed',
+    label: 'Embed',
+    description: 'A video, map or form from an approved site, framed safely.',
+  },
   block: { type: 'block', label: 'Blocks', description: 'Composable blocks placed into a region.' },
   repeater: { type: 'repeater', label: 'Repeater', description: 'A repeating group of sub-fields.' },
   query: {
@@ -541,6 +684,24 @@ export function buildValueSchema(
        */
       schema = linkValueSchema(
         Array.isArray(config.allowedKinds) ? (config.allowedKinds as LinkKind[]) : [],
+      );
+      break;
+
+    case 'embed':
+      /**
+       * The host allowlist is enforced here, at the boundary, and not in the control.
+       *
+       * The editor is not the boundary for the same reason it is not for richtext: the REST API
+       * takes this value from any client holding a session, so a `curl` request would otherwise
+       * frame any origin it liked on a page every visitor sees.
+       *
+       * `requireComplete` is forwarded so a preview snapshot of a half-typed embed still saves —
+       * the address and title are minimums, and a minimum is a claim about completeness. The
+       * allowlist is not, and applies whatever this call is asking.
+       */
+      schema = embedValueSchema(
+        Array.isArray(config.allowedHosts) ? (config.allowedHosts as string[]) : [],
+        { requireComplete },
       );
       break;
 

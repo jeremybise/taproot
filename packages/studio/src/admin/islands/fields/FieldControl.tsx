@@ -2,6 +2,7 @@ import {
   FIELD_TYPE_META,
   isItemSort,
   type BlockInstance,
+  type EmbedValue,
   type FieldRow,
   type RepeaterRow,
 } from '@taprootcms/core';
@@ -14,6 +15,7 @@ import {
 import { RichTextEditor } from './RichTextEditor.js';
 import { RelationField } from './RelationField.js';
 import { LinkField, type LinkValue } from './LinkField.js';
+import { EmbedField } from './EmbedField.js';
 import { RepeaterField } from './RepeaterField.js';
 import { QueryField, type QueryValue } from './QueryField.js';
 import { MediaField } from '../media/MediaField.js';
@@ -207,9 +209,10 @@ export function FieldControl({
       }
 
       default:
-        // richtext, media, block, relation, link, repeater, query. `link` and `query` put `id` on a
-        // `role="group"`, which is not labelable — both are named through `aria-labelledby` like the
-        // others here.
+        // richtext, media, block, relation, link, embed, repeater, query. `link`, `embed` and
+        // `query` put `id` on a `role="group"`, which is not labelable — all are named through
+        // `aria-labelledby` like the others here. `embed` has two inputs of its own and each
+        // carries a real `<label for>` inside the group, which is a separate question from this one.
         return false;
     }
   }
@@ -490,6 +493,30 @@ export function FieldControl({
             onChange={(next) => onChange(next)}
             media={media ?? []}
             allowedKinds={stringArrayOr(config.allowedKinds, undefined) ?? []}
+            invalid={Boolean(errors?.length)}
+            disabled={preview}
+          />
+        );
+      }
+
+      /**
+       * An address and a title, and nothing that renders the frame — see `EmbedField` for why the
+       * preview pane is the only place an embed is actually framed.
+       */
+      case 'embed': {
+        const stored =
+          typeof value === 'object' && value !== null && 'url' in value
+            ? (value as EmbedValue)
+            : null;
+
+        return (
+          <EmbedField
+            id={id}
+            labelledBy={labelId}
+            describedBy={describedBy || undefined}
+            value={stored}
+            onChange={(next) => onChange(next)}
+            allowedHosts={stringArrayOr(config.allowedHosts, undefined) ?? []}
             invalid={Boolean(errors?.length)}
             disabled={preview}
           />

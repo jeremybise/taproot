@@ -311,3 +311,118 @@ describe('a link field is not a hole in the URL allowlist', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * The `embed` field's boundary.
+ *
+ * This is the reason the field type exists rather than a raw HTML one, so the assertions worth
+ * having are about what it *refuses*. Everything here is enforced in `validateItemData` and not in
+ * the control, because the REST API takes this value from any client holding a session.
+ */
+describe('embed values', () => {
+  const ALLOWED = ['youtube.com', 'docs.google.com'];
+
+  function store(
+    value: unknown,
+    config: Record<string, unknown> = { allowedHosts: ALLOWED },
+    options?: { requireComplete: boolean },
+  ) {
+    const fields = [field({ api_id: 'media', type: 'embed', config: JSON.stringify(config) })];
+    return validateItemData(fields, { media: value }, options);
+  }
+
+  it('accepts an approved https address with a title', () => {
+    const result = store({ url: 'https://youtube.com/embed/abc', title: 'Campus tour' });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.media).toEqual({ url: 'https://youtube.com/embed/abc', title: 'Campus tour' });
+  });
+
+  it('accepts a subdomain of an approved host', () => {
+    expect(store({ url: 'https://www.youtube.com/embed/abc', title: 'Tour' }).success).toBe(true);
+  });
+
+  it('refuses a host that is not approved', () => {
+    const result = store({ url: 'https://evil.example/embed', title: 'Tour' });
+
+    expect(result.success).toBe(false);
+    // The message names the host, because "not approved" without saying what was rejected sends
+    // somebody to re-read an address they have already read four times.
+    expect(result.errors.media?.join(' ')).toContain('evil.example');
+  });
+
+  it('refuses a lookalike of an approved host', () => {
+    // The same near-miss `embedHostAllowed` is tested against, asserted here too because this is
+    // the layer an attacker would actually reach.
+    expect(store({ url: 'https://evil-youtube.com/embed', title: 'Tour' }).success).toBe(false);
+    expect(store({ url: 'https://youtube.com.evil.example/x', title: 'Tour' }).success).toBe(false);
+  });
+
+  it('refuses http, rather than upgrading it', () => {
+    /**
+     * A browser blocks an insecure frame inside a secure page, so storing one produces an embed
+     * guaranteed never to appear — and silently rewriting the scheme would point at a page the far
+     * end may not serve.
+     */
+    const result = store({ url: 'http://youtube.com/embed/abc', title: 'Tour' });
+
+    expect(result.success).toBe(false);
+    expect(result.errors.media?.join(' ')).toContain('https');
+  });
+
+  it('refuses every address when no host has been approved', () => {
+    /**
+     * The inversion of `media.accept` and `link.allowedKinds`. An unconfigured field embeds
+     * nothing, and the message names the screen that fixes it.
+     */
+    const result = store({ url: 'https://youtube.com/embed/abc', title: 'Tour' }, { allowedHosts: [] });
+
+    expect(result.success).toBe(false);
+    expect(result.errors.media?.join(' ')).toContain('no approved sites');
+  });
+
+  it('refuses a javascript: address whatever the list says', () => {
+    expect(store({ url: 'javascript:alert(1)', title: 'Tour' }).success).toBe(false);
+  });
+
+  it('requires a title, because the frame has no other accessible name', () => {
+    expect(store({ url: 'https://youtube.com/embed/abc', title: '' }).success).toBe(false);
+  });
+
+  it('trims the stored address', () => {
+    const result = store({ url: '  https://youtube.com/embed/abc  ', title: 'Tour' });
+
+    expect(result.success).toBe(true);
+    expect((result.data?.media as { url: string }).url).toBe('https://youtube.com/embed/abc');
+  });
+
+  it('refuses unrecognised keys', () => {
+    // Same rule `link` follows: an extra key is a shape nobody wrote deliberately. `sandbox` is the
+    // one somebody would try, and it belongs to the component rather than to the value.
+    expect(
+      store({ url: 'https://youtube.com/embed/abc', title: 'Tour', sandbox: '' }).success,
+    ).toBe(false);
+  });
+
+  describe('under requireComplete: false', () => {
+    it('accepts a half-typed embed, so a preview snapshot still saves', () => {
+      expect(store({ url: '', title: '' }, { allowedHosts: ALLOWED }, LOOSE).success).toBe(true);
+      expect(
+        store({ url: 'https://youtube.com/embed/abc', title: '' }, { allowedHosts: ALLOWED }, LOOSE)
+          .success,
+      ).toBe(true);
+    });
+
+    it('still refuses an unapproved host', () => {
+      /**
+       * The load-bearing half. `requireComplete` relaxes *minimums* — a claim about completeness —
+       * and the allowlist is not one. A preview renders in a real browser, so a snapshot that could
+       * frame any origin would make the relaxation a way around the boundary.
+       */
+      expect(
+        store({ url: 'https://evil.example/x', title: '' }, { allowedHosts: ALLOWED }, LOOSE)
+          .success,
+      ).toBe(false);
+    });
+  });
+});

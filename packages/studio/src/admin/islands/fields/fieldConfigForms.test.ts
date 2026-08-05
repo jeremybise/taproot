@@ -59,6 +59,10 @@ describe('config round-trips through core validation', () => {
     taxonomy: { taxonomyId: 'tax1', multiple: true },
     relation: { targetContentTypeId: 'abc', multiple: false, reverseLabel: 'Referenced by' },
     link: { allowedKinds: ['item', 'url'] },
+    embed: {
+      allowedHosts: ['youtube.com'],
+      sizing: { mode: 'auto', minHeight: 400 },
+    },
     block: { allowedBlocks: [], maxBlocks: 4 },
     repeater: { minItems: 0, maxItems: 5, fields: [] },
     query: {

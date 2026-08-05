@@ -701,6 +701,51 @@ edits the prose. `taproot:media:{id}` does the same for a file. Four things hold
   unresolvable target **unwraps** — the `<a>` goes, the text stays — mirroring a menu skipping a
   target it cannot show.
 
+**There is no raw HTML field, and `embed` is what was built instead.** The request that produced it
+was iframes — videos, maps, a form piping into Salesforce — and a raw HTML field is the obvious
+answer and the wrong one: `validateItemData` sanitises richtext precisely because a stored value
+rendered with `set:html` is stored XSS against every visitor and every editor, so a field type whose
+purpose is to skip that would be the first write path in Taproot that does. It would also hand
+script execution to `contributor`, the lowest role there is, and gating it would need "a field only
+some roles may edit", which does not exist. The two options differ only in whether an allowlist
+exists, and the allowlist is the cheap part. Eight things hold it up:
+- **The value is `{ url, title }` and never markup**, so `sandbox`, `title`, `referrerpolicy` and the
+  host are facts `<TaprootEmbed>` guarantees rather than things an author remembered. Building the
+  `<iframe>` by hand gets the storage safety and none of the rendering safety.
+- **An empty `allowedHosts` admits nothing**, inverting `media.accept` and `link.allowedKinds` where
+  empty means anything. Those bound a picker over content the CMS already holds; this is the boundary
+  against framing an arbitrary origin, and the tempting fallthrough is the dangerous one — the same
+  reason an empty `ItemFilters.termIds` matches nothing. Defaulting the list to a few video hosts is
+  not Taproot's opinion to hold, so the config form offers them as presets instead.
+- **`embedHostAllowed`'s suffix test is `.${allowed}` with the dot**, or `evil-youtube.com` passes —
+  the entire attack the list exists to stop. A trailing dot is stripped for the same class of reason:
+  `youtube.com.` is the same host to a browser and would otherwise walk past every entry.
+- **`title` is required, and the a11y checker takes the half validation cannot.** An `<iframe>`'s
+  accessible name is the only thing announced about it (WCAG 4.1.2), so asking at authoring time is
+  the same move as upload-in-place asking for alt text. `embed-name` catches what
+  `requireComplete: false` let through; `embed-title` catches "Video", which passes every minimum and
+  says nothing.
+- **`sizing` is three modes on the *field's config*, not one ratio and not a per-value choice.** A
+  ratio describes exactly one of the three things people embed — a form is 400px until somebody trips
+  validation and then it is 900px. Config rather than value so an editor pasting a link never reasons
+  about aspect ratios; the consequence is that a video block and a form block are two block types,
+  which is right, because one generic "embed anything" block is the raw-HTML instinct in a hat.
+- **Under `auto`, Taproot owns the security and the site owns the parse.** There is no standard
+  message shape, so `<TaprootEmbed>` dispatches `taproot:embed:message` with a clamping `setHeight`
+  and falls back to `parseEmbedHeight`; that is the `termHref` split. The identity check is
+  **`event.source`, not `event.origin` alone** — two embeds from one provider share an origin, so
+  origin-only lets either resize the other. An unreadable message leaves the frame *exactly where it
+  is*; guessing would collapse a working embed the first time the page saw somebody else's message.
+- **`allow-scripts allow-same-origin` is dropped when the embed is same-origin**, where the pair is
+  equivalent to no sandbox. Stated consequence rather than worked around: `auto` then cannot size it,
+  because the frame's origin is opaque. Accepting `"null"` would accept it from any sandboxed frame
+  anywhere, which is the check deleting itself.
+- **An embed with a *protocol* rather than a URL is a block component, not this field.** A vendor
+  script that measures the host page belongs in `BLOCK_COMPONENTS`, in git, where a developer wrote
+  it — arbitrary JS, reviewed, and no author able to inject anything. That escape hatch is why the
+  field can afford to be strict, and it is strictly better than a raw HTML field for the case it
+  covers.
+
 **`img` is absent from the richtext allowlist, and that was reconsidered rather than inherited.** A
 reference-only `<img data-taproot-media>` filled at delivery would have kept alt text in the library,
 which is half the original reason — but not the hotspot, because `set:html` cannot produce a

@@ -176,6 +176,10 @@ const MAX_SEARCH_TEXT = 20_000;
  * - `media`, `relation`, `link` and `taxonomy` store ids. An id is not text somebody searches for,
  *   and a term's *name* belongs to the term rather than to the item — `taxonomy_assignments` is
  *   how that question gets asked.
+ * - `embed` stores an address and a frame title. The address is not prose, and the title names a
+ *   frame rather than describing the page — indexing it would answer a search for "video" with
+ *   every page carrying one, which is a worse result than none. What is *inside* the frame belongs
+ *   to another origin and is not this CMS's content in any sense.
  * - `number`, `boolean` and `date` are what the value index is for.
  * - `query` stores a rule, not an answer. Indexing the rule would match on the vocabulary of the
  *   query builder, and indexing the answer would make one item's text depend on another's.

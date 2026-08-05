@@ -409,6 +409,9 @@ export type {
   DeliveryQueryResult,
   DeliveryResult,
   DeliverySchema,
+  /** An `embed` field's value, and how its frame is sized — both `<TaprootEmbed>` props. */
+  EmbedSizing,
+  EmbedValue,
   /** A taxonomy and its terms, as `taproot.terms()` answers. */
   DeliveryTaxonomy,
   DeliveryTaxonomyTerm,

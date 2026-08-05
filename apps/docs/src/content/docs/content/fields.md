@@ -3,7 +3,7 @@ title: The fields you will meet
 description: Every field type Taproot offers, what it looks like, and how to fill it in.
 ---
 
-The fields on a content item are chosen by whoever set up its content type. There are eleven kinds.
+The fields on a content item are chosen by whoever set up its content type. There are twelve kinds.
 You will probably only meet five or six.
 
 ## Text
@@ -72,6 +72,29 @@ with nobody editing the content that points at it.
 
 For a row of buttons, a site admin puts a link field inside a repeater — each row is then one
 button, free to carry its own heading or style alongside it.
+
+## Embed
+
+A video, a map, or a form that lives on another site. You paste its address and describe what it is;
+Taproot builds the frame around it.
+
+Two things about this field surprise people, and both are deliberate.
+
+**You can only use sites an administrator has approved.** The box under the address lists them. If
+what you want is not there, ask — it is one setting, and the reason for the list is that a frame
+hands part of your page to somebody else's website.
+
+**Paste the address of the thing being embedded, not the page you were reading.** For a video that
+usually means the "embed" address from the provider's own Share menu, not the address in your
+browser bar. If you paste the wrong one, most providers show a refusal inside the frame rather than
+the video.
+
+The **Title** is not optional and is not shown to sighted visitors. Someone using a screen reader
+gets a list of the frames on a page, and the title is the only thing in it — so "Campus tour video"
+is useful and "Video" is not. The accessibility panel says so if you write the vague one.
+
+There is no preview inside the field. Use the preview pane to see it in place on the real page, at
+the real width.
 
 ## Blocks
 

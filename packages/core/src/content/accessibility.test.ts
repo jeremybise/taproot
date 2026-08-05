@@ -387,6 +387,17 @@ describe('rule metadata', () => {
           { photo: 'm1' },
           { altById: new Map([image('m1', null)]) },
         ),
+        ...checkItemAccessibility(
+          [
+            field({ api_id: 'tour', label: 'Tour', type: 'embed' }),
+            field({ api_id: 'talk', label: 'Talk', type: 'embed' }),
+          ],
+          {
+            tour: { url: 'https://youtube.com/embed/a', title: '' },
+            talk: { url: 'https://youtube.com/embed/b', title: 'Video' },
+          },
+          {},
+        ),
       ].map((issue) => issue.rule),
     );
 

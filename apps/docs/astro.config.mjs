@@ -108,6 +108,7 @@ export default defineConfig({
             { label: 'Rendering a page', slug: 'build/rendering-a-page' },
             { label: 'Blocks', slug: 'build/blocks' },
             { label: 'Images and media', slug: 'build/images' },
+            { label: 'Embeds', slug: 'build/embeds' },
             { label: 'Menus and term URLs', slug: 'build/menus' },
             { label: 'Preview and types', slug: 'build/preview-and-types' },
           ],

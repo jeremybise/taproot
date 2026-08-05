@@ -22,7 +22,13 @@ import { htmlToText, tokenize } from './sanitizeHtml.js';
  * content — arrives in `A11yContext`, looked up by whoever has the connection.
  */
 
-export type A11yRule = 'image-alt' | 'heading-order' | 'link-name' | 'link-text';
+export type A11yRule =
+  | 'image-alt'
+  | 'heading-order'
+  | 'link-name'
+  | 'link-text'
+  | 'embed-name'
+  | 'embed-title';
 
 export type A11ySeverity = 'error' | 'warning';
 
@@ -131,6 +137,16 @@ export const A11Y_RULE_META: Record<A11yRule, A11yRuleMeta> = {
     rule: 'link-text',
     label: 'Unhelpful link text',
     description: '“Click here”, “read more”, or a bare URL — text that does not say where it goes.',
+  },
+  'embed-name': {
+    rule: 'embed-name',
+    label: 'Embed with no title',
+    description: 'A framed video, map or form announced as nothing but “iframe”.',
+  },
+  'embed-title': {
+    rule: 'embed-title',
+    label: 'Unhelpful embed title',
+    description: '“Video”, “Map” — a title naming the kind of thing rather than this one.',
   },
 };
 
@@ -291,6 +307,29 @@ function walkField(field: FieldRow, value: unknown, context: A11yContext, state:
     case 'query':
       return;
 
+    /**
+     * An embed's title is the frame's accessible name, and it is the whole rule.
+     *
+     * `validateItemData` already requires it, so on the ordinary path this reports nothing — which
+     * is the right relationship between the two layers rather than a redundancy. What reaches here
+     * is what validation deliberately let through: a preview snapshot saved under
+     * `requireComplete: false`, and any item stored before the field required one. Both render a
+     * frame announced as “iframe” and nothing else (WCAG 4.1.2, 2.4.1), and the advisory panel is
+     * where an author finds out without being blocked from saving.
+     *
+     * A *generic* title is the half validation cannot take: “Video” parses, satisfies every
+     * minimum, and tells somebody listing a page's frames exactly nothing.
+     */
+    case 'embed': {
+      if (typeof value !== 'object' || value === null) return;
+      const title = (value as { title?: unknown }).title;
+
+      for (const found of checkEmbedTitle(typeof title === 'string' ? title : '')) {
+        state.issues.push(toIssue(found, state, here));
+      }
+      return;
+    }
+
     default: {
       const exhaustive: never = field.type;
       throw new Error(`Unhandled field type: ${String(exhaustive)}`);
@@ -402,6 +441,30 @@ const GENERIC_LINK_TEXT = new Set([
   'this page',
   'download',
   'continue',
+]);
+
+/**
+ * Embed titles that name the medium instead of the content.
+ *
+ * A separate list from `GENERIC_LINK_TEXT` rather than a reuse of it, because the two failures are
+ * different sentences. Useless link text describes the *act* — "click here" — while a useless frame
+ * title describes the *container*: "Video" on a page with three videos is exactly as unhelpful as
+ * no title, and "click here" is not something anybody types into a title box. Sharing one list
+ * would mean each rule carrying entries that cannot occur in it.
+ *
+ * Short for the same reason that one is: a rule that cries wolf gets ignored rather than obeyed.
+ */
+const GENERIC_EMBED_TITLE = new Set([
+  'embed',
+  'iframe',
+  'video',
+  'map',
+  'form',
+  'frame',
+  'untitled',
+  'youtube',
+  'google map',
+  'google maps',
 ]);
 
 type RichTextFinding = Pick<A11yIssue, 'rule' | 'severity' | 'message'>;
@@ -539,6 +602,35 @@ function checkLinkText(raw: string): RichTextFinding[] {
         rule: 'link-text',
         severity: 'warning',
         message: `“${text}” is a bare URL. Link the words that describe the destination instead — a URL is read out character by character.`,
+      },
+    ];
+  }
+
+  return [];
+}
+
+function checkEmbedTitle(raw: string): RichTextFinding[] {
+  const text = raw.trim();
+
+  if (!text) {
+    return [
+      {
+        rule: 'embed-name',
+        severity: 'error',
+        message:
+          'This embed has no title, so the frame is announced as nothing but “iframe”. Describe what it contains — “Campus tour video”, “Request information form”.',
+      },
+    ];
+  }
+
+  const normalised = text.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+
+  if (GENERIC_EMBED_TITLE.has(normalised)) {
+    return [
+      {
+        rule: 'embed-title',
+        severity: 'warning',
+        message: `“${text}” names the kind of thing rather than this one. On a page with two of them, both are announced identically.`,
       },
     ];
   }
