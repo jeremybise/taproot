@@ -3,6 +3,7 @@ import {
   cropFrame,
   mediaVariantUrl,
   resolveCrop,
+  scaleSizes,
   variantWidthsFor,
   type DeliveryMedia,
   type MediaVariantFormat,
@@ -159,28 +160,13 @@ const src = srcset
   : asset.url;
 
 /**
- * Rescale a `sizes` list from container widths to element widths.
- *
- * Each comma-separated entry is an optional media condition followed by a length, so only the
- * trailing token is touched — wrapping the whole entry would produce `calc((min-width: 40em) 50vw)`,
- * which is not a length and which browsers drop silently, falling back to `100vw` and quietly
- * undoing the entire feature. Left alone when there is no crop to compensate for, so the common
- * case emits the `sizes` the caller wrote.
+ * `sizes` describes the container; the browser chooses against the element. `scaleSizes` bridges
+ * the two, and lives in core rather than here because it is string arithmetic with an edge case
+ * that already shipped wrong — a `calc()` length was split on its last space and only its final
+ * term scaled, which is valid CSS computing the wrong number. Untestable inside an `.astro` file;
+ * pinned by six cases beside it.
  */
-const elementSizes =
-  Math.abs(scale - 1) < 0.005
-    ? sizes
-    : sizes
-        .split(',')
-        .map((entry) => {
-          const trimmed = entry.trim();
-          const boundary = trimmed.lastIndexOf(' ');
-          const condition = boundary === -1 ? '' : trimmed.slice(0, boundary).trim();
-          const length = boundary === -1 ? trimmed : trimmed.slice(boundary + 1);
-          const scaled = `calc(${length} * ${scale.toFixed(4)})`;
-          return condition ? `${condition} ${scaled}` : scaled;
-        })
-        .join(', ');
+const elementSizes = scaleSizes(sizes, scale);
 
 /**
  * Alt text comes from the library, where it is authored once and reused everywhere the asset

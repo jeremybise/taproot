@@ -116,6 +116,58 @@ export function parseMediaVariant(params: URLSearchParams): MediaVariant {
  * `naturalWidth` null — an upload whose header bytes could not be read — returns the whole ladder
  * rather than nothing, because the alternative is no `srcset` at all for that asset.
  */
+/**
+ * Rescale a `sizes` list from container widths to element widths.
+ *
+ * A caller describes the box they placed; `TaprootImage` blows the `<img>` up by `1 / rect.width`
+ * so the crop fills that box, and the browser picks a candidate against the **element's** width.
+ * Unscaled, every cropped image is chosen one rung too soft — on exactly the layouts where the crop
+ * was doing the most work.
+ *
+ * **Splitting a `sizes` entry on its last space is wrong, and wrong in a way that still parses.**
+ * An entry is an optional media condition followed by a length, and the length may itself be a
+ * `calc()` full of spaces: on `(min-width: 1024px) calc(50vw - 57px)` the naive split takes `57px)`
+ * as the length and emits `calc(50vw - calc(57px) * 1.4)`, which is valid CSS computing the wrong
+ * number — it scales one term instead of the expression. Shipped exactly that and found it only by
+ * reading rendered HTML.
+ *
+ * So the boundary is found structurally: the last `)` that closes back to depth zero **and is
+ * followed by whitespace** ends the condition, because a length's own trailing `)` is at the end of
+ * the entry with nothing after it. No such `)` means the whole entry is the length, which covers a
+ * bare `100vw` and a condition-less `calc(100vw - 50px)` alike.
+ */
+export function scaleSizes(sizes: string, factor: number): string {
+  // A factor of one is the uncropped case, and rewriting it would only add noise to the markup.
+  if (Math.abs(factor - 1) < 0.005) return sizes;
+
+  const scaled = Number(factor.toFixed(4));
+
+  return sizes
+    .split(',')
+    .map((entry) => {
+      const trimmed = entry.trim();
+
+      let depth = 0;
+      let boundary = -1;
+      for (let i = 0; i < trimmed.length; i++) {
+        const char = trimmed[i];
+        if (char === '(') depth++;
+        else if (char === ')') {
+          depth--;
+          if (depth === 0 && /\s/.test(trimmed[i + 1] ?? '')) boundary = i;
+        }
+      }
+
+      const condition = boundary === -1 ? '' : trimmed.slice(0, boundary + 1);
+      const length = boundary === -1 ? trimmed : trimmed.slice(boundary + 1).trim();
+
+      // Parenthesised so the whole length is multiplied, whatever it is made of.
+      const expression = `calc((${length}) * ${scaled})`;
+      return condition ? `${condition} ${expression}` : expression;
+    })
+    .join(', ');
+}
+
 export function variantWidthsFor(naturalWidth: number | null): number[] {
   const rungs = MEDIA_VARIANT_WIDTHS.filter((rung) => naturalWidth === null || rung <= naturalWidth);
 

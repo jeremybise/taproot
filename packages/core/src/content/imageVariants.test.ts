@@ -4,6 +4,7 @@ import {
   MEDIA_VARIANT_WIDTHS,
   mediaVariantUrl,
   parseMediaVariant,
+  scaleSizes,
   variantWidthsFor,
 } from './imageVariants.js';
 
@@ -67,6 +68,59 @@ describe('parseMediaVariant', () => {
   it('ignores an unknown format rather than passing it to the resizer', () => {
     expect(parse('/a.png?f=bmp')).toEqual({});
     expect(parse('/a.png?f=image%2Fwebp')).toEqual({});
+  });
+});
+
+describe('scaleSizes', () => {
+  it('leaves an uncropped image alone rather than adding noise', () => {
+    expect(scaleSizes('100vw', 1)).toBe('100vw');
+    expect(scaleSizes('(min-width: 1024px) 50vw, 100vw', 1.001)).toBe(
+      '(min-width: 1024px) 50vw, 100vw',
+    );
+  });
+
+  it('scales a bare length', () => {
+    expect(scaleSizes('100vw', 1.3333)).toBe('calc((100vw) * 1.3333)');
+  });
+
+  it('scales a length behind a media condition, leaving the condition intact', () => {
+    expect(scaleSizes('(min-width: 1024px) 50vw, 100vw', 2)).toBe(
+      '(min-width: 1024px) calc((50vw) * 2), calc((100vw) * 2)',
+    );
+  });
+
+  /**
+   * The bug this function was extracted for. Splitting on the last space takes `57px)` as the
+   * length and scales one term of the expression instead of the expression — valid CSS, wrong
+   * number, and invisible unless somebody reads the rendered HTML.
+   */
+  it('scales a whole calc(), not its last term', () => {
+    expect(scaleSizes('(min-width: 1024px) calc(50vw - 57px)', 1.4085)).toBe(
+      '(min-width: 1024px) calc((calc(50vw - 57px)) * 1.4085)',
+    );
+  });
+
+  it('scales a condition-less calc(), which has no boundary to find', () => {
+    expect(scaleSizes('calc(100vw - 50px)', 1.5)).toBe('calc((calc(100vw - 50px)) * 1.5)');
+  });
+
+  it('handles a media type in front of the condition', () => {
+    expect(scaleSizes('screen and (min-width: 40em) 50vw', 2)).toBe(
+      'screen and (min-width: 40em) calc((50vw) * 2)',
+    );
+  });
+
+  it('handles the real three-case list this shipped with', () => {
+    expect(
+      scaleSizes(
+        '(min-width: 1800px) 678px, (min-width: 1024px) calc(50vw - 57px), calc(100vw - 50px)',
+        1.4085,
+      ),
+    ).toBe(
+      '(min-width: 1800px) calc((678px) * 1.4085), ' +
+        '(min-width: 1024px) calc((calc(50vw - 57px)) * 1.4085), ' +
+        'calc((calc(100vw - 50px)) * 1.4085)',
+    );
   });
 });
 
