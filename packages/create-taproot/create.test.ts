@@ -176,10 +176,14 @@ describe('refusing to overwrite', () => {
 
 describe('the template stays in step with apps/studio', () => {
   /**
-   * Six files are byte-identical by intent — the app in this repo and a scaffolded project are the
+   * These files are byte-identical by intent — the app in this repo and a scaffolded project are the
    * same thing, and `apps/studio` is where they get exercised. Nothing else would catch them
    * diverging: a fix to the app's migrate script would silently miss every project scaffolded
    * afterwards, and the scaffolded ones are the copies nobody here runs.
+   *
+   * Counted by the list below rather than stated in prose. It read "six files" while the list held
+   * seven, because `scripts/reindex.ts` was added to both and the sentence describing them was not —
+   * which is the same drift this test exists to catch, one level up.
    *
    * If this fails, copy the file across rather than editing the expectation.
    */

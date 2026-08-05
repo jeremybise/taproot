@@ -10,10 +10,12 @@ is the same reason Taproot ships no block templates. Three things about it:
   installed nothing — it cannot have a build step and cannot afford an install before it starts.
 - **Every prompt has a flag** (`--starter`, `--local`, `--yes`), which is what lets `create.test.ts`
   drive the real generator as a subprocess instead of testing a re-wired copy of it.
-- **Six files are byte-identical to `apps/studio`** — `src/worker.ts`, the three `scripts/`, the
-  Astro config, and the tsconfig — and `create.test.ts` asserts it. Nothing else would notice them
-  diverging, because the scaffolded copies are the ones nobody in this repo runs. If that test
-  fails, copy the file across rather than editing the expectation.
+- **Seven files are byte-identical to `apps/studio`** — `src/worker.ts`, the four `scripts/`
+  (`migrate`, `reindex`, `_db`, `_env`), the Astro config, and the tsconfig — and `create.test.ts`
+  asserts it. Nothing else would notice them diverging, because the scaffolded copies are the ones
+  nobody in this repo runs. If that test fails, copy the file across rather than editing the
+  expectation. Take the count from `SHARED` in that test rather than from this sentence: it said
+  "six" for a release after `reindex.ts` joined the list.
 
 **`--local` needs `install-links=true`, and the failure without it names nothing useful.** A `file:`
 dependency is symlinked, and npm then skips *its* dependencies — so React, `@astrojs/react`,
