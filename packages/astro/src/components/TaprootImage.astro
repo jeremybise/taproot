@@ -37,10 +37,30 @@ interface Props {
    */
   alt?: string;
   loading?: 'lazy' | 'eager';
+  /**
+   * Priority hint for the fetch, for the one image on a page that is worth raising.
+   *
+   * Here because `loading="eager"` alone is not the same request: eager decides *whether* the image
+   * is deferred, `fetchpriority` decides where it sits in the queue once it is not. A hero that is
+   * the LCP element wants both, and a consumer that reached for a plain `<img>` to keep the second
+   * one would be giving up the crop to get it — which is how a component ends up used for
+   * everything except the image that matters most.
+   *
+   * Undefined rather than `'auto'` by default: `auto` is the browser's own behaviour, and emitting
+   * it on every image states a preference nobody expressed.
+   */
+  fetchpriority?: 'high' | 'low' | 'auto';
   class?: string;
 }
 
-const { asset, ratio, alt, loading = 'lazy', class: className } = Astro.props;
+const {
+  asset,
+  ratio,
+  alt,
+  loading = 'lazy',
+  fetchpriority,
+  class: className,
+} = Astro.props;
 
 /**
  * `resolveCrop` wants the stored column names; the delivered shape nests them.
@@ -74,7 +94,14 @@ const altText = alt ?? asset.alt ?? '';
 ---
 
 <div class:list={['taproot-image', className]} style={`--taproot-image-ratio:${ratio}`}>
-  <img src={asset.url} alt={altText} loading={loading} decoding="async" style={frame} />
+  <img
+    src={asset.url}
+    alt={altText}
+    loading={loading}
+    fetchpriority={fetchpriority}
+    decoding="async"
+    style={frame}
+  />
 </div>
 
 <style>
