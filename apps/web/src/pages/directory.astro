@@ -141,9 +141,17 @@ Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
                   crop="server"
                 />
               )}
-              <h2>
-                <a href={entry.path}>{entry.title}</a>
-              </h2>
+              {
+                /*
+                  A name, not a link. The `person` type has item pages turned off in the CMS, so
+                  `/people/marguerite-okafor` resolves to nothing and a link here would 404 — which
+                  is the setting working rather than a gap. A site that *does* want a profile page
+                  turns item pages back on and wraps this in an `<a href={entry.path}>`;
+                  `schema()` reports `hasItemPages` per type for a template that wants to decide
+                  from the CMS rather than from what its author remembers.
+                */
+              }
+              <h2>{entry.title}</h2>
               {entry.data?.position && <p class="position">{entry.data.position}</p>}
               {departments.length > 0 && <p class="departments">{departments.join(' · ')}</p>}
               {entry.data?.email && (

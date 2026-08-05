@@ -511,6 +511,89 @@ describe('the items endpoint', () => {
   });
 });
 
+describe('a collection whose items have no pages', () => {
+  async function directory() {
+    const type = await createContentType(h.db.db, {
+      api_id: 'person',
+      name: 'Person',
+      name_plural: 'People',
+      kind: 'collection',
+      description: null,
+      icon: null,
+      url_prefix: 'people',
+      title_field: 'title',
+      item_pages: false,
+    });
+
+    await createItem(h.db, type, [], {
+      contentTypeId: type.id,
+      title: 'Marguerite Okafor',
+      status: 'published',
+    });
+
+    return type;
+  }
+
+  it('is listed when the caller names it and left out when it does not', async () => {
+    await published('Admissions');
+    await directory();
+    h.as(editor);
+
+    const everything = await body<{ items: { title: string }[] }>(
+      await itemsGet(h.context({ url: '/api/taproot/delivery/items' })),
+    );
+    // An index of everything is a list of links, and these have no URL to link to.
+    expect(everything.items.map((item) => item.title)).toEqual(['Admissions']);
+
+    const named = await body<{ total: number }>(
+      await itemsGet(h.context({ url: '/api/taproot/delivery/items?type=person' })),
+    );
+    // Asking for people is how a directory is built; answering nothing would refuse the question.
+    expect(named.total).toBe(1);
+  });
+
+  it('is never a search result, even when the search names the type', async () => {
+    await directory();
+    h.as(editor);
+
+    /**
+     * Where search differs from the listing, deliberately: a result is a link and nothing else, so
+     * returning somebody whose URL answers 404 is worse than not finding them — the visitor's next
+     * click is the failure.
+     */
+    for (const url of [
+      '/api/taproot/delivery/search?q=okafor',
+      '/api/taproot/delivery/search?q=okafor&type=person',
+    ]) {
+      const payload = await body<{ total: number }>(await searchGet(h.context({ url })));
+      expect(payload.total).toBe(0);
+    }
+  });
+
+  it('answers 404 at the item’s own path, conditionally as well as fully', async () => {
+    await directory();
+    h.as(editor);
+
+    const full = await resolveGet(
+      h.context({ url: '/api/taproot/delivery/resolve?path=/people/marguerite-okafor' }),
+    );
+    expect(full.status).toBe(404);
+
+    /**
+     * And with a validator in hand. The cheap ETag lookup runs before the page is resolved, so a
+     * rule applied to one and not the other would 304 a path the full request refuses — a client
+     * revalidating a cached copy of a page that does not exist, successfully, forever.
+     */
+    const conditional = await resolveGet(
+      h.context({
+        url: '/api/taproot/delivery/resolve?path=/people/marguerite-okafor',
+        headers: { 'if-none-match': 'W/"anything-at-all"' },
+      }),
+    );
+    expect(conditional.status).toBe(404);
+  });
+});
+
 describe('the taxonomy terms endpoint', () => {
   async function departmentTaxonomy() {
     const taxonomy = await createTaxonomy(h.db.db, {

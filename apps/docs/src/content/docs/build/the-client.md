@@ -170,6 +170,17 @@ const { items, media, terms } = await taproot.items({
 })}
 ```
 
+:::note[Not every collection has item pages]
+A content type can be configured so its items have **no pages of their own** — the usual case for a
+staff directory. `resolve` answers `not_found` at those items' paths, so do not link a card's title
+to `item.path` for such a type: your own site would 404. `schema()` reports `hasItemPages` per type
+if you want a template that decides from the CMS rather than from what its author remembers, and
+`apps/web/src/pages/directory.astro` is the worked example.
+
+A listing that names the type still returns them, which is exactly how that page is built. Site
+search does not, because a search result is a link.
+:::
+
 **This is the same shape a `query` field's results arrive in**, so a card component written for one
 renders the other unchanged. What that means in practice:
 

@@ -22,6 +22,7 @@ import {
   listItemSummaries,
   openReleasesForItem,
   previewPathFor,
+  typeHasItemPages,
   previewSiteUrl,
   releasesAvailableFor,
 } from '@taprootcms/core';
@@ -235,6 +236,17 @@ const flash = error
             </a>
           ) : (
             <code class="break-all font-mono">{publicPath ?? item.path}</code>
+          )
+        }
+        {
+          /*
+            Said out loud, because the screen is otherwise indistinguishable from a page whose
+            preview is merely misconfigured: no link, no pane, and an address that looks like a URL.
+            An editor deciding whether they have done something wrong is exactly who needs the one
+            sentence explaining that this type is listed rather than published.
+          */
+          !typeHasItemPages(contentType) && (
+            <span class="text-content-subtle"> · no page of its own; shown wherever your site lists {contentType.name_plural.toLowerCase()}</span>
           )
         }
       </p>

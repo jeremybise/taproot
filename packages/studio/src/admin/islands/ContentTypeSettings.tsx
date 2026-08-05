@@ -28,6 +28,7 @@ export default function ContentTypeSettings({
   const [titleField, setTitleField] = useState(contentType.title_field ?? '');
   const [urlPrefix, setUrlPrefix] = useState(contentType.url_prefix ?? '');
   const [previewPath, setPreviewPath] = useState(contentType.preview_path ?? '');
+  const [itemPages, setItemPages] = useState(contentType.item_pages === 1);
   const [ogImageId, setOgImageId] = useState(contentType.default_og_image_id ?? '');
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -48,7 +49,9 @@ export default function ContentTypeSettings({
           description: description.trim() || null,
           title_field: titleField || null,
           default_og_image_id: ogImageId || null,
-          ...(contentType.kind === 'collection' ? { url_prefix: urlPrefix.trim() || null } : {}),
+          ...(contentType.kind === 'collection'
+            ? { url_prefix: urlPrefix.trim() || null, item_pages: itemPages }
+            : {}),
           // `null` rather than omitted when blank, so clearing the box turns preview back off.
           // Omitting it would read as "not provided" and keep the old value — the `undefined`/`null`
           // distinction `updateContentType` makes, from the side that has to send it.
@@ -200,6 +203,29 @@ export default function ContentTypeSettings({
             onChange={(e) => setUrlPrefix(e.target.value)}
             className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
           />
+        </div>
+      )}
+
+      {contentType.kind === 'collection' && (
+        <div className="rounded-md border border-border bg-surface-raised px-4 py-3">
+          <label htmlFor="ct-item-pages" className="flex items-start gap-2.5 text-sm font-medium">
+            <input
+              id="ct-item-pages"
+              type="checkbox"
+              checked={itemPages}
+              aria-describedby="ct-item-pages-hint"
+              onChange={(e) => setItemPages(e.target.checked)}
+              className="mt-0.5"
+            />
+            Items have their own pages
+          </label>
+          <p id="ct-item-pages-hint" className="mt-1 text-xs text-content-subtle">
+            On, each item is a page on your site at its own URL. Turn it off for content that is only
+            ever shown in a listing — a staff directory, a set of testimonials, a list of course
+            sections. Those items still exist, still have field values and still appear wherever your
+            site lists them; they simply have no page of their own, so nothing is served at their
+            address and site search leaves them out.
+          </p>
         </div>
       )}
 

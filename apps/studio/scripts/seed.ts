@@ -616,6 +616,16 @@ const person = await ensureType(
     kind: 'collection',
     icon: null,
     url_prefix: 'people',
+    /**
+     * No pages of their own, which is the point of seeding a directory rather than another
+     * collection of pages.
+     *
+     * A person is real content — created, versioned, classified by department, listed on
+     * `/directory` — and none of them is a URL. With this on, `/people/marguerite-okafor` would
+     * resolve, the demo site's catch-all would render a bare field dump at it, and site search would
+     * return a result whose link is a page nobody designed.
+     */
+    item_pages: false,
     title_field: 'title',
   },
   [

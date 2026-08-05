@@ -305,6 +305,36 @@ one. Four things hold it up:
   one flatten somebody else's shape. An unknown taxonomy is a **404** rather than an empty list,
   since "no terms yet" is an ordinary state that would hide a misspelled `api_id` forever.
 
+**A collection's items can have no pages of their own, and `content_types.item_pages` is how.** A
+staff directory is the case: the people are real content — created, versioned, classified, listed on
+a page the site builds — and none of them is a URL. Without it the CMS insists otherwise, and a
+consumer's catch-all renders a bare field dump at `/people/anybody`. Seven things hold it up:
+- **A column, not a fourth kind.** `kind` answers *how are instances addressed*, and a routeless
+  collection is addressed exactly as a collection is — flat, under a `url_prefix`, with a list screen
+  and a create button. What changes is whether that address is public. A kind would fork every screen
+  that switches on kind to say the same thing twice.
+- **The path stays.** It is how the admin addresses the row and what the setting would restore if
+  somebody turns pages back on. What the flag governs is whether anything is *served* at it.
+- **`typeHasItemPages` is the one question**, never the column: `item_pages` is meaningful only for a
+  collection, and both write paths force it to 1 for every other kind exactly as `url_prefix` is
+  nulled for a page. A `page` is a node in the site tree and its identity is its address.
+- **`resolveDelivery` answers `not_found`, and the exclusion is in the SQL.** `getItemByPath` takes
+  `routableOnly` so the check costs no extra round trip on the hot path — loading the content type to
+  ask would be a second query per page view. A miss still falls through to the redirect table, so a
+  path that once belonged to a routable item still sends a visitor somewhere.
+- **`getItemVersionByPath` takes the same flag**, for the reason it already shares `visibleToPublic`:
+  a validator computed under different rules from the payload would 304 a path the full request
+  answers 404 — a client revalidating a cached page that no longer exists, successfully, forever.
+- **A listing excludes it only when the caller did not name the type; search excludes it always.**
+  An index of everything is a list of links. Asking for `type=person` is asking for people and is how
+  a directory is built. A *search result* is a link and nothing else, so returning one whose URL
+  404s is worse than not finding it — the visitor's next click is the failure.
+- **No preview, and deliberately not a redirect to the listing.** `previewPathFor` answers null: the
+  page the item appears on is a route the site serves and Taproot does not know it, and framing one
+  while claiming to preview this item is what the singleton branch already refuses. The editor says
+  so in words, because a screen with no link and no pane is otherwise indistinguishable from a
+  preview somebody has misconfigured.
+
 **A uuid a consumer cannot resolve is a dead end, and the schema is where that is fixed.** A
 `taxonomy` field's `config` names its vocabulary by `taxonomyId` and a `relation`'s names its target
 by `targetContentTypeId`, so a site reading the content model held ids with nothing on its side of
@@ -1009,8 +1039,12 @@ are about the audit scripts at the repo root rather than the admin itself:
   `/api/taproot/content-types` returns types *without* their fields, so a count derived from that
   list is zero for everything and quietly restores the bug. The same trap one screen along: the
   content type settings form renders a different control per kind, so it audits `contentTypes[0]`
-  **and** the first singleton — auditing only the first type leaves whichever kind sorts second
-  unchecked while the run still reports zero. And a third time, one axis along: **field count is a
+  **and one example of every other kind** — auditing only the first type leaves whichever kind sorts
+  second unchecked while the run still reports zero. That one was fixed with a single hand-written
+  `find` for a singleton, and the trap promptly closed again from the other side: the seed sorts
+  `page` first, so the *collection* form went unaudited until it had two controls on it. It is a loop
+  over the kinds now, which is the shape that does not need revisiting when a fourth control appears.
+  And a third time, one axis along: **field count is a
   fact about the content type, composition is a fact about the item.** The field-count winner on the
   seeded database had zero blocks placed and zero repeater entries, so every collapsible panel in
   the admin — and every field inside one — was absent from the run. `composedRows` picks the

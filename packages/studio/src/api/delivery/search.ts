@@ -81,6 +81,15 @@ export const GET = handleScoped(
       // Kinds with a public URL, exactly as the listing endpoint takes them: a singleton's path is
       // the synthetic `/__singleton/{api_id}`, and a search result is a link or it is nothing.
       contentTypeKinds: ['page', 'collection'],
+      /**
+       * And types whose items have pages, **always** — including when `type` names one, which is
+       * where this differs from the listing endpoint.
+       *
+       * A listing is what a directory is built from, so naming a routeless type there is a real
+       * request. A search *result* is a link and nothing else: returning a staff member whose URL
+       * answers 404 is worse than not finding them, because the visitor's next click is the failure.
+       */
+      contentTypeHasItemPages: true,
       sort,
       limit,
       offset,

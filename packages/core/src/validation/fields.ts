@@ -1024,6 +1024,14 @@ export const contentTypeInputSchema = z.object({
     )
     .max(255)
     .nullish(),
+  /**
+   * Whether a collection's items are served at their own URLs. Defaults to yes.
+   *
+   * `optional` rather than `nullish` with a default: absent means "keep what is stored" on a PATCH,
+   * and there is no third state for `null` to mean. `createContentType` reads absent as on, which
+   * is what every collection before this column had.
+   */
+  item_pages: z.boolean().optional(),
   title_field: z.string().nullish(),
   /** Social-card image for items of this type that have not chosen one. */
   default_og_image_id: z.string().nullish(),

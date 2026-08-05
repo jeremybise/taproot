@@ -188,6 +188,15 @@ export async function createContentType(
     // `previewPathFor` never reads the column for them. Nulled here rather than trusted from the
     // input, matching `url_prefix`, so the column means one thing whatever the API was sent.
     preview_path: input.kind === 'singleton' ? (input.preview_path ?? null) : null,
+    /**
+     * Only a collection can turn item pages off; every other kind is forced on.
+     *
+     * A `page` is a node in the site tree and its identity *is* its address, and a singleton has no
+     * item URL to withhold. Forced here rather than trusted from the input, matching `url_prefix`
+     * and `preview_path`, so changing a type's kind cannot leave the column saying something
+     * `typeHasItemPages` will not read.
+     */
+    item_pages: input.kind === 'collection' && input.item_pages === false ? 0 : 1,
     title_field: input.title_field ?? null,
     default_og_image_id: input.default_og_image_id ?? null,
     // Appended to the end of the sidebar rather than dropped at 0, so creating a type does not
@@ -231,6 +240,16 @@ export async function updateContentType(
   if (!existing) throw new ContentTypeError(`Content type ${id} not found.`, 'not_found');
 
   const kind = input.kind ?? existing.kind;
+
+  /**
+   * Absent keeps what is stored; a boolean sets it. Only a collection may turn item pages off.
+   *
+   * Forced on for every other kind, so a collection switched to a page cannot leave a 0 behind for
+   * whoever switches it back — the same reason `url_prefix` is nulled rather than kept.
+   */
+  const itemPages =
+    kind === 'collection' ? (input.item_pages ?? existing.item_pages === 1) : true;
+
   const patch = {
     name: input.name ?? existing.name,
     name_plural: input.name_plural ?? existing.name_plural,
@@ -254,6 +273,7 @@ export async function updateContentType(
           ? existing.preview_path
           : (input.preview_path ?? null)
         : null,
+    item_pages: itemPages ? 1 : 0,
     title_field: input.title_field === undefined ? existing.title_field : (input.title_field ?? null),
     default_og_image_id:
       input.default_og_image_id === undefined

@@ -490,6 +490,23 @@ without a second endpoint. Resolved there rather than inside each field, because
 also builds the `fields` array on every `resolve` — enriching it would put a lookup on the hot path
 of every page view to answer a question only a schema reader asks.
 
+**Collections can have items with no pages of their own**, which fell out of building the directory
+and turned out to be the thing that makes it honest. A staff directory's people are real content —
+created, versioned, classified, listed — and none of them is a URL, but the CMS insisted otherwise:
+`/people/marguerite-okafor` resolved, a consumer's catch-all rendered a bare field dump at it, and
+site search returned a result whose link was a page nobody designed.
+
+A checkbox on a collection's settings turns it off. `resolveDelivery` then answers `not_found` at
+those paths, so the route stops existing with **no site-side code** — which is the difference between
+configuring a CMS and remembering a rule in every consumer. Site search excludes them, an index of
+everything excludes them, and a listing that names the type still returns them, because that listing
+is how the page showing them is built. There is no preview, and deliberately no redirect to whatever
+page does show them: that is a route the site serves and Taproot does not know it.
+
+A column rather than a fourth kind — `kind` answers how instances are *addressed*, and these are
+addressed exactly as a collection is; only whether the address is public changes. The path stays, so
+turning it back on restores the pages rather than minting new ones.
+
 **Next in the band:** media multi-upload (5E), menu link-picking (5F) and AI-assisted alt text (5G),
 all independent of each other.
 

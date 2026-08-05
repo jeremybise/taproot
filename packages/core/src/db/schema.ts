@@ -272,6 +272,15 @@ export interface ContentTypesTable {
    * preview pane and the mint endpoint cannot disagree about which address to frame.
    */
   preview_path: string | null;
+  /**
+   * Whether a `collection`'s items have pages of their own. 1 for every other kind.
+   *
+   * Off is what a staff directory wants: the people are real content items, listed on a page the
+   * site builds, and none of them is a URL. Read through `typeHasItemPages`, never directly — the
+   * delivery resolver, the listing filters and the preview link all gate on it, and a call site
+   * reading the column itself is one that will forget the kind check.
+   */
+  item_pages: number;
   /** Field `api_id` whose value is shown as the item's label in admin lists. */
   title_field: string | null;
   /** Order in the admin sidebar, where each content type is its own entry. Ties break by name. */

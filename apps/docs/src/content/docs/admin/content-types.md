@@ -25,6 +25,24 @@ creation**. Pick carefully: `event`, `staff_profile`.
 - **Singleton** — exactly one item, ever. No create, no delete, just edit. For a homepage assembled
   from blocks, a site-wide announcement banner, or footer details.
 
+**Items have their own pages** appears for collections, and is on unless you turn it off. On, each
+item is a page on your site at its own URL — an event at `/events/spring-open-house`. Off, the items
+still exist and still have every field they had; they are simply not published as pages.
+
+Turn it off for content that is only ever shown *inside* something else: a staff directory, a set of
+testimonials, the course sections listed on a programme page. Four things change the moment you do,
+and they are the whole point:
+
+- Nothing is served at the item's address. `/people/marguerite-okafor` answers 404 on your site
+  rather than rendering a page nobody designed.
+- Site search leaves those items out, because a search result is a link.
+- A listing of *everything* leaves them out too — but a listing that asks for this type by name
+  still returns them, which is how the page that shows them is built.
+- There is no preview, because there is no page to preview. The editor says so under the item's
+  title.
+
+Turning it back on restores the pages: the address never went away, it simply had nothing at it.
+
 **Preview path** appears for singletons only, and is optional. A singleton has no URL of its own —
 it is edited through one fixed sidebar entry — so Taproot cannot know where your site shows it.
 Setting this to the address it renders at, usually `/` for a homepage, turns on the live preview

@@ -488,7 +488,12 @@ describe('content items', () => {
     const type = (
       kind: ContentTypeRow['kind'],
       preview_path: string | null = null,
-    ): Pick<ContentTypeRow, 'kind' | 'preview_path'> => ({ kind, preview_path });
+      item_pages = 1,
+    ): Pick<ContentTypeRow, 'kind' | 'preview_path' | 'item_pages'> => ({
+      kind,
+      preview_path,
+      item_pages,
+    });
 
     it('answers a page or collection with the item path, ignoring the column', () => {
       // Those items already know where they live; reading a second source is how the two drift.
@@ -496,6 +501,16 @@ describe('content items', () => {
       expect(previewPathFor(type('collection', '/ignored'), { path: '/news/open-day' })).toBe(
         '/news/open-day',
       );
+    });
+
+    it('answers null for a collection whose items have no pages', () => {
+      /**
+       * A staff directory. There is no page to open, so offering a preview would frame something
+       * this item is not — and `resolveDelivery` answers `not_found` at that path, so a link built
+       * from it would 404. The listing the person appears on is a route the *site* serves, which
+       * Taproot does not know and must not guess at.
+       */
+      expect(previewPathFor(type('collection', null, 0), { path: '/people/nia' })).toBeNull();
     });
 
     it('answers a singleton with its configured path', () => {

@@ -125,18 +125,27 @@ const { contentTypes } = await typesResponse.json();
 if (contentTypes?.[0]) ROUTES.push(`/admin/settings/types/${contentTypes[0].id}`);
 
 /**
- * A singleton's settings screen too, because parts of that form exist only for one kind.
+ * One settings screen **per kind**, because parts of that form exist only for one of them.
  *
  * `contentTypes[0]` is whatever sorts first, and the screen renders a different set of controls per
- * kind — a collection gets the URL prefix, a singleton gets the preview path. Auditing only the
- * first type means whichever kind happens to sort second is never checked, and the run still
- * reports zero. The same mistake as taking `items[0]` for the item editor, one screen along.
+ * kind — a collection gets the URL prefix and the "items have their own pages" checkbox, a singleton
+ * gets the preview path. Auditing only the first type means whichever kind happens to sort second is
+ * never checked, and the run still reports zero. The same mistake as taking `items[0]` for the item
+ * editor, one screen along.
  *
- * Skipped silently when the seed has no singleton: a missing route is not a violation, and pushing
- * a URL that 404s would fail the run for the wrong reason.
+ * It has now been made three times, which is why this is a loop over the kinds rather than a second
+ * hand-written `find`: the seeded database sorts `page` first, so the collection form — two controls,
+ * one of them added long after this comment was written — had never been audited once.
+ *
+ * A kind the seed happens not to have is skipped silently: a missing route is not a violation, and
+ * pushing a URL that 404s would fail the run for the wrong reason.
  */
-const singletonType = (contentTypes ?? []).find((type) => type.kind === 'singleton');
-if (singletonType) ROUTES.push(`/admin/settings/types/${singletonType.id}`);
+for (const kind of ['collection', 'singleton']) {
+  const example = (contentTypes ?? []).find((type) => type.kind === kind);
+  if (example && example.id !== contentTypes?.[0]?.id) {
+    ROUTES.push(`/admin/settings/types/${example.id}`);
+  }
+}
 
 /**
  * The item editor is audited on the item with the *most* fields, not the first one returned.

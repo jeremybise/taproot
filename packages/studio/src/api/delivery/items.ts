@@ -165,6 +165,15 @@ export const GET = handleScoped(
       limit,
       offset,
       includeData: include.includes('data'),
+      /**
+       * A type whose items have no pages of their own is excluded — **unless the caller named it**.
+       *
+       * An index of "everything" is a list of links, and a collection with item pages turned off has
+       * no URL to link to. Asking for `type=person` is a different question: it is how a directory
+       * is built, and answering nothing because those people have no pages would be refusing the
+       * question rather than answering it.
+       */
+      contentTypeHasItemPages: contentTypeId === undefined,
     });
 
     return json(

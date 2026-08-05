@@ -26,6 +26,7 @@ import {
   getRedirect,
   listItemSummaries,
   listItems,
+  typeHasItemPages,
   visibleToPublic,
   type ContentItem,
 } from './items.js';
@@ -235,8 +236,21 @@ export async function resolveDelivery(
 ): Promise<DeliveryResult> {
   const normalized = normalizePath(path);
 
+  /**
+   * Routable only, so a collection with item pages turned off has no page here at all.
+   *
+   * That is the whole of what the setting buys: a staff directory's people are content items with
+   * paths, and a consumer's catch-all would otherwise render each of them as a page nobody
+   * designed — a bare field dump at `/people/anybody`, indexed by crawlers and linked from search.
+   * Refusing it here rather than leaving it to the site means the route does not exist rather than
+   * every consumer having to know not to serve it.
+   *
+   * It falls through to the redirect lookup below like any other miss, which is right: a path that
+   * once belonged to a routable item and was moved still has somewhere to send a visitor.
+   */
   const item = await getItemByPath(db, normalized, {
     publishedOnly: !options.includeUnpublished,
+    routableOnly: true,
   });
 
   if (!item) {
@@ -515,6 +529,8 @@ export interface DeliverItemsOptions extends DeliveryOptions {
   sort?: ItemSort;
   limit?: number;
   offset?: number;
+  /** Narrow to types whose items have pages — see `ItemFilters.contentTypeHasItemPages`. */
+  contentTypeHasItemPages?: boolean;
   /**
    * Send each item's own field values, and the maps their ids resolve through.
    *
@@ -557,6 +573,7 @@ export async function deliverItems(
      * `resolve` with that path, which is the deliberate way to ask for it.
      */
     contentTypeKinds: ['page', 'collection'] as ContentTypeKind[],
+    contentTypeHasItemPages: options.contentTypeHasItemPages,
     limit: options.limit,
     offset: options.offset,
   };
@@ -660,6 +677,16 @@ export interface DeliveryTypeSchema {
   namePlural: string;
   kind: ContentTypeKind;
   urlPrefix: string | null;
+  /**
+   * Whether this type's items are served at their own URLs.
+   *
+   * False for a collection whose item pages are turned off — a staff directory — and for every kind
+   * that never had them. A consumer rendering a listing reads it to decide whether a card's title is
+   * a link: the CMS is the authority on that, and a site restating it is the two-implementations
+   * problem in miniature. `resolve` answers `not_found` at those items' paths, so a link built
+   * anyway is a 404 rather than a silent field dump.
+   */
+  hasItemPages: boolean;
   fields: DeliveryField[];
 }
 
@@ -755,6 +782,7 @@ export async function deliverySchema(db: Kysely<Database>): Promise<DeliverySche
     namePlural: type.name_plural,
     kind: type.kind,
     urlPrefix: type.url_prefix,
+    hasItemPages: typeHasItemPages(type),
     fields: (byType.get(type.id) ?? []).map(toDeliveryField),
   });
 

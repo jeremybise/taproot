@@ -154,6 +154,19 @@ export interface ItemFilters {
    */
   contentTypeKinds?: ContentTypeKind[];
   /**
+   * Narrow to types whose items are served at their own URLs.
+   *
+   * For every caller that is about to hand somebody a **link**: site search, and an index page that
+   * did not name a type. A collection with item pages turned off — a staff directory — is real
+   * content that appears on a page the site builds, and listing it among things a visitor can click
+   * through to offers a URL that answers 404.
+   *
+   * Not applied when a caller names the type it wants. Asking for `type=person` is asking for
+   * people, and answering nothing because they have no pages of their own would be refusing the
+   * question rather than answering it — that listing is exactly how a directory is built.
+   */
+  contentTypeHasItemPages?: boolean;
+  /**
    * Narrow by an item's own field values, through the derived value index.
    *
    * The reason the index exists: "events whose `starts_at` is after now" has no other SQL path,
@@ -195,6 +208,27 @@ export function kindHasPublicPath(kind: ContentTypeKind): boolean {
 }
 
 /**
+ * Whether this type's items are served at their own URLs.
+ *
+ * `kindHasPublicPath` asks about the *kind* and cannot answer this: a collection is addressed by
+ * path whether or not the site publishes one, and a staff directory is the case where it should not.
+ * The people are content items in every other respect — created, versioned, classified, listed on a
+ * page the site builds — and giving each a URL means a consumer's catch-all renders a bare field
+ * dump at `/people/anybody`, the admin offers a link to a page nobody designed, and site search
+ * returns it.
+ *
+ * Asked as a question about the type rather than read off the column at each call site, because the
+ * column is only meaningful for a collection: a page is a node in the site tree and a singleton has
+ * no item URL to begin with. A caller reading `item_pages` directly is one that will forget that.
+ */
+export function typeHasItemPages(
+  contentType: Pick<ContentTypeRow, 'kind' | 'item_pages'>,
+): boolean {
+  if (!kindHasPublicPath(contentType.kind)) return false;
+  return contentType.kind !== 'collection' || contentType.item_pages === 1;
+}
+
+/**
  * The address on the public site where this item is rendered, or null if there is none.
  *
  * This is the question the preview pane, the mint endpoints, and the editor's path link all
@@ -211,14 +245,22 @@ export function kindHasPublicPath(kind: ContentTypeKind): boolean {
  * A `page` or `collection` answers with `item.path`, ignoring the column entirely: those items
  * already know where they live, and reading a second source for it is how the two drift.
  *
+ * A collection with **no item pages** answers null, because there is nothing to open — the site
+ * serves no URL for it and `resolveDelivery` answers `not_found` at its path. Deliberately *not*
+ * redirected to whatever listing shows the item instead: that page is a site route Taproot does not
+ * know, and framing one while claiming to preview this item is the failure the singleton branch
+ * above already refuses.
+ *
  * **This is not a delivery route.** The consumer still asks `resolve` for `item.path`, which is
  * what a preview token is a capability over. This only says which URL to open.
  */
 export function previewPathFor(
-  contentType: Pick<ContentTypeRow, 'kind' | 'preview_path'>,
+  contentType: Pick<ContentTypeRow, 'kind' | 'preview_path' | 'item_pages'>,
   item: Pick<ContentItem, 'path'>,
 ): string | null {
-  if (kindHasPublicPath(contentType.kind)) return item.path;
+  if (kindHasPublicPath(contentType.kind)) {
+    return typeHasItemPages(contentType) ? item.path : null;
+  }
   if (contentType.kind === 'singleton') return contentType.preview_path || null;
   return null;
 }
@@ -239,17 +281,22 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
   if (filters.status) q = q.where('status', '=', filters.status);
   if (filters.visibleOnly) q = q.where(visibleToPublic);
 
-  if (filters.contentTypeKinds && filters.contentTypeKinds.length > 0) {
-    const kinds = filters.contentTypeKinds;
+  const kinds = filters.contentTypeKinds;
+  const needsKinds = kinds !== undefined && kinds.length > 0;
+
+  if (needsKinds || filters.contentTypeHasItemPages) {
     // EXISTS rather than a join, so an item is counted once and the shape of the query the status
-    // facets share is unchanged.
+    // facets share is unchanged. One subquery however many conditions it carries.
     q = q.where((eb) =>
       eb.exists(
         eb
           .selectFrom('content_types')
           .select('content_types.id')
           .whereRef('content_types.id', '=', 'content_items.content_type_id')
-          .where('content_types.kind', 'in', kinds),
+          .$if(needsKinds, (sub) => sub.where('content_types.kind', 'in', kinds!))
+          .$if(Boolean(filters.contentTypeHasItemPages), (sub) =>
+            sub.where('content_types.item_pages', '=', 1),
+          ),
       ),
     );
   }
@@ -643,9 +690,30 @@ export function visibleToPublic(eb: any) {
 export async function getItemByPath(
   db: Kysely<Database>,
   path: string,
-  options: { publishedOnly?: boolean } = {},
+  options: { publishedOnly?: boolean; routableOnly?: boolean } = {},
 ): Promise<ContentItem | undefined> {
   let query = db.selectFrom('content_items').selectAll().where('path', '=', normalizePath(path));
+
+  /**
+   * Skip an item whose type has no pages of its own — the delivery resolver's caller.
+   *
+   * In the same statement rather than checked afterwards, because "afterwards" means loading the
+   * content type to ask, which is a second round trip on the hot path of every page view. The item
+   * still *has* this path: it is how the admin addresses the row and what a preview token would be
+   * scoped to. What it does not have is anything served at it.
+   */
+  if (options.routableOnly) {
+    query = query.where((eb) =>
+      eb.exists(
+        eb
+          .selectFrom('content_types')
+          .select('content_types.id')
+          .whereRef('content_types.id', '=', 'content_items.content_type_id')
+          .where('content_types.item_pages', '=', 1),
+      ),
+    );
+  }
+
   /**
    * A scheduled item whose time has passed counts as visible, whether or not a sweep has run yet.
    *
@@ -680,7 +748,7 @@ export async function getItemByPath(
 export async function getItemVersionByPath(
   db: Kysely<Database>,
   path: string,
-  options: { publishedOnly?: boolean } = {},
+  options: { publishedOnly?: boolean; routableOnly?: boolean } = {},
 ): Promise<{ id: string; updatedAt: string } | undefined> {
   let query = db
     .selectFrom('content_items')
@@ -688,6 +756,24 @@ export async function getItemVersionByPath(
     .where('path', '=', normalizePath(path));
 
   if (options.publishedOnly !== false) query = query.where(visibleToPublic);
+
+  /**
+   * And the same routability rule, for the reason the visibility one is shared: a validator
+   * computed under different rules from the payload would answer 304 for a path the full request
+   * answers 404 — a client holding a cached copy of a page that no longer exists, revalidating it
+   * successfully forever.
+   */
+  if (options.routableOnly) {
+    query = query.where((eb) =>
+      eb.exists(
+        eb
+          .selectFrom('content_types')
+          .select('content_types.id')
+          .whereRef('content_types.id', '=', 'content_items.content_type_id')
+          .where('content_types.item_pages', '=', 1),
+      ),
+    );
+  }
 
   const row = await query.executeTakeFirst();
   return row ? { id: row.id, updatedAt: row.updated_at } : undefined;

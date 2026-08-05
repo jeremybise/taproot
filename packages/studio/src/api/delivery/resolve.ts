@@ -99,7 +99,9 @@ export const GET = handleScoped(
      * unpublished content is exactly what that header exists to prevent.
      */
     if (!noStore && context.request.headers.get('if-none-match')) {
-      const version = await getItemVersionByPath(taproot.db.db, path);
+      // The same routability rule `resolveDelivery` applies below, or this would 304 a path the
+      // full request answers 404 — see `getItemVersionByPath`.
+      const version = await getItemVersionByPath(taproot.db.db, path, { routableOnly: true });
       if (version) {
         const cheap = deliveryCache(version.updatedAt, version.id);
         const unchanged = notModified(context.request, cheap.etag);

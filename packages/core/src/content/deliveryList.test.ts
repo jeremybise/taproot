@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createDb, type TaprootDb } from '../db/client.js';
 import { migrateToLatest } from '../db/migrations/index.js';
-import { createContentType, createField } from './types.js';
-import { createItem } from './items.js';
+import { createContentType, createField, getContentType, updateContentType } from './types.js';
+import { createItem, previewPathFor, typeHasItemPages, updateItem } from './items.js';
 import { createTaxonomy, createTerm, termIdsForBranch } from './taxonomies.js';
 import {
   deliverItems,
@@ -429,6 +429,125 @@ describe('the terms a facet is built from', () => {
     // a term that does not exist, which is what an editor is about to file something under.
     expect(taxonomy!.terms.every((term) => term.itemCount === 0)).toBe(true);
     expect(taxonomy!.terms).toHaveLength(3);
+  });
+});
+
+describe('a collection with no item pages', () => {
+  /** The seeded directory's shape: people are content, and none of them is a URL. */
+  async function routeless() {
+    await updateContentType(handle.db, personType.id, { item_pages: false });
+    return (await getContentType(handle.db, personType.id))!;
+  }
+
+  it('serves nothing at an item’s path', async () => {
+    const subject = await person('Marguerite Okafor', { role: 'Registrar' });
+    expect((await resolveDelivery(handle.db, subject.path, options)).kind).toBe('item');
+
+    await routeless();
+
+    /**
+     * The whole point of the setting. Without it a consumer's catch-all renders every person as a
+     * page nobody designed — a bare field dump at `/people/anybody`, indexed by crawlers — and the
+     * only way to stop it is site code that restates what the CMS already knows.
+     */
+    expect((await resolveDelivery(handle.db, subject.path, options)).kind).toBe('not_found');
+  });
+
+  it('still answers a redirect that points through that path', async () => {
+    /**
+     * A miss falls through to the redirect table exactly as any other does. A path that once
+     * belonged to a routable item and moved still has somewhere to send a visitor, and swallowing
+     * that would make turning the setting on a way to break old URLs silently.
+     */
+    const subject = await person('Marguerite Okafor', {});
+    await updateItem(handle, personType, fields, subject.id, {
+      title: 'Marguerite Okafor-Bell',
+      slug: 'marguerite-okafor-bell',
+      userId: null,
+    });
+    await routeless();
+
+    const result = await resolveDelivery(handle.db, subject.path, options);
+    expect(result.kind).toBe('redirect');
+  });
+
+  it('keeps the item, its data and its path', async () => {
+    const subject = await person('Marguerite Okafor', { role: 'Registrar' });
+    await routeless();
+
+    // Not published as a page is not the same as not existing: the row, its values and its address
+    // are untouched, which is what makes the setting reversible.
+    const list = await deliverItems(handle.db, {
+      ...options,
+      contentTypeId: personType.id,
+      includeData: true,
+    });
+    expect(list.total).toBe(1);
+    expect(list.items[0]!.path).toBe(subject.path);
+    expect(list.items[0]!.data!.role).toBe('Registrar');
+  });
+
+  it('is left out of a listing that did not name it, and returned by one that did', async () => {
+    await person('Marguerite Okafor', {});
+    const type = await routeless();
+
+    const anything = await deliverItems(handle.db, {
+      ...options,
+      contentTypeHasItemPages: true,
+    });
+    expect(anything.total).toBe(0);
+
+    // Asking for people is asking for people. Answering nothing would refuse the question rather
+    // than answer it — that listing is how a directory is built.
+    const named = await deliverItems(handle.db, { ...options, contentTypeId: type.id });
+    expect(named.total).toBe(1);
+  });
+
+  it('offers no preview, because there is no page to preview', async () => {
+    const subject = await person('Marguerite Okafor', {});
+    const type = await routeless();
+
+    /**
+     * Null rather than the listing the item appears on. That page is a route the *site* serves and
+     * Taproot does not know it — framing one while claiming to preview this item is the failure the
+     * singleton branch of `previewPathFor` already refuses.
+     */
+    expect(previewPathFor(type, subject)).toBeNull();
+  });
+
+  it('says so in the schema, so a consumer can decide whether to link', async () => {
+    await routeless();
+    const schema = await deliverySchema(handle.db);
+
+    expect(schema.contentTypes.find((type) => type.apiId === 'person')!.hasItemPages).toBe(false);
+    // Every other kind is unchanged: a page is a node in the site tree, and a singleton never had
+    // an item URL to withhold.
+    expect(schema.contentTypes.find((type) => type.apiId === 'landing')?.hasItemPages).not.toBe(
+      false,
+    );
+  });
+
+  it('cannot be turned off for a kind that has no use for it', async () => {
+    const pageType = await createContentType(handle.db, {
+      api_id: 'article',
+      name: 'Article',
+      name_plural: 'Articles',
+      kind: 'page',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      title_field: 'title',
+      item_pages: false,
+    });
+
+    /**
+     * Forced on at the write path rather than refused, matching `url_prefix` being nulled for a
+     * page: a `page` is a node in the site tree and its identity is its address, so there is
+     * nothing coherent to turn off — and a stored 0 would be a value `typeHasItemPages` never reads,
+     * waiting to surprise whoever changes the kind later.
+     */
+    expect(pageType.item_pages).toBe(1);
+    expect(typeHasItemPages(pageType)).toBe(true);
   });
 });
 
