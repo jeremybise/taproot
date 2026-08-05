@@ -215,9 +215,22 @@ export function scaleSizes(sizes: string, factor: number): string {
 }
 
 export function variantWidthsFor(naturalWidth: number | null): number[] {
-  const rungs = MEDIA_VARIANT_WIDTHS.filter((rung) => naturalWidth === null || rung <= naturalWidth);
+  if (naturalWidth === null) return [...MEDIA_VARIANT_WIDTHS];
+
+  const rungs = MEDIA_VARIANT_WIDTHS.filter((rung) => rung <= naturalWidth);
 
   // A source smaller than the bottom rung: offer that rung alone rather than an empty srcset, and
   // let the upscale guard in the route decline to enlarge it.
-  return rungs.length > 0 ? [...rungs] : [MEDIA_VARIANT_WIDTHS[0]];
+  if (rungs.length === 0) return [MEDIA_VARIANT_WIDTHS[0]];
+
+  /**
+   * The ceiling earns a rung of its own when the ladder stops short of it.
+   *
+   * The rungs are round numbers and a real image is not: a 3.5:1 photo cropped to 4:3 leaves 605
+   * usable pixels, whose largest rung is 480 — so a quarter of the detail that exists would never
+   * be offered, and on a retina screen that is the difference between sharp and not. Deterministic
+   * per asset and ratio, so it adds exactly one cache entry rather than opening the width up.
+   */
+  const top = rungs[rungs.length - 1] ?? 0;
+  return top < naturalWidth ? [...rungs, naturalWidth] : [...rungs];
 }

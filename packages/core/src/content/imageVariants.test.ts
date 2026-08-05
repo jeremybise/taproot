@@ -165,8 +165,23 @@ describe('scaleSizes', () => {
 
 describe('variantWidthsFor', () => {
   it('never offers a rung above the source, because enlarging adds bytes and no detail', () => {
-    expect(variantWidthsFor(1000)).toEqual([320, 480, 640, 768]);
+    expect(variantWidthsFor(1000)).toEqual([320, 480, 640, 768, 1000]);
     expect(variantWidthsFor(1920)).toEqual([...MEDIA_VARIANT_WIDTHS]);
+  });
+
+  /**
+   * The rungs are round numbers and a real image is not. A 3.5:1 photo cropped to 4:3 leaves 605
+   * usable pixels and the largest rung below that is 480 — a quarter of the detail that exists,
+   * never offered. Deterministic per asset and ratio, so it costs one cache entry, not an open
+   * width parameter.
+   */
+  it('adds the ceiling itself when the ladder stops short of it', () => {
+    expect(variantWidthsFor(605)).toEqual([320, 480, 605]);
+    expect(variantWidthsFor(1600)).toEqual([320, 480, 640, 768, 1024, 1280, 1536, 1600]);
+  });
+
+  it('adds nothing extra when the ceiling is exactly a rung', () => {
+    expect(variantWidthsFor(768)).toEqual([320, 480, 640, 768]);
   });
 
   it('offers the bottom rung alone for a source smaller than it', () => {
