@@ -23,6 +23,30 @@
     "crons": ["*/5 * * * *"]
   },
 
+  // --- Caching ---------------------------------------------------------------
+  // Cloudflare checks the cache *before* invoking this Worker, and a hit costs no CPU, no
+  // subrequests, and no D1 reads at all — the Worker never runs. Concurrent requests for the same
+  // key are collapsed into one origin fetch.
+  //
+  // This is what makes the `Cache-Control` the delivery API has always sent actually do something.
+  // **Cloudflare does not cache JSON or HTML by default** — the default cache is keyed on file
+  // extension — so `s-maxage=60` on a delivery response was correct HTTP that nothing acted on, and
+  // had been since the header was added. Verifying a header is present is not verifying it had an
+  // effect; the same lesson as the preview-pane width rule.
+  //
+  // Responses bypass this automatically where they must: anything with `Set-Cookie` (every admin
+  // screen), and `no-store` (every preview and every draft). Requires Wrangler ≥ 4.69.
+  "cache": {
+    "enabled": true
+  },
+
+  // Placed near D1 rather than near the visitor. Resolving a page is a chain of queries that depend
+  // on each other — the item, then its type, then its blocks — so on a cache miss the Worker pays
+  // that latency several times over. D1 lives in one region; the eyeball does not.
+  "placement": {
+    "mode": "smart"
+  },
+
   "compatibility_date": "2026-07-01",
 
   // Gives the Worker the Node built-ins Astro's server runtime expects.

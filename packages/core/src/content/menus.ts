@@ -380,6 +380,14 @@ export interface ResolvedMenuItem {
   label: string;
   /** Null when the target is gone or unpublished. Public rendering skips these. */
   href: string | null;
+  /**
+   * The content item this entry references, when it references one.
+   *
+   * Not the same thing as `href`: the href is that row's *current* path, and this is the identity
+   * that survives the row moving. Used for cache tagging, where the question is "which row's edit
+   * changes this menu" and a path cannot answer it.
+   */
+  contentItemId: string | null;
   openInNewTab: boolean;
   targetType: MenuTargetType;
   /**
@@ -537,6 +545,16 @@ export async function resolveMenu(
         // page's menu entry current without anyone editing the menu.
         label: entry.label ?? title ?? 'Untitled',
         href,
+        /**
+         * The row this entry points at, carried through for cache invalidation.
+         *
+         * A menu entry stores a reference and never a URL, so both the label and the href above are
+         * read from a *different* row than the one this entry lives in — which means renaming or
+         * moving a page changes the navigation on every page of the site while touching nothing the
+         * menu response could otherwise be invalidated by. The delivered menu deliberately exposes
+         * only `path`, because that is all a consumer renders; the id is what a purge needs.
+         */
+        contentItemId: entry.content_item_id ?? null,
         openInNewTab: toBool(entry.open_in_new_tab),
         targetType: entry.target_type,
         brokenReason,

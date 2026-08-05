@@ -350,7 +350,7 @@ describe('menus, and the callback that cannot cross HTTP', () => {
     });
     await createMenuItem(handle.db, menu.id, { targetType: 'term', termId: term.id });
 
-    const delivered = await deliverMenu(handle.db, 'main');
+    const { items: delivered } = await deliverMenu(handle.db, 'main');
 
     /**
      * The whole point. `resolveMenu` takes a `termHref` callback and a function cannot cross an
@@ -393,7 +393,7 @@ describe('menus, and the callback that cannot cross HTTP', () => {
       t.taxonomyApiId === 'department' ? termArchivePath(t.taxonomyApiId, t.slug) : null;
 
     const embedded = await resolveMenu(handle.db, 'main', { termHref });
-    const delivered = applyTermHrefs(await deliverMenu(handle.db, 'main'), termHref);
+    const delivered = applyTermHrefs((await deliverMenu(handle.db, 'main')).items, termHref);
 
     expect(delivered.map((e) => ({ label: e.label, href: e.href }))).toEqual(
       embedded.map((e) => ({ label: e.label, href: e.href })),
@@ -415,8 +415,8 @@ describe('menus, and the callback that cannot cross HTTP', () => {
 
     // The delivered menu still carries it — the CMS does not decide — and the consumer's resolver
     // is what declines it.
-    expect(await deliverMenu(handle.db, 'main')).toHaveLength(1);
-    expect(applyTermHrefs(await deliverMenu(handle.db, 'main'), () => null)).toEqual([]);
+    expect((await deliverMenu(handle.db, 'main')).items).toHaveLength(1);
+    expect(applyTermHrefs((await deliverMenu(handle.db, 'main')).items, () => null)).toEqual([]);
   });
 });
 

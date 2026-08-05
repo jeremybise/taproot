@@ -11,6 +11,7 @@ import type { StorageAdapter } from '../storage/types.js';
 import { parseJson } from '../db/values.js';
 import { repeaterRowFields } from '../validation/fields.js';
 import { parseVisibility, type VisibilityCondition } from '../validation/visibility.js';
+import { blockTag, itemTag, menuTag, normalizeCacheTags, typeTag } from './cacheTags.js';
 import { resolveItemQueries, type DeliveryQueryResult } from './itemQueries.js';
 import { blockTypeRegistry, getContentType } from './types.js';
 import { getItemByPath, getRedirect, visibleToPublic, type ContentItem } from './items.js';
@@ -157,9 +158,31 @@ export type DeliveryResult =
        * already holds when it comes to render one.
        */
       queries: Record<string, DeliveryQueryResult>;
+      /**
+       * Everything this page's content depends on, as cache tags.
+       *
+       * In the payload rather than only in a response header because **two** caches need it: the
+       * studio tags its own cached JSON, and a consumer tags the HTML it renders from that JSON.
+       * The site cannot derive this list — it would have to know that a breadcrumb came from an
+       * ancestor row, that a listing depends on a type rather than on the items it matched, and
+       * that a block was filled in from the library. The side that resolved the page knows all
+       * three, so it says so.
+       *
+       * Purely a caching hint: a consumer that ignores it renders exactly the same page and simply
+       * relies on the shared TTL to expire, which is what every site did before this existed.
+       */
+      cacheTags: string[];
     }
   | { kind: 'redirect'; to: string; status: number }
   | { kind: 'not_found' };
+
+/**
+ * The registry an item with no placed blocks gets instead of a database round trip.
+ *
+ * Frozen and shared rather than a fresh `new Map()` per request, so nothing can start writing into
+ * it and quietly depend on a map that is sometimes the real registry and sometimes not.
+ */
+const NO_BLOCK_TYPES: ReadonlyMap<string, { fields: FieldRow[] }> = new Map();
 
 export interface DeliveryOptions {
   /** Absolute origin for media URLs. */
@@ -268,7 +291,34 @@ export async function buildItemPayload(
    * It also has to run after `resolveItemBlocks`, so a query inside a reusable block is found at
    * all.
    */
-  const blockTypes = await blockTypeRegistry(db);
+  /**
+   * The block type registry, loaded only when something can consume it.
+   *
+   * This used to run unconditionally, which is two queries on **every** page view — a `content_types`
+   * lookup plus every one of their fields — including on a page with no blocks on it and no listing
+   * anywhere near it. Both were pure waste on the most common page there is.
+   *
+   * The gate is exact rather than approximate, and `findQueries` is what makes it so: the registry's
+   * only consumer is `resolveItemQueries`, which touches `blockTypes` in one branch — descending
+   * into a `block` field's placed instances. A top-level `query` field never reads it, and a
+   * repeater cannot hold one, because `query` is excluded from `REPEATER_SUB_FIELD_TYPES` and that
+   * exclusion is the recursion bound rather than an oversight. So "are there blocks actually placed
+   * on this item" is the whole question, and when the answer is no there is nothing the map could
+   * have been asked for.
+   *
+   * Checked against the item's **data**, not just its schema, and this is the one place that is the
+   * right way round. The usual rule points the other way — `reachableFields` walks the schema
+   * because an editor adds a block *after* the page has rendered and the control inside it has to
+   * work when they do. Nothing is being composed here: delivery answers what this item *is*, so a
+   * type that declares a block field nobody has filled in genuinely has no blocks to descend into.
+   */
+  const hasPlacedBlocks = contentType.fields.some((field) => {
+    if (field.type !== 'block') return false;
+    const value = data[field.api_id];
+    return Array.isArray(value) && value.length > 0;
+  });
+
+  const blockTypes = hasPlacedBlocks ? await blockTypeRegistry(db) : NO_BLOCK_TYPES;
   const resolvedQueries = await resolveItemQueries(db, contentType.fields, data, item.id, {
     blockTypes,
     includeUnpublished: options.includeUnpublished,
@@ -286,11 +336,10 @@ export async function buildItemPayload(
     collectReferences(result.fields, result.data, collected);
   }
 
-  const [media, references, terms, linkTargets] = await Promise.all([
+  const [media, { references, linkTargets }, terms] = await Promise.all([
     loadMedia(db, [...collected.mediaIds], options),
-    loadItemRefs(db, [...collected.itemIds]),
+    loadItemReferences(db, [...collected.itemIds], options),
     loadTermRefs(db, [...collected.termIds]),
-    loadLinkTargets(db, [...collected.itemIds], options),
   ]);
 
   /**
@@ -355,7 +404,50 @@ export async function buildItemPayload(
     },
     terms,
     queries: resolvedQueries.queries,
+    cacheTags: normalizeCacheTags([
+      itemTag(item.id),
+      typeTag(contentType.api_id),
+
+      // Every type this page lists, so publishing a new member invalidates the listing rather than
+      // only the members it already showed.
+      ...resolvedQueries.targetTypeApiIds.map(typeTag),
+
+      // A renamed or moved ancestor changes this page's breadcrumbs; a published or unpublished
+      // child changes its "in this section" list. Both are edits to a different row entirely.
+      ...breadcrumbs.map((crumb) => itemTag(crumb.id)),
+      ...children.map((child) => itemTag(child.id)),
+
+      // Relation targets and query matches: a card renders another item's title and date, so that
+      // item's edit has to reach this page.
+      ...Object.keys(references).map(itemTag),
+      ...resolvedQueries.items.map(({ item: row }) => itemTag(row.id)),
+
+      // The gap the ETag cannot see: a library entry edited in place changes what every referencing
+      // page renders without touching a single one of their rows.
+      ...collectReusableIds(resolvedData).map(blockTag),
+    ]),
   };
+}
+
+/**
+ * Reusable block library ids actually placed on this page.
+ *
+ * Read off the resolved payload rather than tracked through `resolveItemBlocks`, because a block
+ * field can sit inside a block type and the envelope is the same at every depth — `resolveItemBlocks`
+ * would have to report from a recursion that does not currently have one. A structural walk for
+ * `reusable.id` finds them wherever they ended up, which is the same argument `collectLoose` makes
+ * about ids inside blocks.
+ */
+function collectReusableIds(value: unknown, into = new Set<string>()): string[] {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectReusableIds(entry, into);
+  } else if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    const reusable = record.reusable as { id?: unknown } | undefined;
+    if (reusable && typeof reusable.id === 'string') into.add(reusable.id);
+    for (const entry of Object.values(record)) collectReusableIds(entry, into);
+  }
+  return [...into];
 }
 
 // ---------------------------------------------------------------------------
@@ -477,13 +569,37 @@ const TERM_PLACEHOLDER = '#term';
 export async function deliverMenu(
   db: Kysely<Database>,
   apiId: string,
-): Promise<DeliveryMenuItem[]> {
+): Promise<{ items: DeliveryMenuItem[]; cacheTags: string[] }> {
   const tree = await resolveMenu(db, apiId, {
     publishedOnly: true,
     termHref: () => TERM_PLACEHOLDER,
   });
 
-  return tree.map(toDeliveryMenuItem).filter((entry): entry is DeliveryMenuItem => entry !== null);
+  const items = tree
+    .map(toDeliveryMenuItem)
+    .filter((entry): entry is DeliveryMenuItem => entry !== null);
+
+  /**
+   * The tags come out of the same walk, never a second `resolveMenu`.
+   *
+   * Computing them separately was the obvious shape and doubles the cost of the one endpoint every
+   * page view already pays for — three more queries to make a caching improvement, which is a net
+   * loss on exactly the request it was meant to speed up.
+   *
+   * They are read off the *resolved* tree rather than the delivered one because the delivered shape
+   * deliberately drops the ids: a menu target is exposed to a consumer as a `path`, and a path is
+   * the thing that changes when a page moves, so it cannot identify what to purge.
+   */
+  const tags = [menuTag(apiId)];
+  const walk = (entries: ResolvedMenuItem[]) => {
+    for (const entry of entries) {
+      if (entry.contentItemId) tags.push(itemTag(entry.contentItemId));
+      if (entry.children.length > 0) walk(entry.children);
+    }
+  };
+  walk(tree);
+
+  return { items, cacheTags: normalizeCacheTags(tags) };
 }
 
 function toDeliveryMenuItem(entry: ResolvedMenuItem): DeliveryMenuItem | null {
@@ -756,26 +872,57 @@ function toDeliveryMedia(row: MediaRow, options: DeliveryOptions): DeliveryMedia
 }
 
 /**
- * Where each linked item currently lives, for rewriting rich-text hrefs.
+ * Relation targets and rich-text link targets, which outside a preview are one query.
  *
- * Separate from `loadItemRefs`, which always filters by visibility because a "related programmes"
- * list must never name a draft. A link is different in preview: an editor assembling a new section
- * links between drafts, and unwrapping every one of those would make the preview a worse picture of
- * the page than the editor already had. So this follows `includeUnpublished` — outside a preview it
- * filters exactly as relations do, and an unpublished target unwraps rather than sending a reader to
- * a page that is not there.
+ * These were two: one selecting `id, title, path, status` under `visibleToPublic` for the reference
+ * map, and one selecting `id, path` for rewriting rich-text hrefs. On a public page view they ran
+ * over the *same* id set with the *same* predicate and differed only in columns — a whole extra
+ * round trip to D1 for a strict subset of what the first one had already fetched.
+ *
+ * The two genuinely differ under a preview, and that difference is the reason they were written
+ * apart. A "related programmes" list must never name a draft, so references filter by visibility
+ * always. A link is different: an editor assembling a new section links between drafts, and
+ * unwrapping every one of those would make the preview a worse picture of the page than the editor
+ * already had — so link targets follow `includeUnpublished`.
+ *
+ * So the wider set is fetched only when it is actually wider. The tempting alternative — fetch every
+ * id once and decide visibility per row in JavaScript — is the one to avoid: `visibleToPublic` is a
+ * SQL predicate that knows about `scheduled` items whose moment has passed, and a second copy of
+ * that rule in JS would be free to disagree with the one every other read uses. Preview pays the
+ * extra query; a visitor does not, and a preview is `no-store` anyway.
  */
-async function loadLinkTargets(
+async function loadItemReferences(
   db: Kysely<Database>,
   ids: string[],
   options: DeliveryOptions,
-): Promise<Map<string, string>> {
-  if (ids.length === 0) return new Map();
+): Promise<{ references: Record<string, DeliveryItemRef>; linkTargets: Map<string, string> }> {
+  if (ids.length === 0) return { references: {}, linkTargets: new Map() };
 
-  let query = db.selectFrom('content_items').select(['id', 'path']).where('id', 'in', ids);
-  if (!options.includeUnpublished) query = query.where(visibleToPublic);
+  const visible = await db
+    .selectFrom('content_items')
+    .select(['id', 'title', 'path', 'status'])
+    /**
+     * The same predicate the item lookup uses, which is the point of it being one function: a
+     * consumer cannot be handed something a visitor could not otherwise see.
+     */
+    .where(visibleToPublic)
+    .where('id', 'in', ids)
+    .execute();
 
-  return new Map((await query.execute()).map((row) => [row.id, row.path]));
+  const references: Record<string, DeliveryItemRef> = {};
+  for (const row of visible) references[row.id] = toItemRef(row);
+
+  if (!options.includeUnpublished) {
+    return { references, linkTargets: new Map(visible.map((row) => [row.id, row.path])) };
+  }
+
+  const all = await db
+    .selectFrom('content_items')
+    .select(['id', 'path'])
+    .where('id', 'in', ids)
+    .execute();
+
+  return { references, linkTargets: new Map(all.map((row) => [row.id, row.path])) };
 }
 
 /**
@@ -823,30 +970,6 @@ function resolveLoose(value: unknown, targets: RichTextTargets): unknown {
   return value;
 }
 
-async function loadItemRefs(
-  db: Kysely<Database>,
-  ids: string[],
-): Promise<Record<string, DeliveryItemRef>> {
-  if (ids.length === 0) return {};
-
-  const rows = await db
-    .selectFrom('content_items')
-    .select(['id', 'title', 'path', 'status'])
-    /**
-     * Relation targets are filtered by visibility too.
-     *
-     * A "related programmes" list must not name a draft. This is the same predicate the item lookup
-     * uses, which is the point of it being one function: a consumer cannot be handed something a
-     * visitor could not otherwise see.
-     */
-    .where(visibleToPublic)
-    .where('id', 'in', ids)
-    .execute();
-
-  const out: Record<string, DeliveryItemRef> = {};
-  for (const row of rows) out[row.id] = toItemRef(row);
-  return out;
-}
 
 async function loadTermRefs(
   db: Kysely<Database>,

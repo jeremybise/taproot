@@ -19,6 +19,8 @@
  * request, which is the work the validator exists to avoid.
  */
 
+import { cacheTagHeader } from '@taprootcms/core';
+
 export interface DeliveryCache {
   etag: string;
   headers: Record<string, string>;
@@ -27,7 +29,7 @@ export interface DeliveryCache {
 /** Seconds a shared cache may serve a delivery response without revalidating. */
 const SHARED_MAX_AGE = 60;
 
-export function deliveryCache(updatedAt: string, id: string): DeliveryCache {
+export function deliveryCache(updatedAt: string, id: string, tags?: string[]): DeliveryCache {
   /**
    * A weak validator, and correctly so.
    *
@@ -37,6 +39,17 @@ export function deliveryCache(updatedAt: string, id: string): DeliveryCache {
    */
   const etag = `W/"${id}-${Date.parse(updatedAt) || 0}"`;
 
+  /**
+   * The tags this response can be purged by, when the payload supplied any.
+   *
+   * This is what turns the TTL from the *only* correctness mechanism into a backstop. Sixty seconds
+   * was chosen as the bound on how long a reusable block edit could go unnoticed, precisely because
+   * an `updated_at` validator cannot see one; a `block:` tag can, and so can the `type:` tag that a
+   * listing needs when a *different* item is published. The TTL stays as the answer for anything the
+   * tags miss and for a purge that never arrives.
+   */
+  const cacheTag = tags ? cacheTagHeader(tags) : undefined;
+
   return {
     etag,
     headers: {
@@ -45,6 +58,7 @@ export function deliveryCache(updatedAt: string, id: string): DeliveryCache {
       'cache-control': `public, max-age=0, s-maxage=${SHARED_MAX_AGE}`,
       // The response varies by who is asking — a key with a different scope could see differently.
       vary: 'authorization',
+      ...(cacheTag ? { 'cache-tag': cacheTag } : {}),
     },
   };
 }

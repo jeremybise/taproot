@@ -2,6 +2,7 @@ import {
   deleteItem,
   getContentType,
   getItem,
+  itemWriteTags,
   recordAuditEntry,
   updateItem,
 } from '@taprootcms/core';
@@ -83,6 +84,8 @@ export const PATCH = handle(
       });
     }
 
+    taproot.invalidate(itemWriteTags(item.id, contentType.api_id));
+
     return json({ item });
   },
   { role: 'contributor' },
@@ -137,6 +140,8 @@ export const POST = handle(
     const contentType = await getContentType(taproot.db.db, item.content_type_id);
     const destination = contentType ? `/admin/content/type/${contentType.api_id}` : '/admin/content';
 
+    if (contentType) taproot.invalidate(itemWriteTags(id, contentType.api_id));
+
     return context.redirect(
       `${destination}?${new URLSearchParams({ deleted: item.title })}`,
       303,
@@ -147,6 +152,19 @@ export const POST = handle(
 
 export const DELETE = handle(
   async ({ context, taproot }) => {
+    /**
+     * Read before deleting, so the tags survive the row.
+     *
+     * `itemWriteTags` needs the content type's `api_id`, and after `deleteItem` there is nothing
+     * left to look it up from. Same shape as the audit log copying `subject_label` at write time
+     * rather than joining: what a record needs about a deleted thing has to be taken while it
+     * exists.
+     */
+    const doomed = await getItem(taproot.db.db, context.params.id!);
+    const contentType = doomed
+      ? await getContentType(taproot.db.db, doomed.content_type_id)
+      : undefined;
+
     try {
       await deleteItem(taproot.db, context.params.id!);
     } catch (error) {
@@ -155,6 +173,11 @@ export const DELETE = handle(
       // the refusal is about state, not about the request.
       return apiError(409, error instanceof Error ? error.message : 'Could not delete that item.');
     }
+
+    if (doomed && contentType) {
+      taproot.invalidate(itemWriteTags(doomed.id, contentType.api_id));
+    }
+
     return noContent();
   },
   { role: 'editor' },

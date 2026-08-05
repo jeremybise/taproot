@@ -1,4 +1,4 @@
-import { getContentType, listItems, type FieldRow } from '@taprootcms/core';
+import { getContentType, listItemSummaries, type FieldRow } from '@taprootcms/core';
 import type { Kysely } from 'kysely';
 
 import { reachableFields, walkStoredValues, type FieldRegistries } from './fieldTree.js';
@@ -103,7 +103,7 @@ export async function relationTargetsForFields(
        */
       if (!contentType) return null;
 
-      const { items, total } = await listItems(db, { contentTypeId, limit: FIRST_PAGE });
+      const { items, total } = await listItemSummaries(db, { contentTypeId, limit: FIRST_PAGE });
       const options = items.map(toOption);
 
       const missing = [...(selectedByTarget.get(contentTypeId) ?? [])].filter(

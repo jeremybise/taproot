@@ -170,8 +170,70 @@ that is not there.
 
 ## Caching
 
-Delivery responses carry an `ETag` and `s-maxage=60`. A shared cache in front of your site absorbs
-most of the load, and a conditional request costs a 304 with no body.
+Delivery responses carry an `ETag`, `s-maxage=60`, and a `Cache-Tag` header. A conditional request
+costs a 304 with no body — and, on the CMS side, no page resolution at all: the validator is answered
+from a single indexed lookup rather than by building the payload and discarding it.
+
+**A shared cache in front of your site is what makes any of this matter, and on Cloudflare you have
+to ask for one.** Cloudflare does not cache HTML or JSON by default — its default cache is keyed on
+file extension — and a Worker's own response is never cached unless the Worker opts in. So
+`s-maxage` is correct HTTP that nothing acts on until you enable it:
+
+```jsonc
+// wrangler.jsonc
+{
+  "cache": { "enabled": true }
+}
+```
+
+With that, Cloudflare checks the cache *before* invoking your Worker. A hit costs no CPU, makes no
+request to the CMS, and touches no database anywhere in the system; concurrent requests for the same
+URL collapse into one render. `apps/web/wrangler.jsonc` in the Taproot repository is a worked
+example.
+
+### Cache tags
+
+Every `resolve` response tells you what the page depends on, in the payload as well as in the header:
+
+```json
+{
+  "kind": "item",
+  "cacheTags": ["item:019f…", "type:page", "item:019f…", "block:019f…"]
+}
+```
+
+They are in the payload because *you* need them: your site renders HTML from this response and has to
+tag that document, and it cannot work out the dependencies itself. A page depends on more than its
+own row — a renamed ancestor changes its breadcrumbs, a published child changes its "in this section"
+list, a reusable block edited in the library changes its content without touching the page at all,
+and a listing depends on the *type* rather than on the items it happened to match. The CMS knows all
+four; your site does not.
+
+Re-emit them on your own response and you can purge by tag later:
+
+```astro
+---
+const result = await taproot.resolve(path);
+if (result.kind === 'item') {
+  Astro.response.headers.set('cache-tag', result.cacheTags.join(','));
+}
+---
+```
+
+Ignoring `cacheTags` entirely is fine and is what every site did before they existed — you fall back
+to `s-maxage` expiring, which is the backstop either way.
+
+### What the ETag does not cover
+
+The validator is built from the item's `updated_at`, so it notices an edit, a publish, a status
+change, a move, and a release applying a staged version. It cannot notice a **reusable block edited
+in the library**, because that changes what the page renders without touching the page's row. That is
+exactly what the `block:` tag is for, and `s-maxage=60` is the bound if you are not purging.
+
+For the same reason, do not build a response cache keyed on the ETag in your own client. It would
+work right up until somebody edits a shared block, at which point the tag keeps matching and your
+copy goes stale with no expiry at all. `@taprootcms/astro` deduplicates *concurrent* requests for one
+resource within a render and deliberately stops there.
 
 Previews are always `no-store`. Do not cache a response you fetched with a preview token — see
 [Preview and types](/build/preview-and-types/).

@@ -3,7 +3,7 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
 import MenuItemList from '../../islands/MenuItemList.tsx';
 import {
   getMenu,
-  listItems,
+  listItemSummaries,
   listMenuItems,
   listTaxonomies,
   listTerms,
@@ -35,7 +35,7 @@ const resolvedById = new Map(flattenResolved(resolved).map((node) => [node.id, n
 
 // Candidate link targets. Capped: a picker listing thousands of pages is unusable anyway, and the
 // menus that matter are built from a site's top-level structure.
-const { items: pages } = await listItems(taproot.db.db, { limit: 200 });
+const { items: pages } = await listItemSummaries(taproot.db.db, { limit: 200 });
 const taxonomies = await listTaxonomies(taproot.db.db);
 const termChoices = (
   await Promise.all(

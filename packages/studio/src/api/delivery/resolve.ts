@@ -1,6 +1,7 @@
 import {
   PREVIEW_PARAM,
   buildItemPayload,
+  getItemVersionByPath,
   normalizePath,
   resolveDelivery,
   resolvePreviewToken,
@@ -72,6 +73,40 @@ export const GET = handleScoped(
       });
     }
 
+    /**
+     * A token-bearing URL is never cached, even when the answer is published content.
+     *
+     * The response is public, so this is not about the body — it is that the URL is a cache key and
+     * this one carries a credential. A shared cache holding entries under it is a credential
+     * sitting in infrastructure that has no reason to hold one.
+     */
+    const noStore = Boolean(preview);
+
+    /**
+     * Answer a conditional request **before** resolving anything.
+     *
+     * This check used to sit at the bottom, after `resolveDelivery` had run every query and built
+     * the whole payload, and it threw the body away on a match. That saved a payload — and a payload
+     * is the part Cloudflare does not charge for, while D1 bills rows read. A 304 cost exactly what
+     * a 200 did, which is the opposite of what a validator is for.
+     *
+     * One indexed lookup of `id` and `updated_at` answers it instead, because those two are the only
+     * inputs `deliveryCache` has. The full resolution below still recomputes the same tag for a
+     * request that turns out to need a body; there is no second definition of the validator, and
+     * `deliveryCache` stays the only place it is spelled.
+     *
+     * Skipped entirely under a preview token, which is `no-store` — a client holding a validator for
+     * unpublished content is exactly what that header exists to prevent.
+     */
+    if (!noStore && context.request.headers.get('if-none-match')) {
+      const version = await getItemVersionByPath(taproot.db.db, path);
+      if (version) {
+        const cheap = deliveryCache(version.updatedAt, version.id);
+        const unchanged = notModified(context.request, cheap.etag);
+        if (unchanged) return unchanged;
+      }
+    }
+
     const result = await resolveDelivery(taproot.db.db, path, {
       origin: new URL(context.request.url).origin,
       storage: taproot.storage,
@@ -86,17 +121,26 @@ export const GET = handleScoped(
        */
     });
 
-    /**
-     * A token-bearing URL is never cached, even when the answer is published content.
-     *
-     * The response is public, so this is not about the body — it is that the URL is a cache key and
-     * this one carries a credential. A shared cache holding entries under it is a credential
-     * sitting in infrastructure that has no reason to hold one.
-     */
-    const noStore = Boolean(preview);
-
     if (result.kind === 'not_found') {
-      return json({ kind: 'not_found' }, { status: 404 });
+      /**
+       * A 404 is cacheable too, and used to carry no headers at all.
+       *
+       * Every crawler on a dead URL, every stale inbound link, and every scanner probing for
+       * `/wp-login.php` paid a full item lookup *and* a redirect lookup, repeatedly, because nothing
+       * downstream was allowed to remember the answer. Kept short: a 404 is the one answer most
+       * likely to stop being true, since it becomes a real page the moment somebody publishes one at
+       * that path.
+       */
+      return json(
+        { kind: 'not_found' },
+        {
+          status: 404,
+          headers: {
+            'cache-control': noStore ? 'no-store' : 'public, max-age=0, s-maxage=30',
+            vary: 'authorization',
+          },
+        },
+      );
     }
 
     if (result.kind === 'redirect') {
@@ -107,9 +151,16 @@ export const GET = handleScoped(
       });
     }
 
-    const cache = deliveryCache(result.item.updatedAt, result.item.id);
-    const unchanged = notModified(context.request, cache.etag);
-    if (unchanged && !noStore) return unchanged;
+    /**
+     * The validator for the body being sent. There is no `notModified` check here any more, and its
+     * absence is deliberate rather than an omission.
+     *
+     * Reaching this line with `kind: 'item'` means `getItemVersionByPath` above found the same row
+     * under the same visibility predicate, so a matching `if-none-match` has already returned 304
+     * without resolving anything. A second check here could only ever be false, and a dead branch
+     * that looks load-bearing is how the next person concludes the cheap path is optional.
+     */
+    const cache = deliveryCache(result.item.updatedAt, result.item.id, result.cacheTags);
 
     return json(result, {
       headers: noStore ? { ...cache.headers, 'cache-control': 'no-store' } : cache.headers,

@@ -1,6 +1,7 @@
 export * from './paths.js';
 export * from './types.js';
 export * from './itemSort.js';
+export * from './cacheTags.js';
 export * from './derivedIndex.js';
 export * from './items.js';
 export * from './itemQueries.js';

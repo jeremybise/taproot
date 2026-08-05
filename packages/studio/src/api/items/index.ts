@@ -2,6 +2,7 @@ import {
   createItem,
   getContentType,
   isItemSort,
+  itemWriteTags,
   listItems,
   termIdsForBranch,
 } from '@taprootcms/core';
@@ -118,6 +119,15 @@ export const POST = handle(
       seo: input.seo,
       userId: user.id,
     });
+
+    /**
+     * A new item invalidates listings, not just its own URL — which nothing was caching yet.
+     *
+     * `item:` is the near-useless half here and `type:` is the whole point: publishing a new event
+     * has to reach every page showing "the six soonest", and those pages' cached copies name the six
+     * that existed before this one did.
+     */
+    taproot.invalidate(itemWriteTags(item.id, contentType.api_id));
 
     return json({ item }, { status: 201 });
   },

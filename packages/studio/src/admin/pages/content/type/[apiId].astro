@@ -6,7 +6,7 @@ import Timestamp from '../../../components/Timestamp.astro';
 import {
   countItemsByStatus,
   getContentTypeByApiId,
-  listItems,
+  listItemSummaries,
   termIdsForBranch,
 } from '@taprootcms/core';
 import { taxonomyFilterOptions } from '../../../termOptions.js';
@@ -67,7 +67,7 @@ const termIds = termFilter ? await termIdsForBranch(taproot.db.db, termFilter) :
 const facetFilters = { contentTypeId: contentType.id, search: search || undefined, termIds };
 
 const [{ items, total }, statusCounts] = await Promise.all([
-  listItems(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 200 }),
+  listItemSummaries(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 200 }),
   countItemsByStatus(taproot.db.db, facetFilters),
 ]);
 

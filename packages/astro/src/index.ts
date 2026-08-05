@@ -108,8 +108,44 @@ export function createTaprootClient(options: TaprootClientOptions) {
   const headers: Record<string, string> = {};
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
 
+  /**
+   * In-flight requests, so one render never asks the CMS the same question twice.
+   *
+   * A layout and a component that both want the main menu are two `await taproot.menu('main')` calls
+   * with nothing between them, and without this they are two HTTP requests — a second round trip for
+   * an answer already on its way. Keyed by URL, which is the whole of what identifies a delivery
+   * read: every one of these is a GET whose only inputs are its path and query.
+   *
+   * **This deduplicates concurrent work; it is not a cache.** The entry is dropped as soon as the
+   * request settles, so a second call after the first has returned goes to the network again. That
+   * boundary is deliberate:
+   *
+   * A response cache here is the tempting next step and it is the wrong layer. Keeping bodies keyed
+   * by ETag would work — a 304 does mean "your copy is current" — right up against the one thing the
+   * validator is documented as unable to see: a reusable block edited in the library changes what a
+   * page renders without touching the page's row, so the ETag keeps matching and a cached body would
+   * stay stale with **no bound at all**. `s-maxage` is what bounds that today, and re-implementing
+   * expiry, revalidation and eviction here would be a worse HTTP cache sitting in front of a working
+   * one. The edge cache is where that belongs, and `Cache-Tag` is how it is invalidated.
+   *
+   * A module-level map is right despite that being per-isolate rather than per-request: entries live
+   * only as long as a request is in flight, so nothing crosses between two visitors' renders.
+   */
+  const inFlight = new Map<string, Promise<unknown>>();
+
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await doFetch(`${base}/api/taproot/delivery${path}`, {
+    const url = `${base}/api/taproot/delivery${path}`;
+
+    const existing = inFlight.get(url);
+    if (existing) return existing as Promise<T>;
+
+    const pending = send<T>(url, init).finally(() => inFlight.delete(url));
+    inFlight.set(url, pending);
+    return pending;
+  }
+
+  async function send<T>(url: string, init: RequestInit): Promise<T> {
+    const response = await doFetch(url, {
       ...init,
       headers: { ...headers, ...(init.headers ?? {}) },
     });

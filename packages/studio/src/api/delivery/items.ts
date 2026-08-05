@@ -1,7 +1,7 @@
 import {
   getContentTypeByApiId,
   getTaxonomyByApiId,
-  listItems,
+  listItemSummaries,
   termIdsForBranch,
   type ContentStatus,
   type DeliveryTermRef,
@@ -94,7 +94,7 @@ export const GET = handleScoped(
     const limit = Math.min(Number(params.get('limit') ?? 50) || 50, 200);
     const offset = Math.max(Number(params.get('offset') ?? 0) || 0, 0);
 
-    const { items, total } = await listItems(db, {
+    const { items, total } = await listItemSummaries(db, {
       contentTypeId,
       termIds,
       visibleOnly: true,

@@ -56,3 +56,53 @@ describe('createTaprootClient', () => {
     expect(seen).not.toContain('//api/taproot');
   });
 });
+
+/**
+ * Deduplication, which is about concurrency and deliberately not about caching.
+ *
+ * A layout and a component both asking for the main menu is the ordinary case, and two round trips
+ * for one answer is the cost. The line this holds is the second test: once a request has settled the
+ * next one goes to the network, because keeping the body would mean re-implementing expiry and
+ * revalidation in front of a cache that already does both — and would have no bound at all on the
+ * one staleness the ETag cannot detect.
+ */
+describe('request deduplication', () => {
+  function countingClient() {
+    let calls = 0;
+    const client = createTaprootClient({
+      url: 'https://cms.example.edu',
+      fetch: async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ items: [] }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    return { client, calls: () => calls };
+  }
+
+  it('makes one request when the same resource is asked for concurrently', async () => {
+    const { client, calls } = countingClient();
+
+    await Promise.all([client.menu('main'), client.menu('main'), client.menu('main')]);
+
+    expect(calls()).toBe(1);
+  });
+
+  it('does not deduplicate different resources', async () => {
+    const { client, calls } = countingClient();
+
+    await Promise.all([client.menu('main'), client.menu('footer')]);
+
+    expect(calls()).toBe(2);
+  });
+
+  it('goes back to the network once a request has settled, because this is not a cache', async () => {
+    const { client, calls } = countingClient();
+
+    await client.menu('main');
+    await client.menu('main');
+
+    expect(calls()).toBe(2);
+  });
+});

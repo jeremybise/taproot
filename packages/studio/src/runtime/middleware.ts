@@ -73,5 +73,50 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (refreshedCookie) {
     response.headers.append('set-cookie', refreshedCookie);
   }
+
+  /**
+   * Purge after the response, which is after the write committed.
+   *
+   * The ordering is the correctness property, and it is the same one `batchWrite` enforces for
+   * reads: purging inside a write path would clear the cache while the old row was still the
+   * committed one, so a request arriving in between would repopulate the cache with exactly the
+   * content the purge was meant to remove. There is no lock to take here — only an order.
+   */
+  await purgeInvalidated(context, taproot.invalidated);
+
   return response;
 });
+
+/**
+ * Clear cached responses carrying any of these tags.
+ *
+ * **Never throws, and never fails the request** — the same rule `recordAuditEntry` follows, and for
+ * the same reason: the write this describes has already happened and already been reported as
+ * successful. Turning a cache-maintenance problem into a 500 would tell an editor their save failed
+ * when it did not, and they would do it again. A purge that does not land costs staleness bounded by
+ * `s-maxage`, which is exactly the behaviour every deployment had before tags existed.
+ *
+ * The API lives on the request's `ExecutionContext` and exists only under Workers Caching. Under
+ * `npm run dev` there is no Cloudflare cache to purge and nothing here runs, which is correct rather
+ * than degraded: nothing cached the response either.
+ */
+async function purgeInvalidated(
+  context: { locals: unknown },
+  tags: Set<string>,
+): Promise<void> {
+  if (tags.size === 0) return;
+
+  const cache = (
+    context.locals as {
+      runtime?: { ctx?: { cache?: { purge?: (options: { tags: string[] }) => Promise<unknown> } } };
+    }
+  ).runtime?.ctx?.cache;
+
+  if (!cache?.purge) return;
+
+  try {
+    await cache.purge({ tags: [...tags] });
+  } catch (error) {
+    console.error('[taproot] failed to purge cache tags', error);
+  }
+}

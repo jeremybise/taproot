@@ -1,6 +1,7 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
-import { taproot } from '../taproot.ts';
+import { applyTermHrefs } from '@taprootcms/astro';
+import { taproot, termHref } from '../taproot.ts';
 
 export const prerender = false;
 
@@ -10,14 +11,30 @@ export const prerender = false;
  * `depth` and `parent_id` are gone from the delivered summary — they are the CMS's tree bookkeeping
  * rather than anything a site needs — so "top level" is read off the path, which is the property a
  * visitor can see anyway. One segment means one level down from the root.
+ *
+ * Both requests go out together, for the reason spelled out in `[...path].astro`: the layout no
+ * longer fetches its own navigation, because a layout's frontmatter cannot start until the page's
+ * has finished.
  */
-const { items } = await taproot.items({ limit: 100 });
+const [{ items }, nav] = await Promise.all([
+  taproot.items({ limit: 100 }),
+  taproot.menu('main').then((entries) => applyTermHrefs(entries, termHref)),
+]);
+
 const topLevel = items.filter((item) => item.path.split('/').filter(Boolean).length === 1);
 
 const cmsUrl = import.meta.env.TAPROOT_API_URL ?? 'http://localhost:4321';
+
+/**
+ * The home page was the one page on this site a shared cache was never allowed to hold.
+ *
+ * Every other route sets this and this one did not, so the most-requested URL on the site was also
+ * the only one paying full price on every visit.
+ */
+Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
 ---
 
-<SiteLayout title="Home">
+<SiteLayout title="Home" nav={nav}>
   <h1>Riverbend College</h1>
   <p>
     A demo site running on Taproot. Nothing here is stored in this app — every page is fetched from

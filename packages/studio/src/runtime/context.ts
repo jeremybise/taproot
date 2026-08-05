@@ -40,6 +40,22 @@ export interface TaprootContext {
   principal?: Principal;
   /** Raw session token, needed to invalidate on sign-out. */
   sessionToken?: string;
+  /**
+   * Declare that a write has invalidated some cached responses.
+   *
+   * Routes call this; the **middleware** performs the purge once, after the response is produced.
+   * Two reasons it is split that way. The Workers cache API hangs off the request's
+   * `ExecutionContext`, which no service in core can see and which does not exist under Node at all
+   * — keeping the one call in the middleware means exactly one place knows that. And a purge must
+   * not run before the write it describes has committed, which at a route boundary is a thing you
+   * have to remember and after `next()` is a thing you cannot get wrong.
+   *
+   * Accumulating rather than purging per call, so a request that touches several items sends one
+   * purge instead of one per item.
+   */
+  invalidate(tags: Iterable<string>): void;
+  /** What `invalidate` has collected. Read by the middleware; not for routes. */
+  readonly invalidated: Set<string>;
 }
 
 export interface RuntimeBindings {
@@ -82,11 +98,17 @@ export async function createContext(
   env: Record<string, string | undefined>,
   bindings: RuntimeBindings,
 ): Promise<TaprootContext> {
+  const invalidated = new Set<string>();
+
   return {
     db: await resolveDb(env, bindings),
     storage: storageFromEnv(env, bindings),
     auth: resolveAuthConfig(env),
     mail: resolveMailer(env),
+    invalidated,
+    invalidate(tags) {
+      for (const tag of tags) invalidated.add(tag);
+    },
   };
 }
 

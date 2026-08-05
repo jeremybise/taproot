@@ -7,7 +7,7 @@ import {
   countItemsByStatus,
   dueForPublishing,
   listContentTypes,
-  listItems,
+  listItemSummaries,
   termIdsForBranch,
 } from '@taprootcms/core';
 import { taxonomyFilterOptions } from '../../termOptions.js';
@@ -46,7 +46,7 @@ const facetFilters = {
 };
 
 const [{ items, total }, statusCounts] = await Promise.all([
-  listItems(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 100 }),
+  listItemSummaries(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 100 }),
   countItemsByStatus(taproot.db.db, facetFilters),
 ]);
 

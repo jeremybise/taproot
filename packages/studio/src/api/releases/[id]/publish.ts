@@ -1,4 +1,4 @@
-import { getRelease, publishRelease } from '@taprootcms/core';
+import { SITE_TAG, getRelease, publishRelease } from '@taprootcms/core';
 
 import { apiError, handle, json } from '../../_shared.js';
 
@@ -27,6 +27,22 @@ export const POST = handle(
 
     const isForm = (context.request.headers.get('content-type') ?? '').includes('form');
     const result = await publishRelease(taproot.db, id, { actor: user });
+
+    /**
+     * A published release purges everything, deliberately, rather than tagging item by item.
+     *
+     * `published` carries `{ id, title, path }` and not the content type each item belongs to, so
+     * the `type:` tags that listings depend on are not reachable from here without a second query
+     * per item — and a release is the one operation whose whole purpose is that many pages change
+     * together. The coarse purge is also the accurate one: a launch is exactly the moment when
+     * "which pages did this affect" is answered by "assume all of them".
+     *
+     * Safe because releases are published rarely and by hand, which is not true of an item save —
+     * that is why `itemWriteTags` is precise and this is not. Only on a successful publish: a
+     * pre-flight refusal wrote nothing, and flushing the cache for a no-op would be a cold site
+     * bought with an error message.
+     */
+    if (result.published.length > 0) taproot.invalidate([SITE_TAG]);
 
     if (isForm) {
       const params = new URLSearchParams();

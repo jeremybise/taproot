@@ -307,22 +307,102 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
   return q;
 }
 
+/**
+ * Every column except the two JSON blobs.
+ *
+ * Spelled out rather than derived, because Kysely needs literals to type the result — and because
+ * a column added to `content_items` should have to be considered here rather than silently join a
+ * projection that exists to be narrow. `data` and `seo` are the only deliberate omissions.
+ */
+const ITEM_SUMMARY_COLUMNS = [
+  'id',
+  'content_type_id',
+  'slug',
+  'parent_id',
+  'path',
+  'depth',
+  'position',
+  'status',
+  'title',
+  'published_at',
+  'publish_at',
+  'created_by',
+  'updated_by',
+  'created_at',
+  'updated_at',
+] as const;
+
+/** An item without its field values — what a list of links needs and no more. */
+export type ContentItemSummary = Omit<ContentItemRow, 'data' | 'seo'>;
+
+/**
+ * The count and the page, which are independent and used to be awaited one after the other.
+ *
+ * Nothing about the total depends on the rows or the rows on the total, so the second `await` was
+ * pure serial latency — and against D1 that is a full round trip to another region, on every listing
+ * on every page. Same reasoning as the `Promise.all` over the reference loaders in `delivery.ts`.
+ *
+ * `applyItemFilters` is shared byte for byte with the status facets and stays typed pre-`select`,
+ * so the predicate cannot drift between the count and the page it counts.
+ */
+async function listWith<T>(
+  db: Kysely<Database>,
+  options: ListItemsOptions,
+  page: (query: ReturnType<typeof applyItemFilters>) => Promise<T[]>,
+): Promise<{ rows: T[]; total: number }> {
+  const query = applyItemFilters(db.selectFrom('content_items'), options);
+
+  const [totalRow, rows] = await Promise.all([
+    query.select((eb) => eb.fn.countAll<number>().as('count')).executeTakeFirst(),
+    page(query),
+  ]);
+
+  return { rows, total: Number(totalRow?.count ?? 0) };
+}
+
 export async function listItems(
   db: Kysely<Database>,
   options: ListItemsOptions = {},
 ): Promise<{ items: ContentItem[]; total: number }> {
-  const query = applyItemFilters(db.selectFrom('content_items'), options);
+  const { rows, total } = await listWith(db, options, (query) =>
+    applyItemSort(query.selectAll(), options.sort ?? 'path', options.sortField)
+      .limit(options.limit ?? 50)
+      .offset(options.offset ?? 0)
+      .execute(),
+  );
 
-  const totalRow = await query
-    .select((eb) => eb.fn.countAll<number>().as('count'))
-    .executeTakeFirst();
+  return { items: rows.map(hydrateItem), total };
+}
 
-  const rows = await applyItemSort(query.selectAll(), options.sort ?? 'path', options.sortField)
-    .limit(options.limit ?? 50)
-    .offset(options.offset ?? 0)
-    .execute();
+/**
+ * The same listing without `data` and `seo`.
+ *
+ * For every caller that renders titles and links: the delivery API's `/items`, which returns seven
+ * scalar fields, and the menu editor's candidate list. Those were reading and JSON-parsing the full
+ * content of up to 200 items to show their names — the whole body of every page on the site, over
+ * the wire from D1 and through `hydrateItem`, to render a list of anchors.
+ *
+ * Not a flag on `listItems`, because the two differ in *return type* and a boolean that changes what
+ * a function gives back is the kind of thing a caller gets wrong once and never notices — the fields
+ * would simply be `undefined`. A caller that needs field values asks for them by calling the other
+ * function.
+ */
+export async function listItemSummaries(
+  db: Kysely<Database>,
+  options: ListItemsOptions = {},
+): Promise<{ items: ContentItemSummary[]; total: number }> {
+  const { rows, total } = await listWith(db, options, (query) =>
+    applyItemSort(
+      query.select([...ITEM_SUMMARY_COLUMNS]),
+      options.sort ?? 'path',
+      options.sortField,
+    )
+      .limit(options.limit ?? 50)
+      .offset(options.offset ?? 0)
+      .execute(),
+  );
 
-  return { items: rows.map(hydrateItem), total: Number(totalRow?.count ?? 0) };
+  return { items: rows, total };
 }
 
 /**
@@ -494,6 +574,40 @@ export async function getItemByPath(
 
   const row = await query.executeTakeFirst();
   return row ? hydrateItem(row) : undefined;
+}
+
+/**
+ * Just enough of an item to build its cache validator: which item a path names, and its version.
+ *
+ * The delivery route used to answer a conditional request by resolving the whole page — every
+ * query, every loader, the full payload — and then discarding the body when the ETag matched. That
+ * saves bytes, and bytes are the part Cloudflare does not charge for; D1 bills rows *read*, so a
+ * 304 cost exactly what a 200 did. This is the one indexed lookup that answers the question the
+ * validator actually asks.
+ *
+ * It has to share `visibleToPublic` with `getItemByPath`, and that is the whole reason it lives
+ * beside it rather than in the route: a validator computed under a different visibility rule than
+ * the payload would let a conditional request 304 against a version a visitor may not see.
+ *
+ * `updated_at` is the version because every path that changes what a page renders stamps it —
+ * an edit, a publish, a status change, a cascading move, a release applying a staged version. The
+ * one thing it does not cover is a reusable block edited in the library, which is unchanged here and
+ * bounded by the shared TTL; see `deliveryCache`.
+ */
+export async function getItemVersionByPath(
+  db: Kysely<Database>,
+  path: string,
+  options: { publishedOnly?: boolean } = {},
+): Promise<{ id: string; updatedAt: string } | undefined> {
+  let query = db
+    .selectFrom('content_items')
+    .select(['id', 'updated_at'])
+    .where('path', '=', normalizePath(path));
+
+  if (options.publishedOnly !== false) query = query.where(visibleToPublic);
+
+  const row = await query.executeTakeFirst();
+  return row ? { id: row.id, updatedAt: row.updated_at } : undefined;
 }
 
 /** Look up a redirect for a path that no longer resolves. */

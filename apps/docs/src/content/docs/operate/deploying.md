@@ -154,13 +154,50 @@ build time. See [Getting started](/build/getting-started/#one-module-for-the-con
 misconfiguration presents as a 401 from the delivery API with the key visibly set, which is a bad
 half hour if you have not seen it before.
 
+## Caching
+
+Both deployments ship with caching enabled, and it is worth knowing why the config line exists rather
+than only that it does:
+
+```jsonc
+// wrangler.jsonc, in both apps
+{
+  "cache": { "enabled": true }
+}
+```
+
+**Cloudflare caches neither HTML nor JSON by default** — its default cache is keyed on file
+extension — and a Worker's own response is never cached unless the Worker opts in. Without that
+block, the `cache-control: public, max-age=0, s-maxage=60` on every delivery response and every
+rendered page is correct HTTP that nothing acts on. With it, Cloudflare checks the cache *before*
+invoking the Worker: a hit costs no CPU, makes no request to the CMS, touches no database, and
+collapses concurrent requests for the same URL into one.
+
+Admin screens bypass it automatically (they set `Set-Cookie`), and so does every preview and draft
+(`no-store`). Delivery responses also carry a `Cache-Tag`, and the CMS purges the tags a write
+touched — so a published page reaches visitors without waiting out the TTL. See
+[The client](/build/the-client/#cache-tags) for what a consumer does with the same tags.
+
+The CMS also runs with `"placement": { "mode": "smart" }`, which puts the Worker near D1 rather than
+near the visitor. That is right for the CMS, where resolving a page is a chain of dependent database
+queries, and deliberately *not* set on the site, which makes one round of parallel requests and then
+renders.
+
+:::caution
+A **cron trigger** does not pass through the request path, so an item published by the scheduler is
+bounded by the TTL rather than purged. Same asymmetry Settings → System already documents about
+scheduling: it fails stale for a minute, never wrong forever.
+:::
+
 ## Media URLs
 
-Out of the box, uploads are served by the CMS Worker itself. That works and costs a Worker request
-per image.
+Out of the box, uploads are served by the CMS Worker itself. That works, and it costs a Worker
+invocation, an R2 read **and a database row read per image** — on a page with a dozen images, that is
+a dozen of each.
 
 Put a **custom domain on the R2 bucket** and set `TAPROOT_MEDIA_URL` to it, and images come from the
-edge instead. Recommended, not required.
+edge instead, with none of the three. Strongly recommended for anything with real traffic; still not
+required, because a deployment without it works rather than breaking.
 
 The delivery API returns **absolute** image URLs either way, so the site never needs to know where
 media lives.

@@ -1,10 +1,23 @@
 ---
-import { applyTermHrefs } from '@taprootcms/astro';
-import { taproot, termHref } from '../taproot.ts';
+import type { MenuLink } from '@taprootcms/astro';
 
 interface Props {
   title: string;
   description?: string | null;
+  /**
+   * The site navigation, fetched by the **page** and passed in.
+   *
+   * This layout used to fetch it itself, which read better and cost every visitor a serial round
+   * trip. Astro runs a page's frontmatter to completion before the layout's, so `await taproot.menu()`
+   * here could not start until `await taproot.resolve()` up there had finished — two hops to the CMS
+   * one after the other, on every page view, for two requests that have nothing to do with each
+   * other. Fetching in the page lets them go out together under one `Promise.all`.
+   *
+   * Required rather than optional-with-a-fallback. An optional prop would leave the serial path in
+   * place for anyone who omitted it, and it would be omitted exactly by whoever had not read this
+   * comment — the same argument as there being one preview control rather than two.
+   */
+  nav: MenuLink[];
   breadcrumbs?: { label: string; href: string }[];
   /** Absolute URL of the social card image. Relative URLs are ignored by every crawler. */
   ogImage?: string | null;
@@ -17,6 +30,7 @@ interface Props {
 const {
   title,
   description,
+  nav,
   breadcrumbs = [],
   ogImage = null,
   ogImageAlt = null,
@@ -28,21 +42,6 @@ const siteName = 'Riverbend College';
 // The `<title>` carries the site name; `og:title` does not, because platforms render the site name
 // separately underneath and would otherwise show it twice.
 const pageTitle = `${title} · ${siteName}`;
-
-/**
- * The site navigation, fetched from the CMS on every request.
- *
- * Published-only, so an unpublished page leaves the navigation without anyone editing the menu, and
- * a moved page keeps its place because the menu stores a reference rather than a URL. An empty or
- * missing menu renders no nav at all rather than an empty landmark.
- *
- * **Term entries arrive unresolved and this site routes them.** `resolveMenu` took a `termHref`
- * callback, and a function cannot cross an HTTP boundary — so the delivery API returns the term
- * itself and `applyTermHrefs` applies the same policy here that used to be passed in. Which
- * taxonomies deserve public pages is a fact about the routes this site serves, so it belongs on
- * this side of the wire; see `taproot.ts`.
- */
-const nav = applyTermHrefs(await taproot.menu('main'), termHref);
 
 const path = Astro.url.pathname;
 const isCurrent = (href: string) => path === href;

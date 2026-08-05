@@ -31,6 +31,15 @@ export * from './content/menuHrefs.js';
  * renders nothing and reports nothing.
  */
 export * from './content/queryKeys.js';
+/**
+ * The cache-tag vocabulary, shared by the two caches that use it.
+ *
+ * The studio tags its cached delivery JSON; a consumer tags the HTML it renders from that JSON, and
+ * mounts a purge endpoint the CMS calls. Both have to spell a tag identically or the purge succeeds,
+ * reports success, and clears nothing — a failure with no symptom until somebody notices the site
+ * showing last week's front page. Importless, so it costs a consumer's bundle nothing.
+ */
+export * from './content/cacheTags.js';
 export type { ItemSort } from './content/itemSort.js';
 /**
  * The query parameter a preview link travels in.

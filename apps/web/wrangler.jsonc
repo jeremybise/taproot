@@ -1,0 +1,65 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "taproot-site",
+
+  // The reference *consumer*, not the CMS. It holds no database, no R2 bucket and no cron — its
+  // whole configuration is an API URL and a key, both secrets rather than vars. Build with
+  // `TAPROOT_TARGET=cloudflare` and deploy with `npx wrangler deploy`.
+  //
+  // This file exists mainly so the caching below can be exercised at all. A real site is its own
+  // project and installs `@taprootcms/astro`; Taproot has no stake in where it is hosted, and the
+  // Node adapter remains the default here.
+  //
+  // **No `main` and no `assets`.** Unlike `apps/studio`, this app has no `scheduled` export to add,
+  // so there is nothing to gain by naming an entrypoint — @astrojs/cloudflare fills it in
+  // (`main: config.main ?? '@astrojs/cloudflare/entrypoints/server'`) and @cloudflare/vite-plugin
+  // wires up the asset directory itself. Naming `./dist/_worker.js/index.js` here fails the build
+  // outright, and for the reason the studio's config already records: that file does not exist until
+  // after a build, so the config that describes the build cannot depend on it.
+
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // --- Caching ---------------------------------------------------------------
+  // The whole point of this file.
+  //
+  // Cloudflare checks the cache **before** invoking the Worker, so a hit serves the rendered page
+  // with no CPU billed, no subrequests to the CMS, and no database work anywhere in the system.
+  // Concurrent requests for one URL collapse into a single render.
+  //
+  // Without this, `Astro.response.headers.set('cache-control', …)` in the routes is correct HTTP
+  // that nothing acts on: **Cloudflare does not cache HTML by default**, and a Worker's own response
+  // is never cached unless the Worker opts in. That header had been shipping since the delivery
+  // split and had never stored a single page.
+  //
+  // Previews bypass automatically — the catch-all sets `no-store` whenever a preview token is
+  // present, which is also why that header is set in the frontmatter rather than in the layout.
+  "cache": {
+    "enabled": true
+  },
+
+  // No `placement` here, deliberately, and the contrast with the studio is the point. Smart
+  // Placement moves a Worker *towards* what it talks to, which is right for the CMS: resolving a
+  // page is a chain of dependent D1 queries against a database in one region. This app makes one
+  // round of parallel requests to the CMS and then renders, so moving it away from the visitor
+  // would add latency to the response without removing any from the middle.
+
+  // --- KV -------------------------------------------------------------------
+  // Declared rather than inherited, for the same reason `apps/studio` declares it: @astrojs/cloudflare
+  // injects a `SESSION` binding with **no id**, which makes `wrangler deploy` create a namespace as a
+  // side effect — a resource nobody chose, and one that cannot be retried cleanly if the deploy then
+  // fails (the second run asks for the same title and Cloudflare refuses it, error 10014).
+  //
+  // This site does not use Astro's session API either; it has no session at all.
+  // Create one with `wrangler kv namespace create taproot-site-session` and paste the id here.
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}

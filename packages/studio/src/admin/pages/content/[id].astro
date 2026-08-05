@@ -19,7 +19,7 @@ import {
   getRelease,
   getStagedItem,
   itemDeleteImpact,
-  listItems,
+  listItemSummaries,
   openReleasesForItem,
   previewPathFor,
   previewSiteUrl,
@@ -47,7 +47,7 @@ if (!contentType) return new Response('Content type not found', { status: 404 })
 
 let parents: { id: string; title: string; path: string }[] = [];
 if (contentType.kind === 'page') {
-  const { items } = await listItems(taproot.db.db, { contentTypeId: contentType.id, limit: 200 });
+  const { items } = await listItemSummaries(taproot.db.db, { contentTypeId: contentType.id, limit: 200 });
   // An item cannot be its own parent, and cannot be moved under its own descendants — the server
   // rejects that too, but filtering here keeps the invalid option out of the menu entirely.
   parents = items

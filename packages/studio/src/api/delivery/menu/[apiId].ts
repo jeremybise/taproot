@@ -1,4 +1,4 @@
-import { deliverMenu } from '@taprootcms/core';
+import { cacheTagHeader, deliverMenu } from '@taprootcms/core';
 
 import { handleScoped, json } from '../../_shared.js';
 
@@ -17,17 +17,30 @@ import { handleScoped, json } from '../../_shared.js';
  *
  * Not conditionally cached. A menu changes when any page in it is published, moved, or renamed —
  * none of which touches the menu's own rows — so there is no version to build a validator from.
- * `s-maxage` bounds the staleness instead, which is what the embedded site already lived with.
+ * That is exactly the gap cache tags close: the response names the menu *and* every item it points
+ * at, so the page that changed purges the navigation that mentions it. `s-maxage` stays as the
+ * backstop for anything the tags miss, which is what the embedded site already lived with.
+ *
+ * Worth tagging carefully because this response is fetched **once per page view** — every visitor to
+ * every page pays for it, so it is the single most valuable thing on the site to keep cached and the
+ * most damaging thing to leave stale.
  */
 export const GET = handleScoped(
   async ({ context, taproot }) => {
-    const items = await deliverMenu(taproot.db.db, context.params.apiId!);
+    const { items, cacheTags } = await deliverMenu(taproot.db.db, context.params.apiId!);
+    const tag = cacheTagHeader(cacheTags);
 
     // An absent menu is an empty list, not a 404. A site asking for `footer` before anyone has
     // created one wants to render no footer nav, and a 404 would make that an error to handle.
     return json(
       { items },
-      { headers: { 'cache-control': 'public, max-age=0, s-maxage=60', vary: 'authorization' } },
+      {
+        headers: {
+          'cache-control': 'public, max-age=0, s-maxage=60',
+          vary: 'authorization',
+          ...(tag ? { 'cache-tag': tag } : {}),
+        },
+      },
     );
   },
   { scope: 'content:read' },

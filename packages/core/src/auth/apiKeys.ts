@@ -113,6 +113,17 @@ export async function createApiKey(
  * Returns `undefined` for absent, malformed, unknown, revoked, and expired alike. The caller must
  * answer identically to all five: distinguishing "no such key" from "revoked key" tells whoever is
  * probing which of their guesses was once real.
+ *
+ * **This runs per request and is deliberately not memoised.** It looks like an obvious cache — one
+ * indexed lookup by primary key, the same answer every time, on the hot path of every delivery
+ * read — and a per-isolate cache with a short TTL was measured against and rejected. What it buys
+ * is one row read out of roughly ten for a page, on requests that a working edge cache means the
+ * Worker never sees at all. What it costs is that **revoking a key stops taking effect
+ * immediately**: revocation is the one control a site has when a key leaks, and a window in which
+ * a revoked credential still resolves is a strictly worse trade than a row read.
+ *
+ * `selectAll()` is likewise not a projection worth narrowing. D1 bills rows scanned, this is a
+ * single row found by primary key, and every column is used by `hydrate`.
  */
 export async function verifyApiKey(
   db: Kysely<Database>,

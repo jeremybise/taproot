@@ -7,13 +7,18 @@
   "scripts": {
     "dev": "astro dev --port 4323",
     "build": "astro build",
+    "//build": "Node by default, because Taproot has no stake in where a site is hosted and the handbook says so. Set TAPROOT_TARGET=cloudflare to build for Workers instead — that is what makes this app's cache headers do anything, since Cloudflare caches no HTML by default and a Worker's own response is cached only if the Worker opts in (see wrangler.jsonc). Not wrapped in a script here because setting an environment variable inline is not portable across cmd and sh, and the deploy steps live in DEPLOYMENT.md.",
     "preview": "astro preview",
     "astro": "astro",
     "taproot:types": "node --experimental-strip-types ./scripts/types.ts"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "^14.1.5",
     "@astrojs/node": "^11.0.3",
     "@taprootcms/astro": "*",
     "astro": "^7.1.4"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
   }
 }

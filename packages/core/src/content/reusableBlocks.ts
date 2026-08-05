@@ -229,18 +229,38 @@ export async function resolveBlockReferences(
   if (!Array.isArray(blocks)) return [];
 
   const list = blocks as ResolvedBlock[];
-  const refs = [...new Set(list.map((block) => block?.ref).filter((ref): ref is string => !!ref))];
-  if (refs.length === 0) return list;
+  const refs = collectRefs(blocks);
+  if (refs.size === 0) return list;
 
-  const rows = await db
+  return applyEntries(list, await loadEntries(db, [...refs]));
+}
+
+/** Every library reference in one block list. */
+function collectRefs(blocks: unknown, into = new Set<string>()): Set<string> {
+  if (!Array.isArray(blocks)) return into;
+  for (const block of blocks as ResolvedBlock[]) {
+    if (block?.ref) into.add(block.ref);
+  }
+  return into;
+}
+
+function loadEntries(db: Kysely<Database>, refs: string[]) {
+  return db
     .selectFrom('reusable_blocks')
     .selectAll()
     .where('id', 'in', refs)
-    .execute();
+    .execute()
+    .then((rows) => new Map(rows.map((row) => [row.id, hydrate(row)])));
+}
 
-  const byId = new Map(rows.map((row) => [row.id, hydrate(row)]));
+/** Fill each reference in from an already-loaded library, purely in memory. */
+function applyEntries(
+  blocks: unknown,
+  byId: Map<string, ReturnType<typeof hydrate>>,
+): ResolvedBlock[] {
+  if (!Array.isArray(blocks)) return [];
 
-  return list.map((block) => {
+  return (blocks as ResolvedBlock[]).map((block) => {
     if (!block?.ref) return block;
 
     const entry = byId.get(block.ref);
@@ -257,7 +277,17 @@ export async function resolveBlockReferences(
   });
 }
 
-/** Resolve every block field on an item in one pass, returning a copy of its `data`. */
+/**
+ * Resolve every block field on an item in one pass, returning a copy of its `data`.
+ *
+ * "One pass" is now true of the database as well as the loop. This awaited `resolveBlockReferences`
+ * *inside* a `for`, so a content type with three block fields cost three serial round trips — and
+ * against D1 a round trip is a hop to another region, not a function call. The references are
+ * collected across every field first and fetched together, which is the same argument the single
+ * `in` query inside `resolveBlockReferences` already made one level down: a page with six references
+ * to two entries should cost one lookup, and it should not start costing three because somebody
+ * split the page into three fields.
+ */
 export async function resolveItemBlocks(
   db: Kysely<Database>,
   fields: FieldRow[],
@@ -266,9 +296,15 @@ export async function resolveItemBlocks(
   const blockFields = fields.filter((field) => field.type === 'block');
   if (blockFields.length === 0) return data;
 
+  const refs = new Set<string>();
+  for (const field of blockFields) collectRefs(data[field.api_id], refs);
+
+  // No references anywhere means no library to load — the blocks are already whole.
+  const byId = refs.size > 0 ? await loadEntries(db, [...refs]) : new Map();
+
   const resolved = { ...data };
   for (const field of blockFields) {
-    resolved[field.api_id] = await resolveBlockReferences(db, data[field.api_id]);
+    resolved[field.api_id] = applyEntries(data[field.api_id], byId);
   }
 
   return resolved;

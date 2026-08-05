@@ -329,6 +329,23 @@ function wranglerConfig(name) {
     "crons": ["*/5 * * * *"]
   },
 
+  // --- Caching ---------------------------------------------------------------
+  // Cloudflare checks the cache *before* invoking this Worker, so a hit costs no CPU, no
+  // subrequests and no D1 reads — the Worker never runs. This is what makes the \`Cache-Control\`
+  // the delivery API sends actually do something: Cloudflare does not cache JSON or HTML by
+  // default, so without this the headers are correct HTTP that nothing acts on.
+  //
+  // Admin screens (\`Set-Cookie\`) and previews (\`no-store\`) bypass it automatically.
+  "cache": {
+    "enabled": true
+  },
+
+  // Placed near D1 rather than near the visitor: resolving a page is a chain of dependent queries,
+  // and D1 lives in one region while the eyeball does not.
+  "placement": {
+    "mode": "smart"
+  },
+
   "compatibility_date": "2026-07-01",
 
   // Gives the Worker the Node built-ins Astro's server runtime expects.

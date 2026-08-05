@@ -255,6 +255,43 @@ describe('publishing gates', () => {
     expect(response.status).toBe(200);
   });
 
+  /**
+   * A save has to say what it invalidated, or the cache in front of the delivery API keeps serving
+   * the old page until `s-maxage` lapses.
+   *
+   * The `type:` tag is the half that is easy to leave off and the half listings need: editing an
+   * event changes the event's page, and it also changes every page rendering "the six soonest
+   * events" — none of which named this item's id when they were cached.
+   *
+   * This asserts what the route *declared*, which is the part a unit test can see. Whether the purge
+   * call reaches Cloudflare is a question for a deployed request, and the middleware that makes it
+   * is deliberately the only place that knows the runtime API exists.
+   */
+  it('declares the cache tags a save invalidates', async () => {
+    const { type, fields } = await seedPageType();
+    const item = await createItem(h.db, type, fields, {
+      contentTypeId: type.id,
+      title: 'Live',
+      status: 'published',
+    });
+
+    h.as(editor);
+    const context = h.context({
+      method: 'PATCH',
+      params: { id: item.id },
+      json: { title: 'Live, edited' },
+    });
+
+    await itemPatch(context);
+
+    const invalidated = (context.locals as { taproot: { invalidated: Set<string> } }).taproot
+      .invalidated;
+
+    expect([...invalidated]).toEqual(
+      expect.arrayContaining([`item:${item.id}`, `type:${type.api_id}`]),
+    );
+  });
+
   /** The revision a given number belongs to, since restore is addressed by id. */
   async function revisionId(itemId: string, number: number): Promise<string> {
     const row = await h.db.db

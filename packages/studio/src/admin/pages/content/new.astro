@@ -8,7 +8,7 @@ import {
   reusableBlockOptionsForFields,
 } from '../../blockTypeOptions.js';
 import { findImage, mediaOptions } from '../../mediaOptions.js';
-import { getContentType, listContentTypes, listItems } from '@taprootcms/core';
+import { getContentType, listContentTypes, listItemSummaries } from '@taprootcms/core';
 import {
   getTaproot,
   loginRedirect,
@@ -29,7 +29,7 @@ const contentType = selectedId ? await getContentType(taproot.db.db, selectedId)
 
 let parents: { id: string; title: string; path: string }[] = [];
 if (contentType?.kind === 'page') {
-  const { items } = await listItems(taproot.db.db, {
+  const { items } = await listItemSummaries(taproot.db.db, {
     contentTypeId: contentType.id,
     limit: 200,
   });

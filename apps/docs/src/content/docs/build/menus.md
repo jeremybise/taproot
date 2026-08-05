@@ -29,6 +29,33 @@ const nav = applyTermHrefs(await taproot.menu('main'), termHref);
 
 Two steps, and the second one is the interesting one.
 
+## Fetch it in the page, not in the layout
+
+The natural place for that snippet is your site layout, where the nav is rendered — and it is the
+wrong place. **Astro runs a page's frontmatter to completion before a layout's**, so a
+`await taproot.menu()` in the layout cannot start until the `await taproot.resolve()` in the page has
+finished. That is two round trips to the CMS one after the other, on every page view, for two
+requests that have nothing to say to each other.
+
+Fetch both in the page and pass the nav down:
+
+```astro
+---
+const [result, nav] = await Promise.all([
+  taproot.resolve(path),
+  taproot.menu('main').then((entries) => applyTermHrefs(entries, termHref)),
+]);
+---
+
+<SiteLayout nav={nav}>…</SiteLayout>
+```
+
+Make the layout's `nav` prop **required**. An optional one with a fetch as its fallback leaves the
+serial path in place for whoever has not read this page, which is precisely who will hit it.
+
+If two components end up asking for the same menu in one render, that costs one request, not two —
+the client deduplicates requests that are in flight together.
+
 ## Menus reference their targets
 
 A menu entry points at a **page**, a **term**, or an external **URL** — it never stores a path. That

@@ -3,7 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 4.6 complete, and Phase 5A–5B.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 4.6 complete, Phase 5A–5C, and Phase 5.5.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
@@ -433,6 +433,47 @@ behave as though nothing matches. Nothing is lost; it just has not been indexed 
 
 **Next in the band:** full-text search (5D), with media multi-upload (5E), menu link-picking (5F)
 and AI-assisted alt text (5G) independent of it.
+
+**Phase 5.5 — performance and caching — is done.** The caching SCOPE deferred until there was a
+boundary to invalidate against, now that Phase 3.75 has provided one.
+
+The uncomfortable finding first: the cache headers had never done anything. Delivery responses and
+rendered pages had been sending `cache-control: public, max-age=0, s-maxage=60` since the delivery
+split, and **Cloudflare caches neither JSON nor HTML by default** — its default cache is keyed on file
+extension, and a Worker's own response is not cached unless the Worker asks. `"cache": { "enabled":
+true }` in both `wrangler.jsonc` files is what turns them on; a hit now serves a page with no CPU
+billed, no request to the CMS, and no database work anywhere. The general lesson is the one the
+preview pane already taught: confirming a header is present is not confirming it had an effect.
+
+The ETag had the same shape of problem. It was computed *after* `resolveDelivery` had run every
+query, so a 304 cost exactly what a 200 did — it saved a payload, which is the part Cloudflare does
+not charge for. A conditional request is now answered from one indexed lookup before anything
+resolves. `Cache-Tag` closes the gap the validator was documented as unable to see: a page names its
+dependencies (`item:`, `type:`, `block:`, `menu:`) in the header **and** in the payload, because a
+consumer has to tag the HTML it renders and cannot derive those dependencies itself.
+
+Then the things that were simply costing money. The five-minute housekeeping sweep was running **two
+full table scans on unindexed columns**, forever, on a deployment where nobody had signed in;
+`blockTypeRegistry` scanned `content_types` on **every page view**, including pages with no blocks on
+them. `listItems` was hydrating full `data` and `seo` JSON blobs for callers that render a list of
+links. The site's layout fetched the navigation, which Astro cannot start until the page's own fetch
+has finished — a serial round trip to the CMS on every page view, now one `Promise.all` in the page.
+
+**Two of those were found by measuring and would not have been found by reading.** `npm run
+query-count` reports database queries per page view against the seeded database and fails over
+budget; `queryPlans.test.ts` asserts the sweep's predicates use an index rather than merely that they
+run. That second one earned its place immediately: adding an index to each side of an `or` changed
+the query plan by *nothing at all*, because SQLite's OR-to-union optimisation does not fire for that
+delete — the statement had to be split in two before the indexes were spent. Green migration,
+correct-looking index, unchanged scan.
+
+**If you are upgrading, run `npm run db:migrate`** for `0020_perf_indexes`. Nothing breaks without
+it; the sweep just keeps scanning.
+
+Left for Phase 6, deliberately: purging a *consumer's* cached HTML. The CMS purges its own cache
+in-process, but reaching into a site's cache means an authenticated outbound call to an endpoint the
+site mounts, which is the outbound-HTTP layer Phase 6 already owns. Until then a site's HTML is
+bounded by its own `s-maxage`, exactly as before.
 
 **Phase 4.6 — the admin UI pass — is done.** Part A: one sticky action bar per screen, status
 transitions behind a promoted action plus a menu, add-to-release moved into the Publishing panel

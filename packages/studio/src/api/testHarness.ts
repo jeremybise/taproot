@@ -57,6 +57,13 @@ export interface Harness {
    * the same thing works only by accident of the object being shared.
    */
   auth: AuthConfig;
+  /**
+   * Run something and report how many database queries it issued.
+   *
+   * For assertions about cost rather than about output — chiefly that a conditional delivery request
+   * answers 304 without resolving the page behind it.
+   */
+  countQueries<T>(run: () => Promise<T>): Promise<{ value: T; queries: number }>;
   destroy(): Promise<void>;
   /** Build an `APIContext` for a handler. */
   context(init?: ContextInit): APIContext;
@@ -77,9 +84,34 @@ export interface ContextInit {
 const ORIGIN = 'http://localhost:4321';
 
 export async function createHarness(): Promise<Harness> {
-  const db = await createDb({ driver: 'sqlite', location: ':memory:' });
-  const result = await migrateToLatest(db.db);
+  const base = await createDb({ driver: 'sqlite', location: ':memory:' });
+  const result = await migrateToLatest(base.db);
   if (result.error) throw result.error;
+
+  /**
+   * Every query counted, so a test can assert what a request *costs* and not only what it answers.
+   *
+   * The delivery route's conditional branch is the case this exists for: "answers 304" and "answers
+   * 304 without resolving the page" are different claims, and only the second one is the point of a
+   * validator. A status assertion passes either way, which is how the ETag sat there for a phase
+   * saving payload bytes — the thing Cloudflare does not charge for — while every D1 row was read
+   * exactly as it would have been for a 200.
+   *
+   * Counted with a Kysely plugin rather than the `log` option so the handle still comes from
+   * `createDb`, the same entry point the runtime uses. Note `batch()` still closes over the original
+   * handle, so atomic writes are not counted; this is a read-path instrument.
+   */
+  let queries = 0;
+  const db: TaprootDb = {
+    ...base,
+    db: base.db.withPlugin({
+      transformQuery: (args) => {
+        queries += 1;
+        return args.node;
+      },
+      transformResult: async (args) => args.result,
+    }),
+  };
 
   const storage = new FakeStorage();
   const mail = new FakeMailer();
@@ -106,8 +138,13 @@ export async function createHarness(): Promise<Harness> {
     async user(role, email = `${role}@example.com`) {
       return createUser(db.db, { email, name: role, role });
     },
+    async countQueries(run) {
+      const before = queries;
+      const value = await run();
+      return { value, queries: queries - before };
+    },
     async destroy() {
-      await db.destroy();
+      await base.destroy();
     },
     context(init: ContextInit = {}) {
       const url = new URL(init.url ?? '/api/taproot/test', ORIGIN);
@@ -126,11 +163,24 @@ export async function createHarness(): Promise<Harness> {
       const method = init.method ?? (body ? 'POST' : 'GET');
       const request = new Request(url, { method, headers, body });
 
+      /**
+       * Collected but never purged, because there is no Cloudflare cache behind a test.
+       *
+       * Exposed on the returned context all the same, so a test can assert *which* tags a write
+       * declared — that is the half of invalidation a unit test can actually check. Whether the
+       * purge call reaches Cloudflare is a question for `npm run preview` and a deployed request.
+       */
+      const invalidated = new Set<string>();
+
       const taproot: TaprootContext = {
         db,
         storage,
         auth,
         mail,
+        invalidated,
+        invalidate(tags) {
+          for (const tag of tags) invalidated.add(tag);
+        },
         user: current,
         principal: current
           ? { kind: 'user', user: current }

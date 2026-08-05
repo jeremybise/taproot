@@ -181,6 +181,49 @@ through a path nobody tested. Things that follow:
   through a short-lived cookie rather than a query string. Keys are **revoked, never deleted** —
   audit entries name them by id.
 
+**A cache header does nothing on Cloudflare until the Worker opts in, and the ETag must be answered
+before the page is resolved.** Both halves shipped wrong for a phase and both looked right.
+`cache-control: public, max-age=0, s-maxage=60` had been on every delivery response and every
+rendered page since the split, and **Cloudflare caches neither HTML nor JSON by default** — the
+default cache is keyed on file extension, and a Worker's own response is never stored unless
+`"cache": { "enabled": true }` is in its `wrangler.jsonc`. Separately, `notModified` sat at the
+*bottom* of `resolve.ts`, after `resolveDelivery` had run every query, so a 304 cost exactly what a
+200 did — it saved a payload, and payload egress is the part Cloudflare does not bill, while D1 bills
+rows read. `getItemVersionByPath` answers the validator from one indexed lookup instead, and it
+shares `visibleToPublic` with `getItemByPath` deliberately: a validator computed under a different
+visibility rule than the payload would 304 against a version a visitor may not see. Four things
+follow:
+- **Tags travel in the payload as well as the header.** Two caches need them — the studio tags its
+  cached JSON, and a consumer tags the HTML it renders from that JSON and *cannot derive the
+  dependencies itself*: it has no way to know a breadcrumb came from an ancestor row, that a listing
+  depends on a `type:` rather than the items it matched, or that a block was filled in from the
+  library. `cacheTags.ts` lives where `pure.ts` can re-export it so both sides spell a tag the same
+  way; a mismatch makes the purge succeed, report success, and clear nothing.
+- **`type:` is the tag listings need and the one easy to omit.** Publishing a seventh event must
+  purge the page showing "the six soonest", and that page's cached copy names the six that did *not*
+  include it. Recorded even when a query matched nothing, because an empty listing is the case most
+  needing it.
+- **Purge runs in the middleware, after the response.** Same ordering rule `batchWrite` enforces for
+  reads: purging inside a write path clears the cache while the old row is still committed, so a
+  request arriving in between repopulates it with exactly what the purge was for. It also never
+  throws, for `recordAuditEntry`'s reason — the write already happened and was already reported
+  successful.
+- **Do not build an ETag-keyed response cache in `@taprootcms/astro`.** The validator cannot see a
+  reusable block edited in the library, so the tag keeps matching and a client-side body would go
+  stale with *no bound at all*; `s-maxage` is what bounds that today. The client deduplicates
+  concurrent requests for one resource and stops there, and `verifyApiKey` is likewise not memoised —
+  it would delay revocation to save one indexed row read.
+
+**Query plans are asserted, not assumed — `npm run query-count` and `queryPlans.test.ts` are why.**
+Nothing in the suite counted round trips, so an `await` inside a loop or an unconditional lookup
+passed every test, typecheck and build. Two real costs were found only by measuring: the five-minute
+sweep ran **two full table scans** on unindexed columns forever, and `blockTypeRegistry` scanned
+`content_types` on **every page view** including pages with no blocks. The sharpest lesson is in
+`0020_perf_indexes`: indexing *both* sides of `purgeStaleResetTokens`' `or` changed the plan by
+nothing at all — SQLite's OR-to-union optimisation does not fire for that delete — so the statement
+had to be **split in two** to spend the indexes. Measured with `explain query plan` at 0 and 20,000
+rows. An index that looks correct and a migration that runs clean are not evidence the scan is gone.
+
 **The delivery API is the read contract, and it must answer a page in one round trip.**
 `resolveDelivery` in `content/delivery.ts` returns the item, its type and fields, breadcrumbs (one
 `in` query, not one per ancestor), visible children, blocks already dereferenced, resolved SEO, and

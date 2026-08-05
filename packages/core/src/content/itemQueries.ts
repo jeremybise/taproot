@@ -67,7 +67,7 @@ function findQueries(
   fields: FieldRow[],
   data: Record<string, unknown>,
   containerId: string,
-  blockTypes: Map<string, { fields: FieldRow[] }>,
+  blockTypes: ReadonlyMap<string, { fields: FieldRow[] }>,
   depth: number,
   found: FoundQuery[] = [],
 ): FoundQuery[] {
@@ -110,8 +110,13 @@ function findQueries(
 }
 
 export interface ResolveQueriesOptions {
-  /** Block type schemas keyed by `api_id`, so the walk can descend into blocks. */
-  blockTypes: Map<string, { fields: FieldRow[] }>;
+  /**
+   * Block type schemas keyed by `api_id`, so the walk can descend into blocks.
+   *
+   * `ReadonlyMap` because the caller is entitled to pass a shared empty one: an item with no placed
+   * blocks skips loading the registry altogether, and nothing here has any business writing to it.
+   */
+  blockTypes: ReadonlyMap<string, { fields: FieldRow[] }>;
   /** Whether unpublished items may appear — true only under a preview token. */
   includeUnpublished?: boolean;
 }
@@ -121,6 +126,16 @@ export interface ResolvedQueries {
   queries: Record<string, DeliveryQueryResult>;
   /** Every matched item, stripped to what a result carries, for the caller to fold into its maps. */
   items: { item: ContentItem; fields: FieldRow[]; data: Record<string, unknown> }[];
+  /**
+   * The `api_id` of every content type this page listed, for cache tagging.
+   *
+   * A page carrying a listing depends on the *type*, not only on the members it matched. The cached
+   * copy of "the six soonest events" names the six it had, which is exactly the set that does not
+   * contain the seventh — so invalidating by matched item can never bring a newly published one
+   * into the list. Reported from here because this is the only place that knows which types were
+   * consulted; the field stores a type id and the tag wants the readable `api_id`.
+   */
+  targetTypeApiIds: string[];
 }
 
 /**
@@ -138,40 +153,76 @@ export async function resolveItemQueries(
   options: ResolveQueriesOptions,
 ): Promise<ResolvedQueries> {
   const found = findQueries(fields, data, itemId, options.blockTypes, MAX_BLOCK_DEPTH);
-  if (found.length === 0) return { queries: {}, items: [] };
+  if (found.length === 0) return { queries: {}, items: [], targetTypeApiIds: [] };
 
-  /** One load per distinct target type, however many fields point at it. */
-  const typeCache = new Map<string, ContentTypeRow & { fields: FieldRow[] }>();
-  const loadType = async (id: string) => {
-    const cached = typeCache.get(id);
-    if (cached) return cached;
-    const loaded = await getContentType(db, id);
-    if (loaded) typeCache.set(id, loaded);
-    return loaded;
+  /**
+   * One load per distinct target type, however many fields point at it — memoised on the
+   * **promise**, not on the resolved value.
+   *
+   * That distinction is what survives the fields being resolved concurrently below. A cache holding
+   * finished values only ever hits when something has awaited it first, so under `Promise.all` two
+   * listings against the same type would both find it empty, both issue the query, and the memo
+   * would quietly do nothing. Storing the in-flight promise makes the second caller wait on the
+   * first one's request instead.
+   *
+   * A rejection is cached along with everything else, which is deliberate: the only thing that
+   * rejects here is the database being unreachable, and every caller is inside the same
+   * `Promise.all` that is about to reject anyway.
+   */
+  const typeCache = new Map<
+    string,
+    Promise<(ContentTypeRow & { fields: FieldRow[] }) | undefined>
+  >();
+  const loadType = (id: string) => {
+    let pending = typeCache.get(id);
+    if (!pending) {
+      pending = getContentType(db, id);
+      typeCache.set(id, pending);
+    }
+    return pending;
   };
 
-  const queries: Record<string, DeliveryQueryResult> = {};
-  const items: ResolvedQueries['items'] = [];
-  const seen = new Set<string>();
+  /**
+   * The same memo for term branches, which two listings filtering by one term used to pay twice.
+   *
+   * `termIdsForBranch` is a recursive CTE — the most expensive single statement on this path — and
+   * "events in Music" beside "news in Music" is an ordinary way to build a page.
+   */
+  const branchCache = new Map<string, Promise<string[]>>();
+  const loadBranch = (id: string) => {
+    let pending = branchCache.get(id);
+    if (!pending) {
+      pending = termIdsForBranch(db, id);
+      branchCache.set(id, pending);
+    }
+    return pending;
+  };
 
-  for (const { containerId, field, value } of found) {
-    const key = queryKey(containerId, field.api_id);
+  /**
+   * Every query field resolved concurrently, then folded together in `found` order.
+   *
+   * This was a `for` loop with three awaits in it, so a page carrying three listing blocks paid up
+   * to fifteen serial round trips to D1 — each one a hop to another region — to answer three
+   * questions that have nothing to do with each other. Nothing here reads another field's result.
+   *
+   * The fold stays sequential and stays in `found` order, because `items` is an array and `seen`
+   * decides which duplicate is carried: resolving in completion order would make the payload depend
+   * on which query the database happened to answer first, which is a difference no test would catch
+   * and every diff would show.
+   */
+  const perField = await Promise.all(
+    found.map(async ({ containerId, field, value }) => {
+      const key = queryKey(containerId, field.api_id);
     const config = parseJson<Record<string, unknown>>(field.config, {});
     const targetTypeId =
       typeof config.targetContentTypeId === 'string' ? config.targetContentTypeId : null;
 
     // A field pointed at nothing yet answers empty rather than throwing. The builder lets a type be
     // designed before its target exists, exactly as `relation` and `taxonomy` do.
-    if (!targetTypeId) {
-      queries[key] = { ids: [], total: 0 };
-      continue;
-    }
+    if (!targetTypeId) return { key, empty: true as const };
 
     const targetType = await loadType(targetTypeId);
-    if (!targetType) {
-      queries[key] = { ids: [], total: 0 };
-      continue;
-    }
+    if (!targetType) return { key, empty: true as const };
 
     const maxResults =
       typeof config.maxResults === 'number' && config.maxResults > 0 ? config.maxResults : 24;
@@ -192,7 +243,7 @@ export async function resolveItemQueries(
       ? value.termIds.filter((id): id is string => typeof id === 'string')
       : [];
     const termIds = chosen.length
-      ? [...new Set((await Promise.all(chosen.map((id) => termIdsForBranch(db, id)))).flat())]
+      ? [...new Set((await Promise.all(chosen.map(loadBranch))).flat())]
       : undefined;
 
     /**
@@ -244,7 +295,38 @@ export async function resolveItemQueries(
       contentTypeKinds: ['page', 'collection'],
     });
 
+      return { key, empty: false as const, matched, total, targetType };
+    }),
+  );
+
+  const queries: Record<string, DeliveryQueryResult> = {};
+  const items: ResolvedQueries['items'] = [];
+  const seen = new Set<string>();
+  const targetTypeApiIds = new Set<string>();
+
+  for (const answer of perField) {
+    if (answer.empty) {
+      queries[answer.key] = { ids: [], total: 0 };
+      continue;
+    }
+
+    const { key, matched, total, targetType } = answer;
     queries[key] = { ids: matched.map((row) => row.id), total };
+
+    /**
+     * Recorded even when the query matched nothing.
+     *
+     * An empty listing is the case that most needs the dependency: the page is cached showing
+     * "no upcoming events", and the thing that has to invalidate it is the first event being
+     * published. Tagging only what matched would leave that page empty until the TTL lapsed.
+     */
+    targetTypeApiIds.add(targetType.api_id);
+
+    // Only the fields that survived, so the caller's reference walk cannot reach into a block whose
+    // contents are not being sent. Computed once per query rather than once per matched row.
+    const carried = targetType.fields.filter(
+      (resultField) => !OMITTED_FROM_RESULTS.has(resultField.type),
+    );
 
     for (const row of matched) {
       // The same item can match two queries on one page; it is carried once and referenced twice.
@@ -252,23 +334,14 @@ export async function resolveItemQueries(
       seen.add(row.id);
 
       const kept = Object.fromEntries(
-        targetType.fields
-          .filter((resultField) => !OMITTED_FROM_RESULTS.has(resultField.type))
+        carried
           .map((resultField) => [resultField.api_id, row.data[resultField.api_id]])
           .filter(([, fieldValue]) => fieldValue !== undefined),
       );
 
-      items.push({
-        item: row,
-        // Only the fields that survived, so the caller's reference walk cannot reach into a block
-        // whose contents are not being sent.
-        fields: targetType.fields.filter(
-          (resultField) => !OMITTED_FROM_RESULTS.has(resultField.type),
-        ),
-        data: kept,
-      });
+      items.push({ item: row, fields: carried, data: kept });
     }
   }
 
-  return { queries, items };
+  return { queries, items, targetTypeApiIds: [...targetTypeApiIds] };
 }

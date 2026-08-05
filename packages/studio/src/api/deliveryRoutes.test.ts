@@ -188,6 +188,87 @@ describe('the resolve endpoint', () => {
     expect(await second.text()).toBe('');
   });
 
+  /**
+   * The claim a validator is actually making.
+   *
+   * "Answers 304" was already asserted above and was true while the route resolved the entire page
+   * first and then threw the body away. That saves a payload, and a payload is the part Cloudflare
+   * does not bill; D1 charges rows read, so the 304 cost exactly what the 200 did. Asserting the
+   * status alone cannot tell those two implementations apart — the query count can.
+   *
+   * The bound is deliberately a small number rather than exactly one: the point is that the
+   * conditional answer is a lookup and not a resolution, and pinning it to a single query would
+   * break on any reasonable change to how the row is found.
+   */
+  it('answers 304 without resolving the page behind it', async () => {
+    const item = await published('Admissions');
+    h.as(editor);
+
+    const first = await resolveGet(
+      h.context({ url: `/api/taproot/delivery/resolve?path=${item.path}` }),
+    );
+    const etag = first.headers.get('etag')!;
+
+    const full = await h.countQueries(() =>
+      resolveGet(h.context({ url: `/api/taproot/delivery/resolve?path=${item.path}` })),
+    );
+
+    const conditional = await h.countQueries(() =>
+      resolveGet(
+        h.context({
+          url: `/api/taproot/delivery/resolve?path=${item.path}`,
+          headers: { 'if-none-match': etag },
+        }),
+      ),
+    );
+
+    expect(conditional.value.status).toBe(304);
+    expect(conditional.queries).toBeLessThanOrEqual(2);
+    expect(conditional.queries).toBeLessThan(full.queries);
+  });
+
+  /**
+   * A stale validator has to fall through and pay for the body, or the cheap lookup would be a way
+   * to serve one version's content under another version's tag.
+   */
+  it('resolves in full when the presented validator is stale', async () => {
+    const item = await published('Admissions');
+    h.as(editor);
+
+    const response = await resolveGet(
+      h.context({
+        url: `/api/taproot/delivery/resolve?path=${item.path}`,
+        headers: { 'if-none-match': 'W/"someone-elses-tag"' },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await body<{ kind: string }>(response)).kind).toBe('item');
+  });
+
+  /**
+   * The tags are what let a purge exist at all, and every one of them is a dependency the ETag
+   * cannot see. `updated_at` changes when *this* row is edited; the page also changes when its type
+   * gains a member, when a reusable block is edited in the library, and when an ancestor is renamed.
+   */
+  it('names what the page depends on, so a write elsewhere can purge it', async () => {
+    const item = await published('Admissions');
+    h.as(editor);
+
+    const response = await resolveGet(
+      h.context({ url: `/api/taproot/delivery/resolve?path=${item.path}` }),
+    );
+
+    const tags = (response.headers.get('cache-tag') ?? '').split(',');
+    expect(tags).toContain(`item:${item.id}`);
+    expect(tags).toContain(`type:${type.api_id}`);
+
+    // The same list travels in the payload, because the *consumer* has to tag the HTML it renders
+    // from this and cannot derive the dependencies itself.
+    const payload = await body<{ cacheTags: string[] }>(response);
+    expect(payload.cacheTags).toContain(`item:${item.id}`);
+  });
+
   it('varies on authorization, since a different principal could see differently', async () => {
     const item = await published('Admissions');
     h.as(editor);

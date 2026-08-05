@@ -2,7 +2,8 @@
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { BlockRenderer, TaprootImage, TaprootPreviewBridge } from '@taprootcms/astro/components';
 import { PREVIEW_PARAM } from '@taprootcms/astro';
-import { taproot, PUBLIC_TERM_TAXONOMIES } from '../taproot.ts';
+import { applyTermHrefs } from '@taprootcms/astro';
+import { taproot, PUBLIC_TERM_TAXONOMIES, termHref } from '../taproot.ts';
 import { BLOCK_COMPONENTS } from '../blocks/index.ts';
 
 export const prerender = false;
@@ -31,7 +32,28 @@ const path = `/${Astro.params.path ?? ''}`.replace(/\/{2,}/g, '/').replace(/(.)\
  */
 const previewToken = Astro.url.searchParams.get(PREVIEW_PARAM);
 
-const result = await taproot.resolve(path, { previewToken });
+/**
+ * The page and the navigation, fetched together rather than one after the other.
+ *
+ * These are two requests to the CMS and they have nothing to say to each other, but the layout used
+ * to fetch the menu itself — and Astro runs a page's frontmatter to completion before the layout's,
+ * so the second could not start until the first had finished. That is a serial round trip on every
+ * page view of the site, which on Workers is a hop to another region and back before the menu
+ * request is even sent.
+ *
+ * **Term entries arrive unresolved and this site routes them.** `resolveMenu` took a `termHref`
+ * callback, and a function cannot cross an HTTP boundary — so the delivery API returns the term
+ * itself and `applyTermHrefs` applies the same policy here that used to be passed in. Which
+ * taxonomies deserve public pages is a fact about the routes this site serves, so it belongs on
+ * this side of the wire; see `taproot.ts`.
+ *
+ * Published-only, so an unpublished page leaves the navigation without anyone editing the menu, and
+ * a moved page keeps its place because the menu stores a reference rather than a URL.
+ */
+const [result, nav] = await Promise.all([
+  taproot.resolve(path, { previewToken }),
+  taproot.menu('main').then((items) => applyTermHrefs(items, termHref)),
+]);
 
 /**
  * A redirect arrives as data rather than as a 30x, and is reissued here.
@@ -172,6 +194,7 @@ if (previewToken) {
 <SiteLayout
   title={item ? item.seo.title : archive!.title}
   description={item?.seo.description ?? null}
+  nav={nav}
   breadcrumbs={breadcrumbs}
   ogImage={ogAsset?.url ?? null}
   ogImageAlt={ogAsset?.alt ?? null}

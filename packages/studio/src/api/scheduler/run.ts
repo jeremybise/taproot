@@ -1,5 +1,5 @@
 import type { APIContext } from 'astro';
-import { publishDueItems, publishDueReleases } from '@taprootcms/core';
+import { SITE_TAG, publishDueItems, publishDueReleases } from '@taprootcms/core';
 
 import { apiError, json } from '../_shared.js';
 import { getTaproot, hasRole } from '../../runtime/guards.js';
@@ -47,6 +47,27 @@ export async function POST(context: APIContext): Promise<Response> {
    * its own moment if the release ran first.
    */
   const releases = await publishDueReleases(taproot.db);
+
+  /**
+   * Only when the sweep actually published something.
+   *
+   * A sweep that matched nothing is the overwhelmingly common case — it runs every five minutes
+   * forever — and purging on every tick would mean the cache is never more than five minutes warm,
+   * which is worse than having no cache tags at all.
+   *
+   * Coarse for the same reason the release route is: neither result carries the content type of
+   * what it published, and a scheduled item going live is a change whose blast radius includes
+   * every listing that might now include it.
+   *
+   * Note this covers the HTTP entry point only. A Cloudflare **cron trigger** reaches the sweep
+   * through `worker.ts`'s `scheduled` export, which never passes through this middleware and has no
+   * `locals` to record onto — so a cron-published item is bounded by `s-maxage` rather than purged.
+   * That is the same asymmetry Settings → System already documents about scheduling, one level
+   * along, and it fails in the safe direction: stale for a minute, never wrong forever.
+   */
+  if (result.published.length > 0 || releases.published.length > 0) {
+    taproot.invalidate([SITE_TAG]);
+  }
 
   /**
    * A form post comes from the admin's "Run now" button and wants a screen back.
