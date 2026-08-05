@@ -33,6 +33,19 @@ export default defineConfig({
   integrations: [taproot()],
   devToolbar: { enabled: false },
   vite: {
+    /**
+     * Fail on a busy 4321 rather than moving to the next free port.
+     *
+     * `astro dev --port 4321` is a preference, not a reservation: with the port taken it starts on
+     * 4322 and says so in one line nobody reads. But 4321 is written into TAPROOT_ORIGIN, the
+     * consumer's TAPROOT_API_URL, `a11y-audit.mjs`'s default base, and the address `db:seed` prints
+     * — so a studio anywhere else is a local install where the site serves no content and the audit
+     * silently grades a different server. Measured: pinned but not strict, it drifts to 4322, which
+     * is the handbook's port. Strict, it exits non-zero. Astro daemonises the dev server, so what
+     * you see is "Dev server process exited before becoming ready" rather than an address-in-use
+     * error — unhelpful, and still the only version of this failure anybody notices.
+     */
+    server: { strictPort: true },
     // Kysely and the core package are workspace source; pre-bundling them adds nothing and makes
     // edits require a dev-server restart.
     optimizeDeps: { exclude: ['@taprootcms/core', '@taprootcms/studio'] },

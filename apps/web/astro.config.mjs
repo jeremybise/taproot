@@ -30,6 +30,10 @@ export default defineConfig({
   adapter: target === 'cloudflare' && !isDev ? cloudflare() : node({ mode: 'standalone' }),
   devToolbar: { enabled: false },
   vite: {
+    // Fail on a busy 4323 rather than drifting to the next free port, for the reason apps/studio
+    // does: the studio's TAPROOT_SITE_URL names this address, so a consumer that quietly moved is
+    // an editor pressing Preview and framing nothing.
+    server: { strictPort: true },
     // @taprootcms/astro is workspace source; pre-bundling it adds nothing and makes edits require a
     // dev-server restart.
     optimizeDeps: { exclude: ['@taprootcms/astro'] },

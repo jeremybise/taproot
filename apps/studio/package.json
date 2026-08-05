@@ -5,7 +5,8 @@
   "type": "module",
   "description": "The Taproot CMS deployment: admin panel, REST API, delivery API, and the scheduler",
   "scripts": {
-    "dev": "astro dev",
+    "//dev": "The port is pinned, as it already is for apps/web and apps/docs, because 4321 is not merely a default here — it is written into .env.example's TAPROOT_ORIGIN, apps/web/.env's TAPROOT_API_URL, scripts/a11y-audit.mjs's default base, and the URL seed.ts prints at the end. Left as Astro's bare default, a busy 4321 moves the studio to the next free port and every one of those quietly addresses a server that is no longer there: the consumer stops resolving content and the audit runs against whatever else answered. `strictPort` then makes that collision a startup error instead of a drift, which is the only version of it anybody notices.",
+    "dev": "astro dev --port 4321",
     "build": "astro build",
     "preview": "astro build && wrangler dev",
     "astro": "astro",
