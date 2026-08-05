@@ -15,6 +15,7 @@ import { createHarness, body, type Harness } from './testHarness.js';
 
 import { GET as resolveGet } from './delivery/resolve.js';
 import { GET as itemsGet } from './delivery/items.js';
+import { GET as searchGet } from './delivery/search.js';
 import { GET as schemaGet } from './delivery/schema.js';
 import { GET as keysGet, POST as keysPost } from './api-keys/index.js';
 import { POST as keyFormPost, DELETE as keyDelete } from './api-keys/[id].js';
@@ -322,6 +323,106 @@ describe('the items endpoint', () => {
 
     h.as(editor);
     const response = await itemsGet(h.context({ url: '/api/taproot/delivery/items?type=hero' }));
+    expect(response.status).toBe(422);
+  });
+});
+
+describe('the search endpoint', () => {
+  /** A published page whose body carries the phrase, so a match can be a body match. */
+  async function page(title: string, bodyText: string) {
+    return createItem(h.db, type, fields, {
+      contentTypeId: type.id,
+      title,
+      status: 'published',
+      data: { body: bodyText },
+    });
+  }
+
+  it('finds an item by its body and says where the match was', async () => {
+    await page('Costs', 'Every kind of financial aid we offer, in one place.');
+    h.as(editor);
+
+    const response = await searchGet(
+      h.context({ url: '/api/taproot/delivery/search?q=financial%20aid' }),
+    );
+
+    expect(response.status).toBe(200);
+    const payload = await body<{
+      results: { title: string; excerpt: string }[];
+      total: number;
+      query: string;
+    }>(response);
+
+    expect(payload.total).toBe(1);
+    expect(payload.results[0]!.title).toBe('Costs');
+    // The excerpt is what makes a result page readable, and it comes from the derived index rather
+    // than from the item's `data` — which the endpoint never loads.
+    expect(payload.results[0]!.excerpt).toContain('financial aid');
+    // Echoed trimmed, so a consumer rendering "n results for X" shows what was searched for.
+    expect(payload.query).toBe('financial aid');
+  });
+
+  it('answers a blank term with nothing rather than with everything', async () => {
+    await page('Costs', 'Aid.');
+    await page('Term dates', 'Autumn.');
+    h.as(editor);
+
+    /**
+     * The dangerous reading of "match all" is *everything*, which would turn a site's own empty
+     * search box into a dump of its whole content. An error is the other candidate and is worse in
+     * practice: submitting an empty form is ordinary, and would surface as the site's error page.
+     */
+    const response = await searchGet(h.context({ url: '/api/taproot/delivery/search?q=%20%20' }));
+
+    expect(response.status).toBe(200);
+    const payload = await body<{ results: unknown[]; total: number }>(response);
+    expect(payload.results).toEqual([]);
+    expect(payload.total).toBe(0);
+  });
+
+  it('shows a visitor nothing that is not live', async () => {
+    await createItem(h.db, type, fields, {
+      contentTypeId: type.id,
+      title: 'Unannounced',
+      status: 'draft',
+      data: { body: 'The bursary scheme opens in the autumn.' },
+    });
+
+    const { key } = await withKey();
+    h.asKey(key);
+
+    const response = await searchGet(h.context({ url: '/api/taproot/delivery/search?q=bursary' }));
+    const payload = await body<{ total: number }>(response);
+
+    // Visibility is applied in SQL through the same predicate every other read uses, not by
+    // filtering results — otherwise `total` counts rows the caller never sees.
+    expect(payload.total).toBe(0);
+  });
+
+  it('refuses an anonymous request, like every other delivery route', async () => {
+    await page('Costs', 'Aid.');
+    h.as(undefined);
+
+    const response = await searchGet(h.context({ url: '/api/taproot/delivery/search?q=aid' }));
+    expect(response.status).toBe(401);
+  });
+
+  it('refuses a block type, which has no items of its own', async () => {
+    await createContentType(h.db.db, {
+      api_id: 'hero',
+      name: 'Hero',
+      name_plural: 'Heroes',
+      kind: 'block',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      title_field: null,
+    });
+
+    h.as(editor);
+    const response = await searchGet(
+      h.context({ url: '/api/taproot/delivery/search?q=anything&type=hero' }),
+    );
     expect(response.status).toBe(422);
   });
 });

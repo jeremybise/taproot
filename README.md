@@ -3,13 +3,13 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 4.6 complete, Phase 5A–5C, and Phase 5.5.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 4.6 complete, Phase 5A–5D, and Phase 5.5.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
 move it through a review workflow, schedule it, batch it with a dozen other pages into a release
-that goes live all at once, find out which pages are hard to use with a screen reader, and read back
-who did what in the audit log. See [SCOPE.md](SCOPE.md) for the full plan and
+that goes live all at once, search it by any phrase it contains, find out which pages are hard to
+use with a screen reader, and read back who did what in the audit log. See [SCOPE.md](SCOPE.md) for the full plan and
 [what's next](#whats-next).
 
 **The handbook is in [`apps/docs`](apps/docs)** — `npm run docs` — and covers using the CMS,
@@ -431,8 +431,31 @@ behind the scenes, rebuilt whenever an item is saved. **If you are upgrading an 
 `npm run db:reindex` once** — until you do, listings that filter or order by a field value will
 behave as though nothing matches. Nothing is lost; it just has not been indexed yet.
 
-**Next in the band:** full-text search (5D), with media multi-upload (5E), menu link-picking (5F)
-and AI-assisted alt text (5G) independent of it.
+**5D — search — is done.** A site can search its own content, and so can the admin. `taproot.search('financial aid')`
+returns ranked results with a plain-text excerpt around the match, and `apps/web` has a worked
+`/search` page — a plain form, no JavaScript, the query in the URL so a result page can be shared.
+The admin's "All content" box searches the same way, so an editor can find a page by a phrase buried
+in it rather than only by its title.
+
+What it searches is an item's *prose*: every text and rich-text value it holds, including the ones
+inside blocks and repeater rows, flattened to plain words when the item is saved. Markup never
+matches — searching for "strong" does not find every page with bold text in it.
+
+Deliberately not FTS5 or `tsvector`. Either would buy sharper ranking and cost the thing this repo
+has protected since Phase 0: one migration set that runs unbranched on SQLite, D1 and Postgres.
+Ranking is five bands — an exact title, a title beginning with the term, a title containing it, the
+path, the body — because that is what a `LIKE` genuinely knows, and arithmetic on top of it would be
+a score that looks principled and is not.
+
+Two limits, both stated rather than papered over. Text that lives *only* in a reusable block is not
+found through the pages that show it: the page stores a reference and no copy, and pulling the
+library's content in would mean rebuilding every referencing page's index each time that entry was
+edited. And **an existing site must run `npm run db:reindex` once** — the same command 5C added, now
+rebuilding both indexes. Until it does, search finds items by title and by nothing else, which is
+why Settings → System now reports how many items have never been indexed.
+
+**Next in the band:** media multi-upload (5E), menu link-picking (5F) and AI-assisted alt text (5G),
+all independent of each other.
 
 **Phase 5.5 — performance and caching — is done.** The caching SCOPE deferred until there was a
 boundary to invalidate against, now that Phase 3.75 has provided one.

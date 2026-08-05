@@ -695,6 +695,17 @@ export interface ContentItemValuesTable {
   value_date: string | null;
 }
 
+/**
+ * An item's searchable text, flattened out of `data` — see `0021_item_text`.
+ *
+ * One row per item, always written: an empty string means "indexed, holds no prose", where a
+ * missing row means the item has never been indexed at all.
+ */
+export interface ContentItemTextTable {
+  content_item_id: string;
+  text: string;
+}
+
 export interface Database {
   users: UsersTable;
   api_keys: ApiKeysTable;
@@ -721,6 +732,7 @@ export interface Database {
   terms: TermsTable;
   taxonomy_assignments: TaxonomyAssignmentsTable;
   content_item_values: ContentItemValuesTable;
+  content_item_text: ContentItemTextTable;
   menus: MenusTable;
   menu_items: MenuItemsTable;
   settings: SettingsTable;

@@ -4,7 +4,7 @@ import { createDb, type TaprootDb } from '../db/client.js';
 import { migrateToLatest } from '../db/migrations/index.js';
 import { createContentType, createField } from './types.js';
 import { createItem, listItems, updateItem } from './items.js';
-import { planValueIndex, reindexValues } from './derivedIndex.js';
+import { planDerivedIndexes, reindexDerived } from './derivedIndex.js';
 import type { ContentTypeRow, FieldRow } from '../db/schema.js';
 
 /**
@@ -29,6 +29,13 @@ async function rows(itemId: string) {
     .where('content_item_id', '=', itemId)
     .orderBy('field_api_id')
     .execute();
+}
+
+/** The value-index statements alone, which is what the assertions about them are counting. */
+function valueStatements(...args: Parameters<typeof planDerivedIndexes>) {
+  return planDerivedIndexes(...args).filter((statement) =>
+    /content_item_values/i.test(statement.compile().sql),
+  );
 }
 
 beforeEach(async () => {
@@ -135,7 +142,7 @@ describe('what gets indexed', () => {
      * text to number leaves old strings in `data`, and the planner runs over whatever is stored.
      * Dropping the value costs one unindexed field; throwing would make the item unsavable.
      */
-    const statements = planValueIndex(handle.db, 'item-1', fields, {
+    const statements = valueStatements(handle.db, 'item-1', fields, {
       rank: 'not a number',
       blurb: '',
       starts_at: 'the fourteenth',
@@ -205,7 +212,7 @@ describe('staying in step with the item', () => {
   it('rebuilds unconditionally, so a removed field strands nothing', () => {
     // The delete is not conditional on there being replacements — otherwise dropping a field from
     // a content type would leave its rows answering listings forever.
-    const statements = planValueIndex(handle.db, 'item-1', [], {});
+    const statements = valueStatements(handle.db, 'item-1', [], {});
     expect(statements).toHaveLength(1);
     expect(statements[0]!.compile().sql).toMatch(/delete from "content_item_values"/i);
   });
@@ -222,7 +229,7 @@ describe('reindexing', () => {
     await handle.db.deleteFrom('content_item_values').execute();
     expect(await rows(item.id)).toHaveLength(0);
 
-    const result = await reindexValues(handle);
+    const result = await reindexDerived(handle);
 
     expect(result.items).toBe(1);
     expect((await rows(item.id))[0]!.value_num).toBe(7);
@@ -230,8 +237,8 @@ describe('reindexing', () => {
 
   it('is idempotent, so running it twice is safe', async () => {
     const item = await make('g', { rank: 7, blurb: 'Hi' });
-    await reindexValues(handle);
-    await reindexValues(handle);
+    await reindexDerived(handle);
+    await reindexDerived(handle);
 
     expect(await rows(item.id)).toHaveLength(2);
   });

@@ -148,6 +148,7 @@ describe('the delivery API', () => {
       '/api/taproot/delivery/menu/[apiId]',
       '/api/taproot/delivery/resolve',
       '/api/taproot/delivery/schema',
+      '/api/taproot/delivery/search',
     ]);
   });
 });

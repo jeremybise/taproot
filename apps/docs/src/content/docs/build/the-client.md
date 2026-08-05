@@ -129,6 +129,77 @@ This is also not the way to find one known item. Filtering the results by slug s
 making the `resolve` call you could have made first — see
 [One specific item at a fixed route](/build/rendering-a-page/#one-specific-item-at-a-fixed-route).
 
+## `search(query, options?)`
+
+Search the site's content — titles, paths, and the words inside each item.
+
+```ts
+const q = Astro.url.searchParams.get('q') ?? '';
+const { results, total } = await taproot.search(q, { limit: 10 });
+```
+
+Each result is an `items` summary plus an **`excerpt`**: a window of the item's own text around the
+match, as plain text.
+
+```ts
+results[0];
+// { id, title, slug, path, status, publishedAt, updatedAt,
+//   excerpt: '…confirmed by the accreditation review of 2019, which…' }
+```
+
+Render the excerpt **as text**, never with `set:html`. It carries no markup — deliberately, so that
+nothing here is a string your templates have to trust — and highlighting the term is something you
+can do yourself, since you know what was searched for.
+
+### What it searches
+
+Every text and rich-text value an item holds, including the ones inside blocks and repeater rows,
+flattened to plain words when the item is saved. Markup is not part of it: searching for `strong`
+does not find every page with bold text on it.
+
+Two things it does not see. Content that lives **only in a reusable block** is not found through the
+pages that show it — the page stores a reference rather than a copy — though the pages' own text
+still is. And anything past roughly 3,000 words in a single item is not indexed, which is longer than
+the pages a site like this holds.
+
+### Ranking, and asking for a different order
+
+Results come back most-relevant first: an exact title match, then a title starting with the term,
+then a title containing it, then the path, then the body. Pass `sort` to override that with a named
+order — `path`, `title`, `newest`, `oldest` or `recently_updated`. Sorting a news archive's results
+by date is the usual reason:
+
+```ts
+await taproot.search(q, { sort: 'newest' });
+```
+
+The ranking is intentionally coarse. It says where the term was found and nothing more, because that
+is what the underlying match knows — there is no term-frequency score behind it, and inventing one
+would be a number that looks meaningful and is not.
+
+### Options
+
+| Option | Meaning |
+| --- | --- |
+| `type` | A content type's `api_id`, to search one type |
+| `sort` | A named order. Omit for relevance |
+| `limit` | Defaults to 20, capped at 100 |
+| `offset` | For paging |
+
+A blank or whitespace-only query returns **no results** rather than everything, so your search form
+needs no guard of its own. Only content a visitor can already see is searched — the same visibility
+rule `items` applies, so a page whose scheduled moment has passed is included whether or not anything
+has swept it. Singletons are omitted for the reason `items` omits them.
+
+`apps/web/src/pages/search.astro` in the Taproot repository is a working page: a plain `GET` form, no
+JavaScript, the query in the URL so a result page can be linked and reloaded.
+
+:::caution[Upgrading an existing site]
+Search reads an index built when each item is saved, and the migration that adds it creates it empty.
+An operator has to run `npm run db:reindex` once against the CMS — until then, search finds items by
+title and by nothing else. Settings → System reports how many items are waiting.
+:::
+
 ## `menu(apiId)`
 
 ```ts

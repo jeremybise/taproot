@@ -58,6 +58,68 @@ describe('createTaprootClient', () => {
 });
 
 /**
+ * Search, whose whole job on this side is turning arguments into a query string.
+ *
+ * Worth pinning because the failure mode is silent in the direction that matters: a parameter the
+ * server does not read is not an error, it is a search that quietly ignores what the site asked for
+ * — the same class of mismatch `imageVariants` exists to prevent for `?w=`.
+ */
+describe('search', () => {
+  function urlCapturingClient(payload: unknown = { results: [], total: 0, query: '' }) {
+    let seen = '';
+    const client = createTaprootClient({
+      url: 'https://cms.example.edu',
+      apiKey: 'tpr_test',
+      fetch: async (input, init) => {
+        seen = String(input);
+        // The key travels as a bearer token on every delivery request, search included.
+        expect((init?.headers as Record<string, string>).authorization).toBe('Bearer tpr_test');
+        return new Response(JSON.stringify(payload), {
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    return { client, seen: () => seen };
+  }
+
+  it('sends the term as `q`, and the options the endpoint reads', async () => {
+    const { client, seen } = urlCapturingClient();
+
+    await client.search('financial aid', { type: 'page', sort: 'newest', limit: 5, offset: 10 });
+
+    const url = new URL(seen());
+    expect(url.pathname).toBe('/api/taproot/delivery/search');
+    expect(url.searchParams.get('q')).toBe('financial aid');
+    expect(url.searchParams.get('type')).toBe('page');
+    expect(url.searchParams.get('sort')).toBe('newest');
+    expect(url.searchParams.get('limit')).toBe('5');
+    expect(url.searchParams.get('offset')).toBe('10');
+  });
+
+  it('omits what was not asked for, so the server keeps its own defaults', async () => {
+    const { client, seen } = urlCapturingClient();
+
+    await client.search('aid');
+
+    const url = new URL(seen());
+    expect([...url.searchParams.keys()]).toEqual(['q']);
+  });
+
+  /**
+   * A blank term is forwarded rather than short-circuited here. The server answers it with no
+   * results, and having one implementation of that rule means a site cannot get a different answer
+   * depending on which end it asked.
+   */
+  it('forwards a blank term instead of deciding for the server', async () => {
+    const { client, seen } = urlCapturingClient();
+
+    await client.search('   ');
+
+    expect(new URL(seen()).searchParams.get('q')).toBe('   ');
+  });
+});
+
+/**
  * Deduplication, which is about concurrency and deliberately not about caching.
  *
  * A layout and a component both asking for the main menu is the ordinary case, and two round trips

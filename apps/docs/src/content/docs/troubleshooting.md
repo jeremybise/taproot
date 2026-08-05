@@ -60,6 +60,30 @@ removed by design — see [Rich text](/content/rich-text/).
 
 Top-level headings and inline images are also deliberately not allowed.
 
+## "Search only finds things by their title"
+
+The index that holds each item's words has not been built yet. It is filled in when an item is
+saved, and the upgrade that added it creates it empty — so content written before the upgrade is
+findable by title and by nothing else until somebody rebuilds it.
+
+Ask whoever runs the server to run `npm run db:reindex` once. **Settings → System** says how many
+items are waiting, under *Search index*; nothing clears that number on its own. Saving an item also
+indexes that one item, which is why an old page starts turning up as soon as anybody edits it.
+
+## "Search does not find a phrase that is definitely on the page"
+
+Three things it cannot see, all deliberate:
+
+- **Text in a reusable block.** The page holds a reference to the library entry rather than a copy
+  of it, so the words belong to the entry — which has no page of its own to return.
+- **Words in an image, a PDF, or another uploaded file.** Only text you typed into fields is
+  searched.
+- **A page nobody can see.** Search on your site shows only published content, exactly as the site
+  does. **All content** in the admin searches drafts too.
+
+Searching matches the words as you typed them, so a phrase with a typo in the page — or in your
+search — will not match.
+
 ## "The image is cropped wrong"
 
 Set its focal point. **Library → Media**, open the image, drag the focal point until every preview

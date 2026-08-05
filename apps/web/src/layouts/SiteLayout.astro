@@ -135,8 +135,24 @@ const isCurrent = (href: string) => path === href;
         text-decoration: none;
         color: var(--ink);
       }
+      header.site .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.5rem 1rem;
+      }
+      a.search-link {
+        font-size: 0.9375rem;
+        text-decoration: none;
+      }
+      a.search-link:hover {
+        text-decoration: underline;
+      }
       nav.primary {
         margin-top: 0.75rem;
+        /* The nav takes the whole second row, so the brand and the search link share the first. */
+        flex-basis: 100%;
       }
       nav.primary ul {
         list-style: none;
@@ -198,6 +214,15 @@ const isCurrent = (href: string) => path === href;
     <header class="site">
       <div class="wrap">
         <a href="/" class="brand">Riverbend College</a>
+        {
+          /*
+            Beside the navigation rather than in it. The menu's entries come from the CMS and
+            reference content items; `/search` is a route this site serves itself, so putting it in
+            the menu would mean an editor could remove the only way to reach a page the CMS does not
+            know exists — and could not put it back, because there is nothing there to point at.
+          */
+        }
+        <a href="/search" class="search-link">Search</a>
 
         {
           nav.length > 0 && (

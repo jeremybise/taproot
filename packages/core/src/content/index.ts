@@ -5,6 +5,7 @@ export * from './cacheTags.js';
 export * from './derivedIndex.js';
 export * from './items.js';
 export * from './itemQueries.js';
+export * from './search.js';
 export * from './redirects.js';
 export * from './auditLog.js';
 export * from './workflow.js';

@@ -23,6 +23,7 @@ import * as m0017 from './0017_singleton_preview_path.js';
 import * as m0018 from './0018_field_visibility.js';
 import * as m0019 from './0019_item_values.js';
 import * as m0020 from './0020_perf_indexes.js';
+import * as m0021 from './0021_item_text.js';
 
 /**
  * The migration registry.
@@ -56,6 +57,7 @@ export const migrations: Record<string, Migration> = {
   '0018_field_visibility': m0018,
   '0019_item_values': m0019,
   '0020_perf_indexes': m0020,
+  '0021_item_text': m0021,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

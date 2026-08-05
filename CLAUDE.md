@@ -323,11 +323,47 @@ source of truth, rebuilt from `data`, so a restored revision restores it. Six th
   or a scheduled item would go live only when something happened to reindex it.
 - **The planner is not called on the cascading path-move path.** Descendants' `data` did not
   change, and that batch already carries a statement per descendant.
-- **`npm run db:reindex` is a required step after migration `0019`, not a nicety.** The table is
-  created empty and a migration cannot fill it — that needs field definitions and a walk over
-  stored JSON. Until it runs, every query field filtering or ordering by a value answers as though
-  nothing matched. `reindexValues` goes through `handle.batch` per item so an item is never left
-  with its old rows deleted and its new ones unwritten.
+- **`npm run db:reindex` is a required step after migrations `0019` and `0021`, not a nicety.** Each
+  table is created empty and a migration cannot fill it — that needs field definitions and a walk
+  over stored JSON. Until it runs, every query field filtering or ordering by a value answers as
+  though nothing matched, and search finds an item by its title and by nothing else.
+  `reindexDerived` goes through `handle.batch` per item so an item is never left with its old rows
+  deleted and its new ones unwritten.
+
+**Search is a second derived table behind the same planner, and `planDerivedIndexes` is the only
+entry a call site names.** `content_item_text` holds one row per item carrying its prose flattened
+with `htmlToText`; `ItemFilters.search` matches it with the repo's lowercased `LIKE` beside title
+and path. Not FTS5 or `tsvector` — one migration set has to run unbranched on all three dialects,
+and a second index implementation is a search that answers differently depending on where it is
+deployed. Seven things hold it up:
+- **The table materialises the text; it does not make it indexed.** `like '%needle%'` is a scan on
+  every dialect, so an index on `text` would be paid for on every write and spent on nothing. What
+  it buys is that the scan reads one flattened column instead of parsing every item's JSON, and that
+  the walk happens once per save rather than once per query.
+- **One predicate, not one per caller.** The clause lives in `applyItemFilters` — shared byte for
+  byte with the status facets — so the admin's cross-type search, `delivery/items?q=`, and
+  `delivery/search` narrow identically. A second query for the consumer is a search that finds a
+  page the CMS cannot, discoverable from neither screen.
+- **The walk recurses where the value walk does not.** Prose sits inside blocks (bounded by
+  `MAX_BLOCK_DEPTH`) and repeater rows, so a top-level-only walk misses most of a composed homepage
+  while looking correct on a simple one. Only `text` and `richtext` contribute: a `select` stores an
+  option value an editor never sees, and `media`/`relation`/`link`/`taxonomy` store ids.
+- **The block registry has to be loaded on the save that changes nothing.** `updateItem` rebuilds
+  from stored `data` on every save, and the registry was fetched only on the branch validating new
+  content — so a publish walked the blocks with no schemas and wrote an index missing every block's
+  prose. Loaded once per write and gated on *placed* blocks, the same data-driven gate
+  `resolveDelivery` uses.
+- **A reusable block contributes nothing**, and that is a stated limit rather than an oversight: the
+  page stores `{ id, type, ref }`, reaching the entry needs a read inside a synchronous planner, and
+  the entry's text would have to be rebuilt across every referencing page on each library edit.
+- **`relevance` is not in `ITEM_SORTS`.** That set is the query field's sort menu — validated into
+  saved queries, rendered in the builder, emitted into the generated types — and offering "most
+  relevant" to a listing with no term answers an editor by ignoring them. A search with no named
+  order ranks; naming one always wins.
+- **The row is written even when an item holds no prose.** An empty string is "indexed, holds
+  nothing" and a missing row is "never indexed" — the state a database sits in between the migration
+  and the reindex, which otherwise looks exactly like a search that legitimately found less.
+  `searchIndexStatus` is what Settings → System reports it from.
 
 **"Upcoming" is stored as an intent and resolved against the clock on every read.** `dateFilter` is
 `'any' | 'upcoming' | 'past'`, never a timestamp: a stored bound would be frozen at whatever moment

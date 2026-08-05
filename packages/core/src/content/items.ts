@@ -23,8 +23,8 @@ import {
   RevisionError,
 } from './revisions.js';
 import { planAssignmentIndex } from './taxonomies.js';
-import { planValueIndex, type IndexedValueKind } from './derivedIndex.js';
-import { blockTypeRegistry } from './types.js';
+import { planDerivedIndexes, type IndexedValueKind } from './derivedIndex.js';
+import { blockTypeRegistry, type ContentTypeWithFields } from './types.js';
 import {
   buildCollectionPath,
   buildPath,
@@ -84,10 +84,25 @@ export function hydrateItem(row: ContentItemRow): ContentItem {
 // Reads
 // ---------------------------------------------------------------------------
 
+/**
+ * A named order, plus the one that is not part of the vocabulary.
+ *
+ * `relevance` is deliberately **not** in `ITEM_SORTS`. That set is the query field's sort menu — it
+ * is validated into a saved query, rendered in the builder, and emitted into the generated types —
+ * and "most relevant" means nothing to a listing with no search term. Offering it there would put a
+ * choice in front of an editor that answers their question by ignoring them. It is reached by
+ * searching instead: a list with a term and no explicitly named order comes back ranked.
+ */
+type ListOrder = ItemSort | 'relevance';
+
 export interface ListItemsOptions extends ItemFilters {
   limit?: number;
   offset?: number;
-  /** Defaults to `path`, which is what every caller got before this existed. */
+  /**
+   * Defaults to `path` — or to relevance when there is a `search` and no named order, which is what
+   * makes the admin's cross-type search and the delivery search endpoint rank without either of them
+   * asking. Naming an order always wins, so a search page offering "newest first" gets it.
+   */
   sort?: ItemSort;
   /**
    * Which of the item's own fields `field_asc` / `field_desc` order by, and how it compares.
@@ -246,8 +261,30 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
   }
   if (filters.search) {
     const needle = `%${filters.search.toLowerCase()}%`;
+    /**
+     * Title, path, and the item's own prose through the derived text index.
+     *
+     * The third term is the whole of what makes this search rather than a title filter, and it is
+     * here — in the predicate the listing and its status facets share — rather than in a function of
+     * its own, so the admin's cross-type search, the delivery listing's `q`, and the delivery search
+     * endpoint all narrow identically. A second implementation for the consumer would be a search
+     * that finds a page the CMS cannot, which is the failure SCOPE names.
+     *
+     * EXISTS rather than a join, for the reason the taxonomy filter states: it must not multiply a
+     * row, and the facet counts read this same builder.
+     */
     q = q.where((eb) =>
-      eb.or([eb(sql`lower(title)`, 'like', needle), eb(sql`lower(path)`, 'like', needle)]),
+      eb.or([
+        eb(sql`lower(title)`, 'like', needle),
+        eb(sql`lower(path)`, 'like', needle),
+        eb.exists(
+          eb
+            .selectFrom('content_item_text')
+            .select('content_item_text.content_item_id')
+            .whereRef('content_item_text.content_item_id', '=', 'content_items.id')
+            .where(sql`lower(content_item_text.text)`, 'like', needle),
+        ),
+      ]),
     );
   }
 
@@ -360,12 +397,22 @@ async function listWith<T>(
   return { rows, total: Number(totalRow?.count ?? 0) };
 }
 
+/**
+ * The order to apply when the caller named none.
+ *
+ * One place, so a search through the admin and a search through the delivery API cannot come back
+ * ordered differently — which would be two searches rather than one.
+ */
+function listOrder(options: ListItemsOptions): ListOrder {
+  return options.sort ?? (options.search ? 'relevance' : 'path');
+}
+
 export async function listItems(
   db: Kysely<Database>,
   options: ListItemsOptions = {},
 ): Promise<{ items: ContentItem[]; total: number }> {
   const { rows, total } = await listWith(db, options, (query) =>
-    applyItemSort(query.selectAll(), options.sort ?? 'path', options.sortField)
+    applyItemSort(query.selectAll(), listOrder(options), options.sortField, options.search)
       .limit(options.limit ?? 50)
       .offset(options.offset ?? 0)
       .execute(),
@@ -394,8 +441,9 @@ export async function listItemSummaries(
   const { rows, total } = await listWith(db, options, (query) =>
     applyItemSort(
       query.select([...ITEM_SUMMARY_COLUMNS]),
-      options.sort ?? 'path',
+      listOrder(options),
       options.sortField,
+      options.search,
     )
       .limit(options.limit ?? 50)
       .offset(options.offset ?? 0)
@@ -423,9 +471,44 @@ export async function listItemSummaries(
  */
 function applyItemSort<Q extends { orderBy: (...args: any[]) => Q }>(
   query: Q,
-  sort: ItemSort,
+  sort: ListOrder,
   sortField?: ListItemsOptions['sortField'],
+  search?: string,
 ): Q {
+  /**
+   * Relevance: a `CASE` over where the term was found, best match first.
+   *
+   * Five bands rather than a score, because there is no score to compute — a `LIKE` answers whether
+   * a term appears, not how often or how near the start, and inventing arithmetic on top of that
+   * would be a ranking that looks principled and is not. What the bands do encode is the one thing
+   * that is genuinely knowable: a term in the title is what the page is *about*, a term in the body
+   * is what the page *mentions*, and a visitor searching for "financial aid" wants the page called
+   * that above the twenty that link to it.
+   *
+   * Ends with `path` like every other order, so paging stays stable when a hundred pages share a
+   * band — without it, two items in band 4 can swap between page 1 and page 2 and one is shown twice.
+   */
+  if (sort === 'relevance' && search) {
+    const term = search.toLowerCase();
+    const contains = `%${term}%`;
+
+    return query
+      .orderBy(
+        sql`case
+              when lower(content_items.title) = ${term} then 0
+              when lower(content_items.title) like ${`${term}%`} then 1
+              when lower(content_items.title) like ${contains} then 2
+              when lower(content_items.path) like ${contains} then 3
+              else 4
+            end`,
+      )
+      .orderBy('path', 'asc');
+  }
+
+  // Asked for with no term — which is what a caller gets by passing `sort: 'relevance'` and no
+  // search. Falls back rather than erroring, exactly as a field sort with no `sortField` does.
+  if (sort === 'relevance') return query.orderBy('path', 'asc');
+
   /**
    * Ordering by one of the item's own values, through a correlated scalar subquery.
    *
@@ -662,6 +745,33 @@ export async function getSubtree(db: Kysely<Database>, rootId: string): Promise<
 // Writes
 // ---------------------------------------------------------------------------
 
+/**
+ * Block type schemas, loaded only when this item actually places a block.
+ *
+ * Two callers on every write — `validateItemData` checks a block's contents against them, and the
+ * search index walks those contents to flatten their prose — so it is loaded once and passed to
+ * both rather than fetched twice for the same map.
+ *
+ * The gate is the one `resolveDelivery` already applies on the read path, and it is **data-driven
+ * rather than schema-driven** for the same reason: asking "does this content type offer a block
+ * field" is answered yes by every type that offers blocks at all, while asking what this item
+ * actually holds is answered no by the page nobody put one on. An empty map is the right answer for
+ * that page in both directions — there is nothing to validate and nothing to index.
+ */
+async function blockTypesFor(
+  db: Kysely<Database>,
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+): Promise<Map<string, ContentTypeWithFields>> {
+  const placesBlocks = fields.some((field) => {
+    if (field.type !== 'block') return false;
+    const value = data[field.api_id];
+    return Array.isArray(value) && value.length > 0;
+  });
+
+  return placesBlocks ? blockTypeRegistry(db) : new Map();
+}
+
 export interface CreateItemInput {
   contentTypeId: string;
   title: string;
@@ -714,9 +824,11 @@ export async function createItem(
     }
   }
 
-  const validation = validateItemData(fields, input.data ?? {}, {
-    blockTypes: await blockTypeRegistry(db),
-  });
+  // Loaded once and used twice: validation needs it to check a block's contents, and the text index
+  // needs it to walk them. A second call would be a second query for the same map.
+  const blockTypes = await blockTypesFor(db, fields, input.data ?? {});
+
+  const validation = validateItemData(fields, input.data ?? {}, { blockTypes });
   if (!validation.success) {
     throw new ContentItemError('Content failed validation.', 'validation_failed', validation.errors);
   }
@@ -762,7 +874,7 @@ export async function createItem(
   assertTermsExist(assignments.missing);
   // Beside the taxonomy index and never apart from it: two derived tables rebuilt at different
   // write points is one of them going quietly stale.
-  const values = planValueIndex(db, row.id, fields, validation.data ?? {});
+  const derived = planDerivedIndexes(db, row.id, fields, validation.data ?? {}, { blockTypes });
 
   // Batched rather than a bare insert so the item, its first revision, and its taxonomy index
   // cannot diverge — an item whose history begins one save late is a gap that can never be
@@ -770,7 +882,7 @@ export async function createItem(
   await handle.batch([
     db.insertInto('content_items').values(row),
     ...assignments.statements,
-    ...values,
+    ...derived,
     buildRevisionStatement(db, {
       contentItemId: row.id,
       revisionNumber: 1,
@@ -840,10 +952,11 @@ export async function updateItem(
   if (!existing) throw new ContentItemError(`Content item ${id} not found.`, 'not_found');
 
   let data = existing.data;
+  let blockTypes: Map<string, ContentTypeWithFields>;
+
   if (input.data !== undefined) {
-    const validation = validateItemData(fields, input.data, {
-      blockTypes: await blockTypeRegistry(db),
-    });
+    blockTypes = await blockTypesFor(db, fields, input.data);
+    const validation = validateItemData(fields, input.data, { blockTypes });
     if (!validation.success) {
       throw new ContentItemError(
         'Content failed validation.',
@@ -852,6 +965,14 @@ export async function updateItem(
       );
     }
     data = validation.data ?? {};
+  } else {
+    /**
+     * No new content — and the registry is still needed, because the derived indexes below are
+     * rebuilt from what is stored whether or not this save changed it. Without it, publishing a page
+     * would walk its blocks with no schemas to walk them by and quietly strip every block's prose
+     * out of the search index, on the one action most likely to be the last one somebody takes.
+     */
+    blockTypes = await blockTypesFor(db, fields, data);
   }
 
   const timestamp = now();
@@ -953,13 +1074,14 @@ export async function updateItem(
   assertTermsExist(assignments.missing);
   statements.push(...assignments.statements);
   /**
-   * The value index, rebuilt from the same `data` in the same batch.
+   * The value and text indexes, rebuilt from the same `data` in the same batch.
    *
    * Note this is the *item's own* update path only. The cascading path move below rewrites
    * descendants' `path` and touches nothing in their `data`, so reindexing them would add rows to a
-   * batch that already carries a statement per descendant — for values that cannot have changed.
+   * batch that already carries a statement per descendant — for values and prose that cannot have
+   * changed.
    */
-  statements.push(...planValueIndex(db, id, fields, data));
+  statements.push(...planDerivedIndexes(db, id, fields, data, { blockTypes }));
 
   const sequence = await revisionSequence(db, id);
   const after = { title, slug, status, data, seo };

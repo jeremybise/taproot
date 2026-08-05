@@ -4,19 +4,23 @@ import type { BatchStatement } from '../db/batch.js';
 import type { TaprootDb } from '../db/client.js';
 import type { Database, FieldRow, FieldType } from '../db/schema.js';
 import { parseJson } from '../db/values.js';
+import { MAX_BLOCK_DEPTH, repeaterRowFields } from '../validation/fields.js';
+import { htmlToText } from './sanitizeHtml.js';
+import { blockTypeRegistry } from './types.js';
 
 /**
- * The derived index of scalar field values.
+ * The derived indexes rebuilt from an item's `data`: scalar values, and searchable text.
  *
- * Rebuilt in the same atomic batch as the item write, exactly as `planAssignmentIndex` is, and for
- * the same reason: a stale row here is invisible until it wrongly answers a listing. The authored
- * value in `content_items.data` stays the source of truth — see `0019_item_values`.
+ * Both are rebuilt in the same atomic batch as the item write, exactly as `planAssignmentIndex` is,
+ * and for the same reason: a stale row here is invisible until it wrongly answers a listing. The
+ * authored value in `content_items.data` stays the source of truth — see `0019_item_values` and
+ * `0021_item_text`.
  *
- * **Deliberately one planner, even though it currently produces one table's rows.** Full-text search
- * needs a second derived table rebuilt at exactly the same write points, and two planners added at
- * two different times is two chances to miss one of them; the *walks* differ (this one is top-level
- * scalars with no recursion, search flattens richtext and descends through blocks), but the call
- * sites must not.
+ * **Deliberately one planner, though it produces two tables' rows.** Two planners added at two
+ * different times is two chances to miss one of the call sites, and a derived table rebuilt at a
+ * *different* write point from its sibling is one of them going quietly stale. The *walks* differ —
+ * values are top-level scalars with no recursion, text flattens richtext and descends through blocks
+ * and repeater rows — but `planDerivedIndexes` is the only thing a call site names.
  */
 
 /**
@@ -105,17 +109,16 @@ function rowsForField(itemId: string, field: FieldRow, value: unknown): IndexRow
 }
 
 /**
- * Statements rebuilding one item's index rows.
+ * The statements rebuilding one item's value rows.
  *
- * Synchronous and read-free, unlike `planAssignmentIndex` — there is nothing to check the existence
- * of, because a value is not a reference. That is what lets it be called from the cascading paths
- * where a read is not available.
+ * Not exported: `planDerivedIndexes` is the only entry a call site names, so the two indexes cannot
+ * be rebuilt at different write points.
  *
  * The delete is unconditional, for the reason the taxonomy planner states: removing a field from a
  * content type would otherwise strand its rows here forever, answering listings with values the
  * item no longer has.
  */
-export function planValueIndex(
+function planValueIndex(
   db: Kysely<Database>,
   contentItemId: string,
   fields: FieldRow[],
@@ -141,18 +144,198 @@ export function planValueIndex(
   return statements;
 }
 
+// ---------------------------------------------------------------------------
+// Searchable text
+// ---------------------------------------------------------------------------
+
 /**
- * Rebuild the index for every item.
+ * How much of one item's prose is searchable.
  *
- * **Required after the migration, not optional.** The table is created empty, so until this has run
- * every query field answers nothing — and a migration cannot do it, because it needs each content
- * type's field definitions and a walk over stored JSON.
+ * A bound rather than the whole thing, because `like '%needle%'` reads this column for every row it
+ * considers — so an unbounded column makes one thirty-thousand-word policy document part of the cost
+ * of everybody else's search. What it costs is stated plainly: a match beyond this point is missed.
+ * 20,000 characters is roughly 3,000 words, which is longer than the pages a CMS like this holds and
+ * far short of any dialect's row limit.
+ */
+const MAX_SEARCH_TEXT = 20_000;
+
+/**
+ * Gather every piece of prose an item holds, in field order.
+ *
+ * Unlike the value walk above this one **recurses**, because prose is where authors put it: a
+ * paragraph inside a repeater row inside a block is exactly as much a part of the page as a
+ * top-level body, and a search that could not see it would miss most of a composed homepage. The
+ * bound is `MAX_BLOCK_DEPTH`, the same one `validateItemData` enforces, so a hand-written payload
+ * cannot recurse this until the stack gives out.
+ *
+ * Only `text` and `richtext` contribute. The others are excluded on purpose rather than by
+ * oversight:
+ *
+ * - `select` stores the option's *value* (`student_services`), which is a key an editor never sees.
+ *   Matching it produces hits the visible page cannot explain.
+ * - `media`, `relation`, `link` and `taxonomy` store ids. An id is not text somebody searches for,
+ *   and a term's *name* belongs to the term rather than to the item — `taxonomy_assignments` is
+ *   how that question gets asked.
+ * - `number`, `boolean` and `date` are what the value index is for.
+ * - `query` stores a rule, not an answer. Indexing the rule would match on the vocabulary of the
+ *   query builder, and indexing the answer would make one item's text depend on another's.
+ */
+function collectText(
+  out: string[],
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  blockTypes: Map<string, { fields: FieldRow[] }> | undefined,
+  depth: number,
+): void {
+  for (const field of fields) {
+    const value = data[field.api_id];
+    if (value === null || value === undefined) continue;
+
+    if (field.type === 'text') {
+      if (typeof value === 'string') out.push(value);
+      continue;
+    }
+
+    if (field.type === 'richtext') {
+      // The reason `htmlToText`'s docstring has always named search indexing. Matching the stored
+      // HTML would match tag names and attribute values as readily as prose — a search for "title"
+      // hitting every page carrying a `title` attribute — and would miss a phrase split across an
+      // emphasis, because `<em>` sits in the middle of it.
+      if (typeof value === 'string') out.push(htmlToText(value));
+      continue;
+    }
+
+    if (field.type === 'repeater') {
+      if (!Array.isArray(value)) continue;
+      const subFields = repeaterRowFields(field);
+      for (const row of value) {
+        if (!row || typeof row !== 'object') continue;
+        const rowData = (row as { data?: unknown }).data;
+        if (rowData && typeof rowData === 'object') {
+          collectText(out, subFields, rowData as Record<string, unknown>, blockTypes, depth);
+        }
+      }
+      continue;
+    }
+
+    if (field.type === 'block') {
+      if (!Array.isArray(value) || depth <= 0) continue;
+
+      for (const raw of value) {
+        if (!raw || typeof raw !== 'object') continue;
+        const instance = raw as { type?: unknown; data?: unknown; ref?: unknown };
+        if (typeof instance.type !== 'string') continue;
+
+        /**
+         * A reusable block contributes nothing, and that is a limitation worth stating rather than
+         * hiding. Its content belongs to the library entry — the page stores only `{ id, type, ref }`
+         * — so reaching it needs a read, which this planner deliberately cannot do: it is
+         * synchronous so the paths that have no read available can still call it. Worse than the
+         * read is the fan-out: text pulled in from the library would have to be rebuilt across every
+         * referencing page each time the entry was edited, and nothing here can trigger that.
+         *
+         * So prose that lives *only* in a shared block is not findable through the pages that show
+         * it. That is the same trade the feature already makes elsewhere — a referencing page's
+         * revision records that it referenced the entry, never what the entry said.
+         */
+        const blockType = blockTypes?.get(instance.type);
+        if (!blockType || !instance.data || typeof instance.data !== 'object') continue;
+
+        collectText(
+          out,
+          blockType.fields,
+          instance.data as Record<string, unknown>,
+          blockTypes,
+          depth - 1,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * The statement rebuilding one item's searchable text.
+ *
+ * An upsert rather than a delete and an insert, because there is exactly one row: two statements
+ * would double this planner's share of a batch that already carries path rewrites, redirects, a
+ * revision, the taxonomy assignments and the value rows — and D1 caps how many statements a batch
+ * may hold.
+ *
+ * The row is written even when the item has no prose at all. An empty string means "indexed, holds
+ * nothing"; a *missing* row means "never indexed", which is what every item looks like on a database
+ * that has not run `db:reindex` since the migration. Collapsing the two would make that state
+ * undiagnosable.
+ *
+ * The stored text keeps its original case. The query lowercases both sides, following the admin's
+ * existing title search, and an excerpt drawn from this column has to read the way the page does.
+ */
+function planTextIndex(
+  db: Kysely<Database>,
+  contentItemId: string,
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  blockTypes?: Map<string, { fields: FieldRow[] }>,
+): BatchStatement[] {
+  const parts: string[] = [];
+  collectText(parts, fields, data, blockTypes, MAX_BLOCK_DEPTH);
+
+  const text = parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SEARCH_TEXT);
+
+  return [
+    db
+      .insertInto('content_item_text')
+      .values({ content_item_id: contentItemId, text })
+      .onConflict((oc) => oc.column('content_item_id').doUpdateSet({ text })),
+  ];
+}
+
+export interface DerivedIndexOptions {
+  /**
+   * Block type schemas keyed by `api_id`, from `blockTypeRegistry`.
+   *
+   * Omitted, a block's contents are not indexed — which is right for a caller that has no registry
+   * in hand and wrong for a write. Both write paths already load one for `validateItemData`, so
+   * passing it costs nothing.
+   */
+  blockTypes?: Map<string, { fields: FieldRow[] }>;
+}
+
+/**
+ * Every derived-index statement for one item, for the one call site shape that must not drift.
+ *
+ * Synchronous and read-free, unlike `planAssignmentIndex` — there is nothing to check the existence
+ * of, because a value is not a reference. That is what lets it be called from the paths where a read
+ * is not available.
+ */
+export function planDerivedIndexes(
+  db: Kysely<Database>,
+  contentItemId: string,
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  options: DerivedIndexOptions = {},
+): BatchStatement[] {
+  return [
+    ...planValueIndex(db, contentItemId, fields, data),
+    ...planTextIndex(db, contentItemId, fields, data, options.blockTypes),
+  ];
+}
+
+/**
+ * Rebuild every derived index for every item.
+ *
+ * **Required after the migrations that add them, not optional.** Both tables are created empty, so
+ * until this has run a query field answers as though nothing matched and a search finds only what
+ * its title says — and a migration cannot do it, because it needs each content type's field
+ * definitions and a walk over stored JSON.
+ *
+ * One walk rebuilds both, which is the same argument `planDerivedIndexes` makes: a command that
+ * rebuilt one of them would leave a database half-indexed by whoever ran the older version.
  *
  * Batched per item rather than per row, and sequential rather than parallel: this runs against a
  * production database and finishing a minute later is a better trade than saturating D1's
  * connection budget.
  */
-export async function reindexValues(
+export async function reindexDerived(
   handle: TaprootDb,
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ items: number }> {
@@ -171,6 +354,10 @@ export async function reindexValues(
     byType.set(field.content_type_id, list);
   }
 
+  // Once for the whole run rather than per item: it is the same map for every one of them, and this
+  // walks the entire site.
+  const blockTypes = await blockTypeRegistry(db);
+
   let done = 0;
   for (const item of items) {
     const fields = byType.get(item.content_type_id) ?? [];
@@ -179,7 +366,7 @@ export async function reindexValues(
     // Through `batch` rather than statement by statement, so an item is never left with its old
     // rows deleted and its new ones not yet written — which is what a listing would read as the
     // item having no values at all.
-    await handle.batch(planValueIndex(db, item.id, fields, data));
+    await handle.batch(planDerivedIndexes(db, item.id, fields, data, { blockTypes }));
 
     done += 1;
     onProgress?.(done, items.length);

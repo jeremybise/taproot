@@ -180,11 +180,12 @@ npm run db:migrate:remote
 It prints each migration as it applies, and is safe to re-run — already-applied migrations are
 skipped.
 
-### After `0019_item_values`, reindex once
+### After `0019_item_values` and `0021_item_text`, reindex once
 
 `0019` adds `content_item_values`, the derived index that lets a listing filter and order by a value
-inside an item's own field data — an event's start date rather than its publish date. The migration
-creates the table **empty**, and cannot fill it: doing so needs every content type's field
+inside an item's own field data — an event's start date rather than its publish date. `0021` adds
+`content_item_text`, the flattened copy of each item's prose that search reads. Each migration
+creates its table **empty**, and cannot fill it: doing so needs every content type's field
 definitions and a walk over each item's stored JSON, which is application knowledge rather than
 schema knowledge.
 
@@ -192,13 +193,19 @@ schema knowledge.
 npm run db:reindex
 ```
 
-Until it has run, any `query` field that filters or orders by a field value answers as though nothing
-matched — the content is intact and simply not indexed yet. It is safe to re-run at any time, since
-it rebuilds from `content_items.data`, which remains the source of truth. New and edited items index
-themselves as part of the same write, so this is a one-off for content that already existed.
+One command rebuilds both. Until it has run, any `query` field that filters or orders by a field
+value answers as though nothing matched, and search finds an item by its title and by nothing else —
+the content is intact and simply not indexed yet. It is safe to re-run at any time, since it rebuilds
+from `content_items.data`, which remains the source of truth. New and edited items index themselves
+as part of the same write, so this is a one-off for content that already existed.
 
-> Only needed on a database that already had content when `0019` was applied. A fresh deployment has
-> nothing to backfill, and `npm run db:seed` indexes what it creates.
+**Settings → System says whether it is needed.** Under *Search index* it reports how many content
+items have never been indexed; anything above zero on a database with content in it means this has
+not been run. That number does not fall on its own — nothing sweeps it — and the symptom without it
+is a search returning less than it should, with no error anywhere.
+
+> Only needed on a database that already had content when the migration was applied. A fresh
+> deployment has nothing to backfill, and `npm run db:seed` indexes what it creates.
 
 **A 400 reading "not authorized" is usually about the account, not the token.** Cloudflare answers
 that way when the token is valid but has no D1 access *for that account id* — either

@@ -67,6 +67,28 @@ resizes to match.
 rewrites your lengths itself. `crop="server"` asks the CMS for the cropped rectangle so no hidden
 pixels are downloaded; it degrades to a hotspot-framed original wherever the CMS cannot transform.
 
+## Search
+
+`taproot.search` covers titles, paths, and the words inside each item — including the ones in blocks
+and repeater rows — with a plain-text excerpt around the match.
+
+```astro
+---
+const q = Astro.url.searchParams.get('q') ?? '';
+const { results, total } = await taproot.search(q, { limit: 10 });
+---
+{results.map((result) => (
+  <article>
+    <a href={result.path}>{result.title}</a>
+    <p>{result.excerpt}</p>
+  </article>
+))}
+```
+
+Ranked title-first by default; pass `sort` for a named order instead. A blank query returns no
+results rather than everything, so an empty search box needs no guard. The excerpt is plain text and
+is meant to be rendered as text.
+
 ## What it deliberately does not do
 
 **It never touches a database.** This package imports `@taprootcms/core/pure` at runtime — crop

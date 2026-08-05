@@ -6,6 +6,7 @@ import type {
   DeliveryResult,
   DeliverySchema,
   DeliveryTermRef,
+  ItemSort,
 } from '@taprootcms/core/pure';
 
 /**
@@ -56,6 +57,32 @@ export interface ItemSummary {
   status: string;
   publishedAt: string | null;
   updatedAt: string;
+}
+
+/**
+ * One search result: a summary plus the sentence the term was found in.
+ *
+ * The excerpt is **plain text** and must be rendered as text. It is assembled from stored content,
+ * so a consumer putting it through `set:html` would be undoing the sanitiser on the one field that
+ * never passed through it as markup — and there is nothing to gain, since it carries no highlight
+ * markup by design.
+ */
+export interface SearchResult extends ItemSummary {
+  excerpt: string;
+}
+
+export interface SearchOptions {
+  /** A content type's `api_id`, to search one type. Omit for everything addressable. */
+  type?: string;
+  /**
+   * One of the named orders. Omit for relevance, which is what a search page usually wants.
+   *
+   * Anything outside the vocabulary falls back to relevance rather than erroring.
+   */
+  sort?: ItemSort;
+  /** Defaults to 20, capped server-side at 100. */
+  limit?: number;
+  offset?: number;
 }
 
 export interface ListOptions {
@@ -212,6 +239,31 @@ export function createTaprootClient(options: TaprootClientOptions) {
       return request<{ items: ItemSummary[]; total: number; term?: DeliveryTermRef }>(
         `/items${suffix}`,
       );
+    },
+
+    /**
+     * Search a site's content: title, path, and the item's own prose.
+     *
+     * Results come back ranked — a term in the title above a term in the body — with a plain-text
+     * excerpt around the match. A blank or whitespace-only term is answered with no results rather
+     * than with everything, so a site's own empty search box needs no guard of its own.
+     *
+     * ```astro
+     * const q = Astro.url.searchParams.get('q') ?? '';
+     * const { results, total } = await taproot.search(q);
+     * ```
+     */
+    search(
+      query: string,
+      searchOptions: SearchOptions = {},
+    ): Promise<{ results: SearchResult[]; total: number; query: string }> {
+      const params = new URLSearchParams({ q: query });
+      if (searchOptions.type) params.set('type', searchOptions.type);
+      if (searchOptions.sort) params.set('sort', searchOptions.sort);
+      if (searchOptions.limit !== undefined) params.set('limit', String(searchOptions.limit));
+      if (searchOptions.offset !== undefined) params.set('offset', String(searchOptions.offset));
+
+      return request<{ results: SearchResult[]; total: number; query: string }>(`/search?${params}`);
     },
 
     /**

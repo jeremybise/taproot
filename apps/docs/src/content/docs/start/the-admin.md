@@ -15,7 +15,9 @@ different places.
 At the bottom of that group:
 
 - **All content** — searches across every type at once. Useful when you know a title but not what
-  kind of thing it is.
+  kind of thing it is, and it searches the words *inside* your content too — so a phrase you
+  remember writing finds the page it is on, even when the title says nothing about it. Results are
+  ordered by where the match was, with title matches first.
 - **Accessibility** — everything on the site worth fixing for people using a screen reader. See
   [Accessibility](/content/accessibility/).
 - **Releases** — batches of content staged to go live together. See
