@@ -1,9 +1,11 @@
 import {
   getContentTypeByApiId,
   isItemSort,
+  ITEM_SORTS,
   listItemSummaries,
   loadSearchExcerpts,
   type ContentStatus,
+  type ItemSort,
 } from '@taprootcms/core';
 
 import { apiError, handleScoped, json } from '../_shared.js';
@@ -56,14 +58,18 @@ export const GET = handleScoped(
     }
 
     /**
-     * An unrecognised `sort` falls back to relevance rather than erroring.
+     * An unrecognised `sort` is refused, as it is on the listing endpoint.
      *
-     * The vocabulary is `ITEM_SORTS`, and a caller naming something outside it is asking for an
-     * order this API does not have — the same situation as a saved query whose date field has been
-     * deleted, which falls back rather than breaking a live page.
+     * The fallbacks elsewhere in Taproot are for **stored rules** that outlive what they name — a
+     * saved query whose date field was deleted weeks later must not break a live page. A request
+     * parameter is not that: it is written by a developer, once, and a silent fallback to relevance
+     * is a sort that looks implemented and never was.
      */
     const requested = params.get('sort');
-    const sort = requested && isItemSort(requested) ? requested : undefined;
+    if (requested && !isItemSort(requested)) {
+      return apiError(400, `Unknown sort "${requested}". Accepted: ${ITEM_SORTS.join(', ')}.`);
+    }
+    const sort = (requested as ItemSort | null) ?? undefined;
 
     const limit = Math.min(Number(params.get('limit') ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, MAX_LIMIT);
     const offset = Math.max(Number(params.get('offset') ?? 0) || 0, 0);

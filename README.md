@@ -454,6 +454,25 @@ edited. And **an existing site must run `npm run db:reindex` once** — the same
 rebuilding both indexes. Until it does, search finds items by title and by nothing else, which is
 why Settings → System now reports how many items have never been indexed.
 
+**5.7 — listings that can feed a card grid — is done**, asked for from the consumer side rather than
+planned. `/delivery/items` did the filtering half correctly and could not do the rendering half:
+summaries carry no field values, so a staff directory's only option was one `resolve` per person.
+
+Four changes, none of which move the default. `?include=data` (`data: true` in the client) sends
+each item's own fields plus the media, reference and term maps their ids resolve through —
+**the same shape a `query` field's results already arrive in**, so a card component is written once
+and rendered from either. `GET /delivery/taxonomy/{apiId}/terms` answers *what departments exist*,
+with hierarchy and optional counts, which is what a facet needs and what previously had to be
+hard-coded and went stale the moment an editor added one. `term` now takes several, meaning any of
+them, each still expanded to its whole branch. And `sort` is read at last: it was accepted and
+ignored, so a directory asking for alphabetical order got site order with nothing to say why — an
+unrecognised one is now a 400 rather than a silent default.
+
+The count is the part with the sharp edge. It is branch-wide and de-duplicated, because a facet's
+number has to describe the rows clicking it returns — summing a child's count into its parent
+double-counts anyone filed under both, which is exactly what a cross-appointment is. Pass the type
+your grid is narrowed to, or "Biology (12)" sits beside a grid showing one.
+
 **Next in the band:** media multi-upload (5E), menu link-picking (5F) and AI-assisted alt text (5G),
 all independent of each other.
 

@@ -4,6 +4,8 @@ import {
   createContentType,
   createField,
   createItem,
+  createTaxonomy,
+  createTerm,
   getApiKey,
   revokeApiKey,
   type ContentTypeRow,
@@ -17,6 +19,7 @@ import { GET as resolveGet } from './delivery/resolve.js';
 import { GET as itemsGet } from './delivery/items.js';
 import { GET as searchGet } from './delivery/search.js';
 import { GET as schemaGet } from './delivery/schema.js';
+import { GET as termsGet } from './delivery/taxonomy/[apiId]/terms.js';
 import { GET as keysGet, POST as keysPost } from './api-keys/index.js';
 import { POST as keyFormPost, DELETE as keyDelete } from './api-keys/[id].js';
 
@@ -324,6 +327,282 @@ describe('the items endpoint', () => {
     h.as(editor);
     const response = await itemsGet(h.context({ url: '/api/taproot/delivery/items?type=hero' }));
     expect(response.status).toBe(422);
+  });
+
+  it('sends summaries by default and field values when asked', async () => {
+    await published('Admissions');
+    h.as(editor);
+
+    const plain = await body<{ items: { data?: unknown }[] }>(
+      await itemsGet(h.context({ url: '/api/taproot/delivery/items' })),
+    );
+    expect(plain.items[0]!.data).toBeUndefined();
+
+    const withData = await body<{
+      items: { data?: Record<string, unknown> }[];
+      media?: unknown;
+      terms?: unknown;
+    }>(await itemsGet(h.context({ url: '/api/taproot/delivery/items?include=data' })));
+
+    expect(withData.items[0]!.data).toEqual({ body: 'x' });
+    // The maps travel with the data, because the ids in it are useless without them.
+    expect(withData.media).toBeDefined();
+    expect(withData.terms).toBeDefined();
+  });
+
+  it('costs the same whether it lists two items or ten', async () => {
+    /**
+     * The claim `include=data` rests on: a card grid is one request, not N.
+     *
+     * Every listed item's media, relations and terms are collected across the whole page and loaded
+     * in one query each, and the content types once per distinct type — so the cost is a function of
+     * the page, not of its length. An `await` inside the loop would pass every other test in this
+     * file, answer identically, and turn a directory of two hundred into two hundred round trips to
+     * a database in another region.
+     */
+    for (let i = 0; i < 10; i += 1) await published(`Page ${i}`);
+    h.as(editor);
+
+    const two = await h.countQueries(() =>
+      itemsGet(h.context({ url: '/api/taproot/delivery/items?include=data&limit=2' })),
+    );
+    const ten = await h.countQueries(() =>
+      itemsGet(h.context({ url: '/api/taproot/delivery/items?include=data&limit=10' })),
+    );
+
+    expect(two.value.status).toBe(200);
+    expect(ten.queries).toBe(two.queries);
+  });
+
+  it('refuses an include it does not understand rather than ignoring it', async () => {
+    h.as(editor);
+
+    // Dropping it silently is how somebody ships `include=fields`, sees summaries, and concludes
+    // the feature does not work.
+    const response = await itemsGet(
+      h.context({ url: '/api/taproot/delivery/items?include=fields' }),
+    );
+    expect(response.status).toBe(400);
+    expect((await body<{ error: string }>(response)).error).toContain('data');
+  });
+
+  it('refuses an unknown sort, and names the ones it has', async () => {
+    h.as(editor);
+
+    /**
+     * `sort` was read by nothing at all until now, so a directory asking for alphabetical order got
+     * site order and nothing said why. A request parameter is refused rather than defaulted — the
+     * fallbacks elsewhere are for stored rules that outlive the field they name.
+     */
+    const response = await itemsGet(
+      h.context({ url: '/api/taproot/delivery/items?sort=alphabetical' }),
+    );
+    expect(response.status).toBe(400);
+    expect((await body<{ error: string }>(response)).error).toContain('title');
+
+    const ok = await itemsGet(h.context({ url: '/api/taproot/delivery/items?sort=title' }));
+    expect(ok.status).toBe(200);
+  });
+
+  it('takes several terms, and any of them matches', async () => {
+    const taxonomy = await createTaxonomy(h.db.db, {
+      api_id: 'department',
+      name: 'Department',
+      name_plural: 'Departments',
+      description: null,
+      hierarchical: true,
+    });
+    const science = await createTerm(h.db.db, taxonomy.id, { name: 'Science', slug: 'science' });
+    const arts = await createTerm(h.db.db, taxonomy.id, { name: 'Arts', slug: 'arts' });
+
+    const tagged = await createField(h.db.db, type.id, {
+      api_id: 'departments',
+      label: 'Departments',
+      type: 'taxonomy',
+      required: false,
+      localized: false,
+      position: 1,
+      config: { taxonomyApiId: 'department', multiple: true },
+      help_text: null,
+    });
+    const withTerms = [...fields, tagged];
+
+    const make = (title: string, termIds: string[]) =>
+      createItem(h.db, type, withTerms, {
+        contentTypeId: type.id,
+        title,
+        status: 'published',
+        data: { body: 'x', departments: termIds },
+      });
+
+    await make('Science page', [science.id]);
+    await make('Arts page', [arts.id]);
+    await make('Neither', []);
+
+    h.as(editor);
+
+    // Repeated parameters and a comma list are the same request; a facet with checkboxes sends one
+    // or the other depending on how it was built.
+    for (const url of [
+      `/api/taproot/delivery/items?term=${science.id}&term=${arts.id}`,
+      `/api/taproot/delivery/items?term=${science.id},${arts.id}`,
+    ]) {
+      const payload = await body<{ items: { title: string }[]; total: number }>(
+        await itemsGet(h.context({ url })),
+      );
+
+      // OR, not AND: ticking two departments widens the list rather than narrowing it to pages in
+      // both — which is what a facet does, and what `ItemFilters.termIds` has always meant.
+      expect(payload.total).toBe(2);
+      expect(payload.items.map((item) => item.title).sort()).toEqual(['Arts page', 'Science page']);
+    }
+  });
+
+  it('names the term only when exactly one slug was asked for', async () => {
+    const taxonomy = await createTaxonomy(h.db.db, {
+      api_id: 'department',
+      name: 'Department',
+      name_plural: 'Departments',
+      description: null,
+      hierarchical: true,
+    });
+    await createTerm(h.db.db, taxonomy.id, { name: 'Student Services', slug: 'student-services' });
+    await createTerm(h.db.db, taxonomy.id, { name: 'Arts', slug: 'arts' });
+
+    h.as(editor);
+
+    // The term-archive case: the heading needs the editor's own capitalisation, which un-slugifying
+    // cannot recover.
+    const one = await body<{ term?: { name: string } }>(
+      await itemsGet(
+        h.context({
+          url: '/api/taproot/delivery/items?taxonomy=department&term=student-services',
+        }),
+      ),
+    );
+    expect(one.term?.name).toBe('Student Services');
+
+    // Two is a facet rather than an archive, and a facet already holds the names — it got them from
+    // the terms endpoint. Sending them twice would be a second spelling free to disagree.
+    const two = await body<{ term?: unknown }>(
+      await itemsGet(
+        h.context({
+          url: '/api/taproot/delivery/items?taxonomy=department&term=student-services&term=arts',
+        }),
+      ),
+    );
+    expect(two.term).toBeUndefined();
+  });
+
+  it('404s a slug that does not exist rather than listing everything', async () => {
+    await createTaxonomy(h.db.db, {
+      api_id: 'department',
+      name: 'Department',
+      name_plural: 'Departments',
+      description: null,
+      hierarchical: true,
+    });
+    h.as(editor);
+
+    const response = await itemsGet(
+      h.context({ url: '/api/taproot/delivery/items?taxonomy=department&term=misspelled' }),
+    );
+    expect(response.status).toBe(404);
+  });
+});
+
+describe('the taxonomy terms endpoint', () => {
+  async function departmentTaxonomy() {
+    const taxonomy = await createTaxonomy(h.db.db, {
+      api_id: 'department',
+      name: 'Department',
+      name_plural: 'Departments',
+      description: null,
+      hierarchical: true,
+    });
+    const sciences = await createTerm(h.db.db, taxonomy.id, {
+      name: 'Sciences',
+      slug: 'sciences',
+    });
+    await createTerm(h.db.db, taxonomy.id, {
+      name: 'Biology',
+      slug: 'biology',
+      parentId: sciences.id,
+    });
+    return taxonomy;
+  }
+
+  it('answers the terms a facet needs, flat and parented', async () => {
+    await departmentTaxonomy();
+    h.as(editor);
+
+    const payload = await body<{
+      apiId: string;
+      terms: { id: string; name: string; parentId: string | null; itemCount?: number }[];
+    }>(
+      await termsGet(
+        h.context({
+          url: '/api/taproot/delivery/taxonomy/department/terms',
+          params: { apiId: 'department' },
+        }),
+      ),
+    );
+
+    expect(payload.apiId).toBe('department');
+    // Depth-first, so a consumer that ignores `parentId` entirely still renders a child under its
+    // parent rather than at the end of the list.
+    expect(payload.terms.map((term) => term.name)).toEqual(['Sciences', 'Biology']);
+
+    const [sciences, biology] = payload.terms;
+    expect(sciences!.parentId).toBeNull();
+    expect(biology!.parentId).toBe(sciences!.id);
+
+    // Counts cost a second query, so nothing pays for them without asking.
+    expect(sciences!.itemCount).toBeUndefined();
+  });
+
+  it('counts only when asked, and not when asked for zero', async () => {
+    await departmentTaxonomy();
+    h.as(editor);
+
+    const counted = await body<{ terms: { itemCount?: number }[] }>(
+      await termsGet(
+        h.context({ url: '/api/taproot/delivery/taxonomy/department/terms?counts=1', params: { apiId: 'department' } }),
+      ),
+    );
+    expect(counted.terms[0]!.itemCount).toBe(0);
+
+    // `counts=0` reading as true is the classic version of this bug, and it costs a query on every
+    // request from a consumer that thought it had switched the feature off.
+    const off = await body<{ terms: { itemCount?: number }[] }>(
+      await termsGet(
+        h.context({ url: '/api/taproot/delivery/taxonomy/department/terms?counts=0', params: { apiId: 'department' } }),
+      ),
+    );
+    expect(off.terms[0]!.itemCount).toBeUndefined();
+  });
+
+  it('404s a taxonomy that does not exist', async () => {
+    h.as(editor);
+
+    /**
+     * Not an empty list. "No terms yet" is a real and ordinary state, so answering one for a
+     * misspelled api_id would hide the mistake until somebody happened to add a term.
+     */
+    const response = await termsGet(
+      h.context({ url: '/api/taproot/delivery/taxonomy/departmnet/terms', params: { apiId: 'departmnet' } }),
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it('refuses an anonymous request, like every other delivery route', async () => {
+    await departmentTaxonomy();
+    h.as(undefined);
+
+    const response = await termsGet(
+      h.context({ url: '/api/taproot/delivery/taxonomy/department/terms', params: { apiId: 'department' } }),
+    );
+    expect(response.status).toBe(401);
   });
 });
 

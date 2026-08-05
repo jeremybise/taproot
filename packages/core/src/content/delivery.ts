@@ -6,16 +6,36 @@ import type {
   Database,
   FieldRow,
   MediaRow,
+  TermRow,
 } from '../db/schema.js';
 import type { StorageAdapter } from '../storage/types.js';
 import { parseJson } from '../db/values.js';
 import { repeaterRowFields } from '../validation/fields.js';
 import { parseVisibility, type VisibilityCondition } from '../validation/visibility.js';
 import { blockTag, itemTag, menuTag, normalizeCacheTags, typeTag } from './cacheTags.js';
-import { resolveItemQueries, type DeliveryQueryResult } from './itemQueries.js';
+import {
+  resolveItemQueries,
+  resultData,
+  resultFields,
+  type DeliveryQueryResult,
+} from './itemQueries.js';
+import type { ItemSort } from './itemSort.js';
 import { blockTypeRegistry, getContentType } from './types.js';
-import { getItemByPath, getRedirect, visibleToPublic, type ContentItem } from './items.js';
+import {
+  getItemByPath,
+  getRedirect,
+  listItemSummaries,
+  listItems,
+  visibleToPublic,
+  type ContentItem,
+} from './items.js';
 import { resolveMenu, type ResolvedMenuItem } from './menus.js';
+import {
+  buildTermTree,
+  getTaxonomyByApiId,
+  listTerms,
+  type TermNode,
+} from './taxonomies.js';
 import { ancestorPaths, normalizePath } from './paths.js';
 import {
   collectRichTextRefs,
@@ -451,6 +471,176 @@ function collectReusableIds(value: unknown, into = new Set<string>()): string[] 
 }
 
 // ---------------------------------------------------------------------------
+// Listings
+// ---------------------------------------------------------------------------
+
+/**
+ * One item in a delivered listing.
+ *
+ * A **superset of `DeliveryItemRef`**, deliberately: a card component written against a query
+ * field's results renders one of these unchanged, which is the whole point of not inventing a second
+ * shape. The three extra keys are what a listing has always sent and an index page uses — `slug` for
+ * a site building its own URLs, and the two timestamps for "posted on" lines and date sorting a
+ * consumer does itself.
+ */
+export interface DeliveryListItem extends DeliveryItemRef {
+  slug: string;
+  publishedAt: string | null;
+  updatedAt: string;
+}
+
+export interface DeliveryList {
+  items: DeliveryListItem[];
+  /** Matching rows in total, which is what a pager needs and `items.length` is not. */
+  total: number;
+  /**
+   * The lookup maps, present **only** when `includeData` was asked for.
+   *
+   * Absent rather than empty when it was not, because there is nothing to look anything up in: a
+   * summary carries no ids. An empty object would read as "asked, and this site has no media",
+   * which is a different fact.
+   */
+  media?: Record<string, DeliveryMedia>;
+  references?: Record<string, DeliveryItemRef>;
+  terms?: Record<string, DeliveryTermRef>;
+}
+
+export interface DeliverItemsOptions extends DeliveryOptions {
+  contentTypeId?: string;
+  /** Already expanded to whole branches by the caller, as `ItemFilters.termIds` requires. */
+  termIds?: string[];
+  search?: string;
+  sort?: ItemSort;
+  limit?: number;
+  offset?: number;
+  /**
+   * Send each item's own field values, and the maps their ids resolve through.
+   *
+   * Off by default, and the default is the one that matters: a menu picker asking for two hundred
+   * candidates by title must not start paying for two hundred page bodies. Opt in when rendering
+   * cards — a directory needs the photo, the position and the department, and the alternative is N
+   * calls to `resolve`.
+   */
+  includeData?: boolean;
+}
+
+/**
+ * A filtered listing, optionally carrying enough to render a card grid.
+ *
+ * Lives in core rather than in the route for the reason `resolveSeo` does: the shape a listing sends
+ * has to be the shape a query field's results already send, and two implementations of "what a
+ * listed item is" would drift on the first field type either of them forgot.
+ *
+ * **The data path costs three extra queries at most, not three per item.** Every listed item's
+ * media, relations and terms are collected across the whole page and loaded in one query each —
+ * which is the same batching `resolveDelivery` does, and the reason a listing of fifty is not fifty
+ * round trips. The content types are loaded once per *distinct* type on the page, so a listing
+ * narrowed to one type — which is what a directory is — loads exactly one.
+ */
+export async function deliverItems(
+  db: Kysely<Database>,
+  options: DeliverItemsOptions,
+): Promise<DeliveryList> {
+  const filters = {
+    contentTypeId: options.contentTypeId,
+    termIds: options.termIds,
+    search: options.search,
+    sort: options.sort,
+    visibleOnly: true,
+    /**
+     * Only kinds that have a public URL.
+     *
+     * A singleton's `path` is the synthetic `/__singleton/{api_id}`, which nothing serves — so
+     * including one hands a consumer a link that 404s. Its content is still reachable through
+     * `resolve` with that path, which is the deliberate way to ask for it.
+     */
+    contentTypeKinds: ['page', 'collection'] as ContentTypeKind[],
+    limit: options.limit,
+    offset: options.offset,
+  };
+
+  if (!options.includeData) {
+    const { items, total } = await listItemSummaries(db, filters);
+    return { items: items.map(toListItem), total };
+  }
+
+  const { items, total } = await listItems(db, filters);
+  if (items.length === 0) return { items: [], total, media: {}, references: {}, terms: {} };
+
+  /**
+   * The fields to carry, per distinct content type on this page.
+   *
+   * One load per type rather than per item — a listing of fifty events is one type — and in parallel
+   * for the mixed case, where an index page spanning three types would otherwise pay three serial
+   * round trips for three questions that have nothing to say to each other.
+   */
+  const typeIds = [...new Set(items.map((item) => item.content_type_id))];
+  const loaded = await Promise.all(typeIds.map((id) => getContentType(db, id)));
+  const carriedByType = new Map<string, FieldRow[]>();
+  for (const type of loaded) {
+    if (type) carriedByType.set(type.id, resultFields(type.fields));
+  }
+
+  const prepared = items.map((item) => {
+    const fields = carriedByType.get(item.content_type_id) ?? [];
+    return { item, fields, data: resultData(fields, item.data) };
+  });
+
+  /**
+   * Each listed item's own references, one level deep — its photo and its department, not the
+   * references of whatever *those* point at in turn. Exactly what a query result collects.
+   *
+   * The empty first call is how the accumulator is made: `collectReferences` folds into the set it
+   * is given, so the page's ids arrive as one union and the loaders below run once for the listing
+   * rather than once per row.
+   */
+  const collected = collectReferences([], {});
+  for (const entry of prepared) collectReferences(entry.fields, entry.data, collected);
+
+  const [media, { references, linkTargets }, terms] = await Promise.all([
+    loadMedia(db, [...collected.mediaIds], options),
+    loadItemReferences(db, [...collected.itemIds], options),
+    loadTermRefs(db, [...collected.termIds]),
+  ]);
+
+  const mediaUrls = new Map(Object.entries(media).map(([id, asset]) => [id, asset.url]));
+
+  return {
+    items: prepared.map((entry) => ({
+      ...toListItem(entry.item),
+      // Resolved here for the reason `resolveDelivery` resolves the host item's: a marker left in
+      // the markup ships `taproot:item:…` to a visitor the moment a site forgets a helper, and a
+      // card carrying a summary field is exactly where that would go unnoticed.
+      data: resolveRichTextData(entry.fields, entry.data, { items: linkTargets, media: mediaUrls }),
+    })),
+    total,
+    media,
+    references,
+    terms,
+  };
+}
+
+function toListItem(item: {
+  id: string;
+  title: string;
+  slug: string;
+  path: string;
+  status: ContentStatus;
+  published_at: string | null;
+  updated_at: string;
+}): DeliveryListItem {
+  return {
+    id: item.id,
+    title: item.title,
+    slug: item.slug,
+    path: item.path,
+    status: item.status,
+    publishedAt: item.published_at,
+    updatedAt: item.updated_at,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 
@@ -626,6 +816,188 @@ function toDeliveryMenuItem(entry: ResolvedMenuItem): DeliveryMenuItem | null {
       .map(toDeliveryMenuItem)
       .filter((child): child is DeliveryMenuItem => child !== null),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Taxonomy terms
+// ---------------------------------------------------------------------------
+
+/**
+ * A term as a facet control needs it: what `resolve` puts in its `terms` map, plus its place in the
+ * tree and — when asked for — how much content is under it.
+ *
+ * `parentId` rather than nested children, because the flat form is what both renderings need. A
+ * `<select>` wants a list with indentation and a checkbox tree wants nesting, and a consumer can
+ * build either from parents; going the other way means flattening a tree somebody else shaped.
+ */
+export interface DeliveryTaxonomyTerm extends DeliveryTermRef {
+  parentId: string | null;
+  /**
+   * Items a visitor can see under this term **and everything beneath it**, present only when
+   * counts were requested.
+   *
+   * Branch-wide and de-duplicated, because that is what filtering by this term returns — a count
+   * that meant "filed directly here" would label a facet with a number the grid then disagrees
+   * with, which is the same failure the status facets exist to avoid. An item filed under both a
+   * parent and its child counts once.
+   */
+  itemCount?: number;
+}
+
+export interface DeliveryTaxonomy {
+  apiId: string;
+  name: string;
+  namePlural: string;
+  hierarchical: boolean;
+  /** Depth-first, parents before their children, in the order the admin shows them. */
+  terms: DeliveryTaxonomyTerm[];
+}
+
+export interface DeliverTermsOptions {
+  /**
+   * Count the content under each term. One extra query, and not free — it reads every visible
+   * assignment in the taxonomy — so it is opt-in rather than always on.
+   */
+  counts?: boolean;
+  /**
+   * Count only items of this content type.
+   *
+   * Load-bearing for a facet beside a filtered grid: a directory listing `type=person` filtered by
+   * department must not offer "Biology (12)" when twelve counts news stories too. The caller passes
+   * whatever type its listing is narrowed to, and the two numbers then describe the same set.
+   */
+  contentTypeId?: string;
+}
+
+/**
+ * A taxonomy's terms, for a consumer building a facet.
+ *
+ * Answers "what departments exist", which nothing else on the delivery API could: a site had to
+ * hard-code the list and went stale, silently, the moment an editor added one. `undefined` for a
+ * taxonomy that does not exist, so the route can 404 rather than answer an empty list — which would
+ * read as "no terms yet" and hide a misspelled `api_id` indefinitely.
+ */
+export async function deliverTaxonomyTerms(
+  db: Kysely<Database>,
+  apiId: string,
+  options: DeliverTermsOptions = {},
+): Promise<DeliveryTaxonomy | undefined> {
+  const taxonomy = await getTaxonomyByApiId(db, apiId);
+  if (!taxonomy) return undefined;
+
+  const rows = await listTerms(db, taxonomy.id);
+
+  const counts = options.counts
+    ? await countItemsPerTerm(db, rows, options.contentTypeId)
+    : undefined;
+
+  /**
+   * Flattened out of the tree rather than sent in table order, so a consumer rendering the list
+   * without reading `parentId` still gets something coherent — a child directly under its parent,
+   * in the order an editor arranged them.
+   */
+  const ordered: DeliveryTaxonomyTerm[] = [];
+  const walk = (nodes: TermNode[]) => {
+    for (const node of nodes) {
+      ordered.push({
+        id: node.id,
+        name: node.name,
+        slug: node.slug,
+        taxonomyApiId: taxonomy.api_id,
+        parentId: node.parent_id,
+        ...(counts ? { itemCount: counts.get(node.id) ?? 0 } : {}),
+      });
+      walk(node.children);
+    }
+  };
+  walk(buildTermTree(rows));
+
+  return {
+    apiId: taxonomy.api_id,
+    name: taxonomy.name,
+    namePlural: taxonomy.name_plural,
+    hierarchical: taxonomy.hierarchical === 1,
+    terms: ordered,
+  };
+}
+
+/**
+ * How many visible items sit under each term, counting its whole branch once.
+ *
+ * One query for the taxonomy, then the branch union in memory. The alternative — a recursive CTE per
+ * term, or one big CTE with `count(distinct)` — would push the work into SQL and needs
+ * `visibleToPublic` spelled as a raw string to get there, which is a second implementation of the
+ * rule that decides what the public can see. That rule is exactly the kind this repo keeps in one
+ * expression, so the join stays a Kysely query and the rollup happens here.
+ *
+ * Summing children's counts would be simpler and wrong: an item filed under both "Sciences" and
+ * "Biology" is one item, and a sum reports two. The union is over item ids for that reason.
+ */
+async function countItemsPerTerm(
+  db: Kysely<Database>,
+  terms: TermRow[],
+  contentTypeId?: string,
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (terms.length === 0) return counts;
+
+  let query = db
+    .selectFrom('taxonomy_assignments')
+    .innerJoin('content_items', 'content_items.id', 'taxonomy_assignments.content_item_id')
+    .innerJoin('content_types', 'content_types.id', 'content_items.content_type_id')
+    .select(['taxonomy_assignments.term_id', 'taxonomy_assignments.content_item_id'])
+    .where(
+      'taxonomy_assignments.term_id',
+      'in',
+      terms.map((term) => term.id),
+    )
+    // The same two narrowings the listing applies, or the number beside a facet describes a
+    // different set from the rows clicking it returns.
+    .where('content_types.kind', 'in', ['page', 'collection'])
+    .where(visibleToPublic);
+
+  if (contentTypeId) query = query.where('content_items.content_type_id', '=', contentTypeId);
+
+  const assignments = await query.execute();
+
+  const direct = new Map<string, Set<string>>();
+  for (const row of assignments) {
+    const set = direct.get(row.term_id) ?? new Set<string>();
+    set.add(row.content_item_id);
+    direct.set(row.term_id, set);
+  }
+
+  const children = new Map<string, TermRow[]>();
+  for (const term of terms) {
+    if (!term.parent_id) continue;
+    children.set(term.parent_id, [...(children.get(term.parent_id) ?? []), term]);
+  }
+
+  const union = (term: TermRow): Set<string> => {
+    const ids = new Set(direct.get(term.id) ?? []);
+    for (const child of children.get(term.id) ?? []) {
+      for (const id of union(child)) ids.add(id);
+    }
+    counts.set(term.id, ids.size);
+    return ids;
+  };
+
+  for (const term of terms) {
+    if (!term.parent_id) union(term);
+  }
+
+  /**
+   * A term whose parent is missing is still counted.
+   *
+   * `parent_id` is nulled rather than cascaded when a parent goes, so this should not happen — but a
+   * term left out of the map would report `0` on a facet that returns results when clicked, and
+   * "the tree looked odd" is a better failure than "the count lies".
+   */
+  for (const term of terms) {
+    if (!counts.has(term.id)) union(term);
+  }
+
+  return counts;
 }
 
 // ---------------------------------------------------------------------------

@@ -67,6 +67,29 @@ resizes to match.
 rewrites your lengths itself. `crop="server"` asks the CMS for the cropped rectangle so no hidden
 pixels are downloaded; it degrades to a hotspot-framed original wherever the CMS cannot transform.
 
+## Listings and facets
+
+`taproot.items` lists visible content — summaries by default, or field values and their lookup maps
+with `data: true`, which is what a card grid needs:
+
+```ts
+const { items, media, terms } = await taproot.items({
+  type: 'person',
+  taxonomy: 'department',
+  term: selectedSlugs,   // several mean any of them
+  sort: 'title',
+  data: true,
+});
+
+const { terms: departments } = await taproot.terms('department', {
+  counts: true,
+  type: 'person',        // so the counts describe the rows the grid shows
+});
+```
+
+`data: true` returns the same shape a `query` field's results arrive in, so one card component
+renders either. An unrecognised `sort` is refused rather than ignored.
+
 ## Search
 
 `taproot.search` covers titles, paths, and the words inside each item — including the ones in blocks

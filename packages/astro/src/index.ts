@@ -2,9 +2,11 @@ import { PREVIEW_PARAM } from '@taprootcms/core/pure';
 
 import type {
   DeliveryItemRef,
+  DeliveryMedia,
   DeliveryMenuItem,
   DeliveryResult,
   DeliverySchema,
+  DeliveryTaxonomy,
   DeliveryTermRef,
   ItemSort,
 } from '@taprootcms/core/pure';
@@ -85,21 +87,61 @@ export interface SearchOptions {
   offset?: number;
 }
 
+/**
+ * One item in a listing: a summary, plus its field values when they were asked for.
+ *
+ * `data` is the same shape a `query` field's results carry — the item's own fields with `block` and
+ * `query` stripped, media/relation/term ids resolving through the maps beside it — so a card
+ * component written for one renders the other unchanged.
+ */
+export interface ListItem extends ItemSummary {
+  data?: Record<string, unknown>;
+}
+
 export interface ListOptions {
   /** A content type's `api_id`. Omit for every addressable type. */
   type?: string;
   /**
-   * A term id, or a term slug when `taxonomy` is given too.
+   * A term id, or a term slug when `taxonomy` is given too. Several mean **any of them**.
    *
-   * Always means the whole branch beneath it, expanded server-side — filing something under
-   * "Biology" finds it when a visitor browses "Sciences".
+   * Each always means the whole branch beneath it, expanded server-side — filing something under
+   * "Biology" finds it when a visitor browses "Sciences". Passing two departments widens the list
+   * to people in either, which is what a facet with checkboxes does.
    */
-  term?: string;
+  term?: string | string[];
   /** The taxonomy `term` belongs to, which is what lets `term` be a slug from a URL. */
   taxonomy?: string;
   search?: string;
+  /**
+   * One of the named orders. Omitted, a listing comes back in site order (`path`) — or ranked, when
+   * `search` is set and no order is named.
+   *
+   * An order this API does not have is refused rather than ignored, so a typo is a failed request
+   * instead of a directory silently in the wrong order.
+   */
+  sort?: ItemSort;
+  /**
+   * Ask for each item's field values, and the lookup maps their ids resolve through.
+   *
+   * Off by default, and worth leaving off for a list of links: it is the difference between sending
+   * fifty titles and sending fifty pages' worth of fields. Turn it on to render cards — a directory
+   * needs the photo, the role and the department, and the alternative is one `resolve` per person.
+   */
+  data?: boolean;
   limit?: number;
   offset?: number;
+}
+
+export interface ListResult {
+  items: ListItem[];
+  /** Matching items in total, which is what a pager needs and `items.length` is not. */
+  total: number;
+  /** The term named by a `taxonomy` + `term` slug pair, for an archive page's heading. */
+  term?: DeliveryTermRef;
+  /** Present only with `data: true`, because a summary carries no ids to look up. */
+  media?: Record<string, DeliveryMedia>;
+  references?: Record<string, DeliveryItemRef>;
+  terms?: Record<string, DeliveryTermRef>;
 }
 
 export function createTaprootClient(options: TaprootClientOptions) {
@@ -223,21 +265,66 @@ export function createTaprootClient(options: TaprootClientOptions) {
       return request<DeliveryResult>(`/resolve?${params}`);
     },
 
-    /** A filtered list of visible items, for index pages and archives. */
-    items(
-      list: ListOptions = {},
-    ): Promise<{ items: ItemSummary[]; total: number; term?: DeliveryTermRef }> {
+    /**
+     * A filtered list of visible items, for index pages, archives and card grids.
+     *
+     * ```ts
+     * const { items, media, terms } = await taproot.items({
+     *   type: 'person',
+     *   term: departmentSlugs,      // several mean any of them
+     *   taxonomy: 'department',
+     *   sort: 'title',
+     *   data: true,                 // photo, role, department — no second request
+     *   limit: 24,
+     * });
+     * ```
+     */
+    items(list: ListOptions = {}): Promise<ListResult> {
       const params = new URLSearchParams();
       if (list.type) params.set('type', list.type);
-      if (list.term) params.set('term', list.term);
+      /**
+       * Repeated rather than comma-joined, because a slug may contain a comma.
+       *
+       * The server accepts both spellings; this one cannot be ambiguous, which matters for a value
+       * that ultimately came from a term an editor named.
+       */
+      for (const term of Array.isArray(list.term) ? list.term : list.term ? [list.term] : []) {
+        params.append('term', term);
+      }
       if (list.taxonomy) params.set('taxonomy', list.taxonomy);
       if (list.search) params.set('q', list.search);
+      if (list.sort) params.set('sort', list.sort);
+      if (list.data) params.set('include', 'data');
       if (list.limit !== undefined) params.set('limit', String(list.limit));
       if (list.offset !== undefined) params.set('offset', String(list.offset));
 
       const suffix = params.toString() ? `?${params}` : '';
-      return request<{ items: ItemSummary[]; total: number; term?: DeliveryTermRef }>(
-        `/items${suffix}`,
+      return request<ListResult>(`/items${suffix}`);
+    },
+
+    /**
+     * A taxonomy's terms, for building a facet.
+     *
+     * ```ts
+     * const { terms } = await taproot.terms('department', { counts: true, type: 'person' });
+     * ```
+     *
+     * Flat, with `parentId`, depth-first so parents come before their children. `counts` adds
+     * `itemCount` per term and costs a second query server-side, so it is opt-in; pass `type`
+     * alongside it whenever the listing beside the facet is narrowed to one, or the numbers describe
+     * a different set from the rows.
+     */
+    terms(
+      taxonomyApiId: string,
+      termOptions: { counts?: boolean; type?: string } = {},
+    ): Promise<DeliveryTaxonomy> {
+      const params = new URLSearchParams();
+      if (termOptions.counts) params.set('counts', '1');
+      if (termOptions.type) params.set('type', termOptions.type);
+
+      const suffix = params.toString() ? `?${params}` : '';
+      return request<DeliveryTaxonomy>(
+        `/taxonomy/${encodeURIComponent(taxonomyApiId)}/terms${suffix}`,
       );
     },
 
@@ -322,6 +409,9 @@ export type {
   DeliveryQueryResult,
   DeliveryResult,
   DeliverySchema,
+  /** A taxonomy and its terms, as `taproot.terms()` answers. */
+  DeliveryTaxonomy,
+  DeliveryTaxonomyTerm,
   DeliveryTermRef,
   ItemSort,
   MenuLink,

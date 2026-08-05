@@ -103,24 +103,38 @@ omits it from `references`, so you cannot accidentally render the title of somet
 
 ## `items(options?)`
 
-A filtered list of visible items, for index pages and archives.
+A filtered list of visible items, for index pages, archives and card grids.
 
 ```ts
 const { items, total } = await taproot.items({
   type: 'event',       // a content type's api_id
   search: 'open day',
+  sort: 'newest',
   limit: 20,
   offset: 0,
 });
 ```
 
-Returns **summaries**, not whole items: `id`, `title`, `slug`, `path`, `status`, `publishedAt`,
-`updatedAt`. A listing renders a title and a link; sending every field of fifty items so a template
-can use two of them would make the endpoint that exists to avoid round trips expensive in another
-way. Call `resolve` when you need content.
+Returns **summaries** by default, not whole items: `id`, `title`, `slug`, `path`, `status`,
+`publishedAt`, `updatedAt`. A listing renders a title and a link; sending every field of fifty items
+so a template can use two of them would make the endpoint that exists to avoid round trips expensive
+in another way.
 
-Filtering by a term takes a slug when you name the taxonomy — see
-[Menus and term URLs](/build/menus/).
+### Options
+
+| Option | Meaning |
+| --- | --- |
+| `type` | A content type's `api_id`. Omit for every addressable type |
+| `term` | A term id, or a slug when `taxonomy` is given. **Several mean any of them** |
+| `taxonomy` | The taxonomy `term` belongs to, which is what lets `term` be a slug from a URL |
+| `search` | Title, path and body text — the same search `search()` runs |
+| `sort` | `path` (default), `title`, `newest`, `oldest`, `recently_updated` |
+| `data` | Send each item's field values and the maps they resolve through |
+| `limit` | Defaults to 50, capped at 200 |
+| `offset` | For paging |
+
+An unrecognised `sort` is **refused with a 400** rather than ignored. A silently defaulted sort is a
+directory that comes back in the wrong order with nothing to explain it.
 
 Singletons are omitted. Their `path` is a synthetic internal one that nothing serves, so listing
 them would hand you links that 404. Fetch a singleton with `resolve` if you need it.
@@ -128,6 +142,91 @@ them would hand you links that 404. Fetch a singleton with `resolve` if you need
 This is also not the way to find one known item. Filtering the results by slug still leaves you
 making the `resolve` call you could have made first — see
 [One specific item at a fixed route](/build/rendering-a-page/#one-specific-item-at-a-fixed-route).
+
+### Rendering cards: `data: true`
+
+A card grid needs more than a title — a photo, a role, a date. `data: true` sends each item's own
+field values, plus the lookup maps their ids resolve through:
+
+```astro
+---
+const { items, media, terms } = await taproot.items({
+  type: 'person',
+  data: true,
+  sort: 'title',
+  limit: 24,
+});
+---
+{items.map((person) => {
+  const photo = media[person.data.photo];
+  return (
+    <article>
+      {photo && <TaprootImage asset={photo} ratio={1} sizes="(min-width: 60rem) 20vw, 45vw" />}
+      <h2><a href={person.path}>{person.title}</a></h2>
+      <p>{person.data.role}</p>
+      <p>{person.data.departments.map((id) => terms[id].name).join(', ')}</p>
+    </article>
+  );
+})}
+```
+
+**This is the same shape a `query` field's results arrive in**, so a card component written for one
+renders the other unchanged. What that means in practice:
+
+- `data` holds the item's own fields with `block` and `query` **stripped** — a card renders a
+  thumbnail and a name, not another page's page-builder blocks. If the value you want lives inside a
+  block, `resolve` that item.
+- Media, relation and term values are **ids**, resolved through `media`, `references` and `terms`
+  beside the items. Ids rather than inlined objects, for the reason
+  [the reference maps](#the-reference-maps) exist: an image used by ten people is serialised once.
+- A multi-value field carries **all** of its values. Somebody in two departments has both, and both
+  are in `terms`.
+- Internal links inside rich text are already resolved to real paths.
+
+The three maps are present only when you ask for `data` — a summary carries no ids to look up.
+
+### Facets: filtering by several terms
+
+`term` accepts a list, and they mean **any of them**: ticking two departments widens the list rather
+than narrowing it to people in both. Each is expanded to its whole branch server-side, so filing
+somebody under "Biology" finds them when a visitor filters by "Sciences".
+
+```ts
+const selected = Astro.url.searchParams.getAll('department'); // ['sciences', 'admissions']
+
+const { items, total } = await taproot.items({
+  type: 'person',
+  taxonomy: 'department',
+  term: selected,
+  data: true,
+});
+```
+
+Use [`terms()`](#termstaxonomyapiid-options) to build the checkboxes themselves — hard-coding them
+means the filter goes stale, silently, the first time an editor adds a department.
+
+## `terms(taxonomyApiId, options?)`
+
+A taxonomy's terms, for building a facet.
+
+```ts
+const { terms } = await taproot.terms('department', { counts: true, type: 'person' });
+```
+
+Each term is `{ id, name, slug, taxonomyApiId, parentId }`, flat and depth-first — parents before
+their children — so rendering the list in order without reading `parentId` still puts a child under
+its parent. Nest them yourself for a tree; a `<select>` can use them as they come.
+
+`counts: true` adds `itemCount`, which is the number of items **a visitor can see** under that term
+*and everything beneath it*, counting an item filed under both a parent and its child once. It costs
+a second query server-side, so it is opt-in.
+
+**Pass `type` whenever the listing beside the facet is narrowed to one.** Without it, "Biology (12)"
+counts every kind of content tagged Biology, while clicking it returns only people — a facet
+disagreeing with its own filter. With it, the two describe the same set.
+
+A taxonomy that does not exist is a **404**, not an empty list: a taxonomy with no terms yet is an
+ordinary state, so answering one for a misspelled `api_id` would hide the typo indefinitely.
 
 ## `search(query, options?)`
 

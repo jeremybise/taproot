@@ -120,6 +120,66 @@ describe('search', () => {
 });
 
 /**
+ * Listings, whose job on this side is turning options into a query string.
+ *
+ * The failure mode is silent in the direction that matters: a parameter the server does not read is
+ * a filter the site asked for and did not get, with a 200 either way.
+ */
+describe('items', () => {
+  function urlCapturingClient() {
+    let seen = '';
+    const client = createTaprootClient({
+      url: 'https://cms.example.edu',
+      fetch: async (input) => {
+        seen = String(input);
+        return new Response(JSON.stringify({ items: [], total: 0 }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    return { client, url: () => new URL(seen) };
+  }
+
+  it('asks for data with `include`, and asks for nothing extra by default', async () => {
+    const { client, url } = urlCapturingClient();
+
+    await client.items({ type: 'person', data: true, sort: 'title' });
+    expect(url().searchParams.get('include')).toBe('data');
+    expect(url().searchParams.get('sort')).toBe('title');
+
+    await client.items({ type: 'person' });
+    expect(url().searchParams.get('include')).toBeNull();
+  });
+
+  it('repeats `term` rather than joining, because a slug may contain a comma', async () => {
+    const { client, url } = urlCapturingClient();
+
+    await client.items({ taxonomy: 'department', term: ['sciences', 'admissions'] });
+
+    expect(url().searchParams.getAll('term')).toEqual(['sciences', 'admissions']);
+  });
+
+  it('takes a single term as a bare string, which is what an archive route has', async () => {
+    const { client, url } = urlCapturingClient();
+
+    await client.items({ taxonomy: 'department', term: 'sciences' });
+
+    expect(url().searchParams.getAll('term')).toEqual(['sciences']);
+  });
+
+  it('builds the terms endpoint from the taxonomy, escaping what it is given', async () => {
+    const { client, url } = urlCapturingClient();
+
+    await client.terms('department', { counts: true, type: 'person' });
+
+    expect(url().pathname).toBe('/api/taproot/delivery/taxonomy/department/terms');
+    expect(url().searchParams.get('counts')).toBe('1');
+    // The type the facet sits beside, so its numbers describe the same rows the grid shows.
+    expect(url().searchParams.get('type')).toBe('person');
+  });
+});
+
+/**
  * Deduplication, which is about concurrency and deliberately not about caching.
  *
  * A layout and a component both asking for the main menu is the ordinary case, and two round trips

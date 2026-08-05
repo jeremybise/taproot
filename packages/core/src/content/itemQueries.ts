@@ -44,6 +44,35 @@ export interface DeliveryQueryResult {
  */
 const OMITTED_FROM_RESULTS = new Set(['block', 'query']);
 
+/**
+ * The fields a listed item carries, out of everything its type defines.
+ *
+ * Exported because a query result is no longer the only listed item: `deliverItems` answers
+ * `/delivery/items?include=data` with the same shape, so a consumer's card component works against
+ * either without a branch. That promise is only true while both ask *this* function — two copies of
+ * the filter is how one of them keeps carrying `block` after the other stops.
+ */
+export function resultFields(fields: FieldRow[]): FieldRow[] {
+  return fields.filter((field) => !OMITTED_FROM_RESULTS.has(field.type));
+}
+
+/**
+ * One item's values, narrowed to the fields a result carries.
+ *
+ * `undefined` values are dropped rather than sent as null: absent and "explicitly nothing" are the
+ * same thing for a field nobody filled in, and JSON has no `undefined` to distinguish them with.
+ */
+export function resultData(
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    fields
+      .map((field) => [field.api_id, data[field.api_id]] as const)
+      .filter(([, value]) => value !== undefined),
+  );
+}
+
 export { queryKey } from './queryKeys.js';
 
 interface FoundQuery {
@@ -324,22 +353,14 @@ export async function resolveItemQueries(
 
     // Only the fields that survived, so the caller's reference walk cannot reach into a block whose
     // contents are not being sent. Computed once per query rather than once per matched row.
-    const carried = targetType.fields.filter(
-      (resultField) => !OMITTED_FROM_RESULTS.has(resultField.type),
-    );
+    const carried = resultFields(targetType.fields);
 
     for (const row of matched) {
       // The same item can match two queries on one page; it is carried once and referenced twice.
       if (seen.has(row.id)) continue;
       seen.add(row.id);
 
-      const kept = Object.fromEntries(
-        carried
-          .map((resultField) => [resultField.api_id, row.data[resultField.api_id]])
-          .filter(([, fieldValue]) => fieldValue !== undefined),
-      );
-
-      items.push({ item: row, fields: carried, data: kept });
+      items.push({ item: row, fields: carried, data: resultData(carried, row.data) });
     }
   }
 

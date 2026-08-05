@@ -205,6 +205,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/delivery/items', 'delivery/items'],
           ['/delivery/search', 'delivery/search'],
           ['/delivery/menu/[apiId]', 'delivery/menu/[apiId]'],
+          ['/delivery/taxonomy/[apiId]/terms', 'delivery/taxonomy/[apiId]/terms'],
           ['/delivery/schema', 'delivery/schema'],
           ['/scheduler/run', 'scheduler/run'],
           ['/theme', 'theme'],

@@ -257,6 +257,60 @@ lookup maps for media, relations, and terms. It lives in core, not the route, fo
   *own* visitor; a real 30x would redirect the server-side fetch and serve the wrong page's content
   under the requested URL.
 
+**A listing and a `query` field's results are one shape, and `resultFields` is what keeps them one.**
+`/delivery/items?include=data` answers `DeliveryListItem` — a `DeliveryItemRef` plus `slug` and the
+two timestamps — so a consumer's card component is written once and rendered from either. That
+promise holds only while both go through the same filter, which is why `resultFields`/`resultData`
+are exported from `itemQueries.ts` rather than each caller writing `!== 'block'`.
+`deliveryList.test.ts` asserts it by building both answers for one item and comparing them, not by
+checking each against a list of expected keys — a list passes while the two drift. Five things
+follow:
+- **Summaries stay the default.** The opt-in is the whole design: a menu picker asking for two
+  hundred candidates by title must not start paying for two hundred page bodies, and the doc comment
+  on `listItemSummaries` is right. `include` is a comma list and an unknown entry is a **400**,
+  because silently ignoring one is how somebody ships `include=fields` and concludes the feature does
+  not work.
+- **The maps are absent, not empty, without `data`.** There is nothing to look up in — a summary
+  carries no ids — and `{}` would read as "asked, and this site has no media".
+- **The cost is per page, not per item.** Every listed item's media, relation and term ids are
+  collected across the whole page and loaded in one query each, and the content types once per
+  *distinct* type. A listing narrowed to one type — which is what a directory is — loads exactly one.
+- **A listed item's richtext is resolved.** `resolveDelivery` had only ever resolved the *host*
+  item's, so a query result's prose still carried `taproot:item:{id}`; both go through
+  `resolveRichTextData` now, because a marker in a card's summary field is exactly where nobody
+  would notice it.
+- **An unrecognised `sort` is refused rather than defaulted**, on `/items` and `/search` alike. The
+  fallbacks elsewhere in Taproot — a query whose `dateFieldApiId` no longer names a date field — are
+  for *stored rules that outlive what they name*, where a live page must not break for a
+  configuration mistake made weeks earlier. A request parameter is a developer's typo, and a silent
+  fallback is a sort that looks implemented and never was. `sort` was read by nothing at all before
+  this, which is how it stayed unnoticed.
+
+**A facet's counts have to describe the rows clicking it returns.** `deliverTaxonomyTerms` answers
+`/delivery/taxonomy/{apiId}/terms` — the question nothing else could, which is *what departments
+exist*, and without which a filter UI hard-codes the list and goes stale the moment an editor adds
+one. Four things hold it up:
+- **`itemCount` is branch-wide and de-duplicated.** A term filter means the whole branch everywhere
+  else, so a count meaning "filed directly here" would label a checkbox with a number the grid then
+  disagrees with. Summing children into parents is the obvious implementation and reports an item
+  filed under both a parent and its child twice — which is exactly what a cross-appointment is, so
+  it is wrong on the entries most likely to be looked at. The union is over item ids.
+- **It takes the same `type` narrowing the listing does.** "Biology (12)" beside a grid of people
+  showing one is the facet lying about its own filter.
+- **Counts are opt-in**, because they are a second query over every visible assignment in the
+  taxonomy, and a `<select>` that only needs names should not pay for it. `counts=0` reading as true
+  is the classic version of that bug and is checked for.
+- **Terms come back flat with `parentId`, depth-first.** Flat is what both renderings want: a
+  `<select>` reads it in order and a checkbox tree nests it, where a nested answer makes the first
+  one flatten somebody else's shape. An unknown taxonomy is a **404** rather than an empty list,
+  since "no terms yet" is an ordinary state that would hide a misspelled `api_id` forever.
+
+**Several `term` parameters mean OR, and each is still its whole branch.** `ItemFilters.termIds` has
+always been a list with those semantics; the route was narrowing it to one. The single-term `term`
+echo in the response is unchanged and stays singular — it exists so a term *archive* can render the
+editor's own capitalisation in its heading, and a multi-select facet already holds the names because
+it got them from the terms endpoint. Two spellings of one fact is what that avoids.
+
 **`resolveMenu`'s `termHref` callback cannot cross HTTP, and the answer is unresolved targets.**
 `deliverMenu` returns `{ type: 'term', taxonomyApiId, slug, name }` and the consumer applies
 `applyTermHrefs` with exactly the resolver it would have passed. The alternative — a server-side
