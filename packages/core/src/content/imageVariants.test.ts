@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MEDIA_VARIANT_WIDTHS,
+  isIdentityVariant,
   mediaVariantUrl,
+  quantizeRatio,
   parseMediaVariant,
   scaleSizes,
   variantWidthsFor,
@@ -68,6 +70,43 @@ describe('parseMediaVariant', () => {
   it('ignores an unknown format rather than passing it to the resizer', () => {
     expect(parse('/a.png?f=bmp')).toEqual({});
     expect(parse('/a.png?f=image%2Fwebp')).toEqual({});
+  });
+});
+
+describe('the ratio parameter', () => {
+  it('round-trips a quantised ratio', () => {
+    const url = mediaVariantUrl('/a.png', { width: 640, ratio: 1.78, format: 'webp' });
+    expect(url).toBe('/a.png?w=640&ar=1.78&f=webp');
+    expect(parse(url)).toEqual({ width: 640, ratio: 1.78, format: 'webp' });
+  });
+
+  /**
+   * Quantised on the way *out* as well as in. A consumer sending `16/9` unrounded would build
+   * `ar=1.7777777777777777`, the route would answer `1.78`, and every candidate would miss the
+   * cache by a rounding difference while still rendering correctly — a cost bug that looks like
+   * nothing at all.
+   */
+  it('builds the same URL the route would derive', () => {
+    expect(mediaVariantUrl('/a.png', { ratio: 16 / 9 })).toBe('/a.png?ar=1.78');
+    expect(parse('/a.png?ar=1.7777777777777777').ratio).toBe(1.78);
+  });
+
+  it('clamps a ratio outside the range rather than refusing it', () => {
+    expect(quantizeRatio(0.01)).toBe(0.2);
+    expect(quantizeRatio(99)).toBe(5);
+  });
+
+  it('ignores a ratio that is not a positive number', () => {
+    expect(parse('/a.png?ar=0')).toEqual({});
+    expect(parse('/a.png?ar=-2')).toEqual({});
+    expect(parse('/a.png?ar=wide')).toEqual({});
+  });
+
+  it('counts a ratio alone as a real variant, not an identity', () => {
+    // A crop with no resize is still work the route has to do; treating it as identity would serve
+    // the uncropped original and the page would silently be framed wrong.
+    expect(isIdentityVariant({ ratio: 1.78 })).toBe(false);
+    expect(isIdentityVariant({})).toBe(true);
   });
 });
 

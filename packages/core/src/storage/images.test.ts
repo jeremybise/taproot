@@ -47,6 +47,44 @@ describe('resizeImage', () => {
     expect(images.calls.transform).toEqual([{ width: 1920, fit: 'scale-down' }]);
   });
 
+  /**
+   * The crop is resolved from the stored hotspot and crop with the same `resolveCrop` the admin
+   * preview uses, then applied as a pixel `trim` *before* the resize — two chained calls because
+   * the order is the point. A 1600×454 source in a 4:3 well keeps a 605px-wide slice.
+   */
+  it('crops to the resolved rectangle before scaling', async () => {
+    const images = fakeBinding();
+    await resizeImage(images, BYTES, 'image/jpeg', { width: 640, ratio: 1.33 }, {
+      width: 1600,
+      height: 454,
+      hotspot_x: 0.5,
+      hotspot_y: 0.5,
+    });
+
+    expect(images.calls.transform).toHaveLength(2);
+    const [trim, resize] = images.calls.transform as [
+      { trim: { left: number; top: number; width: number; height: number } },
+      { width: number },
+    ];
+    expect(trim.trim.height).toBe(454);
+    expect(trim.trim.width).toBe(Math.round(454 * 1.33));
+    // Centred, because the hotspot is centred.
+    expect(trim.trim.left).toBe(Math.round((1600 - Math.round(454 * 1.33)) / 2));
+    expect(resize).toEqual({ width: 640, fit: 'scale-down' });
+  });
+
+  it('skips the crop when the source dimensions were never read', async () => {
+    // A normalised rectangle cannot become pixels without them, and guessing would crop visibly
+    // wrongly rather than not at all.
+    const images = fakeBinding();
+    await resizeImage(images, BYTES, 'image/jpeg', { width: 640, ratio: 1.33 }, {
+      width: null,
+      height: null,
+    });
+
+    expect(images.calls.transform).toEqual([{ width: 640, fit: 'scale-down' }]);
+  });
+
   it('serves the original when nothing was asked for', async () => {
     const images = fakeBinding();
     expect(await resizeImage(images, BYTES, 'image/png', {})).toBeUndefined();

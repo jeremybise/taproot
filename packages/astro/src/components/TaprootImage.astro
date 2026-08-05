@@ -1,5 +1,6 @@
 ---
 import {
+  coverPosition,
   cropFrame,
   mediaVariantUrl,
   resolveCrop,
@@ -87,6 +88,23 @@ interface Props {
    * the original, so this is never a correctness risk, only a size one.
    */
   format?: MediaVariantFormat | 'original';
+  /**
+   * Where the crop happens.
+   *
+   * `'css'` is the default and ships the whole frame, scaling the `<img>` up so the resolved
+   * rectangle fills the box. It is correct on any deployment, including one that cannot transform
+   * images at all, which is why it is the default.
+   *
+   * `'server'` asks the media route for the rectangle itself. Every delivered pixel is a visible
+   * pixel, so a heavily cropped image stops paying for the part nobody sees — a 3.5:1 photo in a
+   * 4:3 well throws away about two thirds of what `'css'` downloads, and is *also* softer for it,
+   * because the ladder tops out at the source's width however much of it survives the crop.
+   *
+   * Needs a deployment whose media route can transform. It does not *break* without one — the
+   * image renders with `object-fit: cover` and the hotspot, so a failed transform degrades to
+   * approximately-right framing rather than the wrong picture — but the crop stops being exact.
+   */
+  crop?: 'css' | 'server';
   class?: string;
 }
 
@@ -99,6 +117,7 @@ const {
   sizes = '100vw',
   widths,
   format = 'webp',
+  crop = 'css',
   class: className,
 } = Astro.props;
 
@@ -108,21 +127,19 @@ const {
  * Adapted here rather than changing the core function, which the admin's preview calls with rows
  * straight out of the database. One of the two has to bend, and it should be the newer shape.
  */
-const rect = resolveCrop(
-  {
-    width: asset.width,
-    height: asset.height,
-    hotspot_x: asset.hotspot?.x ?? null,
-    hotspot_y: asset.hotspot?.y ?? null,
-    crop_top: asset.crop?.top ?? null,
-    crop_right: asset.crop?.right ?? null,
-    crop_bottom: asset.crop?.bottom ?? null,
-    crop_left: asset.crop?.left ?? null,
-  },
-  ratio,
-);
+const source = {
+  width: asset.width,
+  height: asset.height,
+  hotspot_x: asset.hotspot?.x ?? null,
+  hotspot_y: asset.hotspot?.y ?? null,
+  crop_top: asset.crop?.top ?? null,
+  crop_right: asset.crop?.right ?? null,
+  crop_bottom: asset.crop?.bottom ?? null,
+  crop_left: asset.crop?.left ?? null,
+};
 
-const frame = cropFrame(rect);
+const rect = resolveCrop(source, ratio);
+const serverCropped = crop === 'server';
 
 /**
  * Responsive candidates, and the one piece of arithmetic that makes them correct.
@@ -139,15 +156,29 @@ const frame = cropFrame(rect);
  * `src` is the largest candidate rather than `asset.url`: any browser old enough to ignore `srcset`
  * would otherwise be the only one still downloading the full-size original.
  */
-const scale = rect.width > 0 ? 1 / rect.width : 1;
-const candidateWidths = widths ?? variantWidthsFor(asset.width);
+const scale = serverCropped || rect.width <= 0 ? 1 : 1 / rect.width;
+
+/**
+ * The ladder is capped by what the delivered file actually contains.
+ *
+ * Under `'css'` a candidate is a width of the whole source, so the source's width is the ceiling.
+ * Under `'server'` it is a width of the **crop**, which is narrower — asking for 1536 of a
+ * rectangle only 800 source pixels wide is an upscale the resizer will decline, leaving candidates
+ * the browser can pick and gain nothing from.
+ */
+const ladderCeiling =
+  serverCropped && asset.width !== null ? Math.round(asset.width * rect.width) : asset.width;
+
+const candidateWidths = widths ?? variantWidthsFor(ladderCeiling);
 const variantFormat = format === 'original' ? undefined : format;
+const variantRatio = serverCropped ? ratio : undefined;
 
 const srcset =
   candidateWidths.length > 0
     ? candidateWidths
         .map(
-          (width) => `${mediaVariantUrl(asset.url, { width, format: variantFormat })} ${width}w`,
+          (width) =>
+            `${mediaVariantUrl(asset.url, { width, ratio: variantRatio, format: variantFormat })} ${width}w`,
         )
         .join(', ')
     : undefined;
@@ -155,18 +186,35 @@ const srcset =
 const src = srcset
   ? mediaVariantUrl(asset.url, {
       width: candidateWidths[candidateWidths.length - 1],
+      ratio: variantRatio,
       format: variantFormat,
     })
   : asset.url;
 
 /**
- * `sizes` describes the container; the browser chooses against the element. `scaleSizes` bridges
- * the two, and lives in core rather than here because it is string arithmetic with an edge case
- * that already shipped wrong — a `calc()` length was split on its last space and only its final
- * term scaled, which is valid CSS computing the wrong number. Untestable inside an `.astro` file;
- * pinned by six cases beside it.
+ * `sizes` describes the container; under `'css'` the browser chooses against an element blown up by
+ * `1 / rect.width`, so `scaleSizes` bridges the two. It lives in core because it is string
+ * arithmetic with an edge case that already shipped wrong — a `calc()` length split on its last
+ * space, scaling only its final term into valid CSS computing the wrong number. Untestable inside
+ * an `.astro` file; pinned by six cases beside it.
+ *
+ * Under `'server'` the element *is* the container, so there is nothing to bridge and the caller's
+ * `sizes` is emitted exactly as written. That is the quiet second win of cropping server-side.
  */
 const elementSizes = scaleSizes(sizes, scale);
+
+/**
+ * `cover` plus the focal point, which is the fallback rather than the mechanism.
+ *
+ * When the transform happened, the delivered image already has the box's ratio and `cover` is a
+ * no-op — the picture is exactly the resolved rectangle. When it did not happen, for any of the
+ * reasons `resizeImage` swallows, the original arrives instead and this frames it on its hotspot.
+ * So a deployment that cannot transform gets an approximate crop rather than a wrong one, which is
+ * what makes this mode safe to offer at all.
+ */
+const frame = serverCropped
+  ? `object-position:${coverPosition(source)}`
+  : cropFrame(rect);
 
 /**
  * Alt text comes from the library, where it is authored once and reused everywhere the asset
@@ -177,7 +225,11 @@ const elementSizes = scaleSizes(sizes, scale);
 const altText = alt ?? asset.alt ?? '';
 ---
 
-<div class:list={['taproot-image', className]} style={`--taproot-image-ratio:${ratio}`}>
+<div
+  class:list={['taproot-image', className]}
+  data-crop={serverCropped ? 'server' : undefined}
+  style={`--taproot-image-ratio:${ratio}`}
+>
   <img
     src={src}
     srcset={srcset}
@@ -205,5 +257,18 @@ const altText = alt ?? asset.alt ?? '';
   .taproot-image img {
     position: absolute;
     max-width: none;
+  }
+
+  /*
+    Server-cropped: the delivered file already *is* the rectangle, so the element simply fills the
+    box. `object-fit: cover` is the safety net rather than the mechanism — it is a no-op while the
+    ratios agree, and the only thing standing between a transform that did not happen and a visibly
+    wrong picture. The inline style supplies `object-position`.
+  */
+  .taproot-image[data-crop='server'] img {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 </style>

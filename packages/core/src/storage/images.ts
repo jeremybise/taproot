@@ -1,4 +1,9 @@
-import type { MediaVariant, MediaVariantFormat } from '../content/imageVariants.js';
+import { cropRectPixels, type MediaCropSource } from '../content/imageCrop.js';
+import {
+  isIdentityVariant,
+  type MediaVariant,
+  type MediaVariantFormat,
+} from '../content/imageVariants.js';
 
 /**
  * Structural type for the Cloudflare Images binding — only the surface actually used, declared
@@ -10,7 +15,12 @@ export interface ImagesBindingLike {
 }
 
 export interface ImageTransformerLike {
-  transform(options: { width?: number; height?: number; fit?: string }): ImageTransformerLike;
+  transform(options: {
+    width?: number;
+    height?: number;
+    fit?: string;
+    trim?: { top?: number; left?: number; width?: number; height?: number };
+  }): ImageTransformerLike;
   output(options: { format?: string; quality?: number }): Promise<ImageResultLike>;
 }
 
@@ -62,13 +72,28 @@ export async function resizeImage(
   bytes: Uint8Array,
   sourceMimeType: string,
   variant: MediaVariant,
+  source?: MediaCropSource,
 ): Promise<{ bytes: ReadableStream; contentType: string } | undefined> {
   if (!images) return undefined;
   if (!isResizable(sourceMimeType)) return undefined;
-  if (variant.width === undefined && variant.format === undefined) return undefined;
+  if (isIdentityVariant(variant)) return undefined;
 
   try {
     let pipeline = images.input(bytes);
+
+    /**
+     * Crop first, then scale — two `transform` calls because the order is the point, and chaining
+     * is how the binding lets you state it.
+     *
+     * The rectangle comes from `resolveCrop`, the same function the admin's preview frames and the
+     * CSS path use, so a picture cropped here is the picture the editor was shown. Reaching for
+     * `fit: 'crop'` with a `gravity` focal point instead would have been fewer lines and would
+     * quietly ignore the crop an editor dragged, honouring only the hotspot.
+     */
+    if (variant.ratio !== undefined && source) {
+      const rect = cropRectPixels(source, variant.ratio);
+      if (rect) pipeline = pipeline.transform({ trim: rect });
+    }
 
     if (variant.width !== undefined) {
       pipeline = pipeline.transform({ width: variant.width, fit: 'scale-down' });

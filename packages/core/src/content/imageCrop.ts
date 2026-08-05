@@ -232,6 +232,58 @@ export function cropFrame(rect: CropRect): CropFrame {
 }
 
 /**
+ * `object-position` for an image laid over a box with `object-fit: cover`.
+ *
+ * Two uses, and they are the same calculation. A container whose shape is not known in advance —
+ * a band as tall as the text over it — has no ratio to resolve a rectangle against, and the hotspot
+ * is all that survives. And a *server-cropped* image is rendered with `cover` so that a transform
+ * which did not happen degrades to approximately-right framing instead of the wrong picture.
+ *
+ * The crop is an approximation here and cannot be more: `object-position` slides the whole image
+ * within its container's overflow, so it can express a focal point but not a sub-rectangle — the
+ * cropped-away edges are still on screen. Centring what the editor kept is the closest it gets, and
+ * a hotspot outranks that centre because it is the more specific statement.
+ */
+export function coverPosition(media: MediaCropSource): string {
+  const region = cropRect(cropOf(media));
+  const hasHotspot = typeof media.hotspot_x === 'number' || typeof media.hotspot_y === 'number';
+
+  const point = hasHotspot
+    ? hotspotOf(media)
+    : { x: region.x + region.width / 2, y: region.y + region.height / 2 };
+
+  const pct = (value: number) => `${(value * 100).toFixed(2)}%`;
+  return `${pct(point.x)} ${pct(point.y)}`;
+}
+
+/**
+ * The resolved rectangle in source pixels, for a resizer that crops by pixel offsets.
+ *
+ * `undefined` when the source's dimensions were never read, because a normalised rectangle cannot
+ * be turned into pixels without them — and an unrecognised upload is exactly the case where
+ * guessing would produce a visibly wrong crop rather than a missing one.
+ */
+export function cropRectPixels(
+  media: MediaCropSource,
+  targetAspect: number,
+): { left: number; top: number; width: number; height: number } | undefined {
+  const sourceWidth = media.width ?? 0;
+  const sourceHeight = media.height ?? 0;
+  if (!(sourceWidth > 0 && sourceHeight > 0)) return undefined;
+
+  const rect = resolveCrop(media, targetAspect);
+
+  // Rounded outward-safe: a width of zero would be rejected by the resizer, and one pixel of slack
+  // is invisible next to a crop measured in hundreds.
+  return {
+    left: Math.max(0, Math.round(rect.x * sourceWidth)),
+    top: Math.max(0, Math.round(rect.y * sourceHeight)),
+    width: Math.max(1, Math.round(rect.width * sourceWidth)),
+    height: Math.max(1, Math.round(rect.height * sourceHeight)),
+  };
+}
+
+/**
  * The aspect ratios the editor previews.
  *
  * The point of showing several at once is that an editor picking a focal point is making one

@@ -18,6 +18,17 @@ export const MEDIA_VARIANT_WIDTH = 'w';
 export const MEDIA_VARIANT_FORMAT = 'f';
 
 /**
+ * Target aspect ratio, width ÷ height. Present means "crop this for me".
+ *
+ * The route resolves the asset's stored crop and hotspot against it with the same `resolveCrop` the
+ * admin preview and the CSS path use, so the three cannot disagree about what the picture is. The
+ * alternative — sending the rectangle itself — puts four free parameters in a URL that is a cache
+ * key and a billing key, and makes the client the authority on a calculation the server can already
+ * do from the row it is about to read anyway.
+ */
+export const MEDIA_VARIANT_RATIO = 'ar';
+
+/**
  * The width ladder, and the only widths the route will ever produce.
  *
  * **A fixed ladder is a cost control, not a style preference.** Cloudflare bills a *unique
@@ -47,11 +58,34 @@ export type MediaVariantFormat = (typeof MEDIA_VARIANT_FORMATS)[number];
 export interface MediaVariant {
   width?: number;
   format?: MediaVariantFormat;
+  /** Width ÷ height. Quantised by `parseMediaVariant`; see `RATIO_STEPS`. */
+  ratio?: number;
 }
+
+/**
+ * Ratios are rounded to hundredths and clamped, for the reason the width ladder is closed: a URL
+ * that accepts any float is a URL where a crawler mints unbounded unique transformations against a
+ * 5,000-a-month allowance. Hundredths is far finer than an eye can see at these sizes, and the
+ * residual mismatch between a box at `16/9` and an image cropped at `1.78` is absorbed by the
+ * `object-fit: cover` the server-cropped path renders with anyway.
+ */
+const RATIO_STEPS = 100;
+const RATIO_MIN = 0.2;
+const RATIO_MAX = 5;
 
 /** True when this variant asks for nothing, so the route can serve the stored bytes untouched. */
 export function isIdentityVariant(variant: MediaVariant): boolean {
-  return variant.width === undefined && variant.format === undefined;
+  return (
+    variant.width === undefined && variant.format === undefined && variant.ratio === undefined
+  );
+}
+
+/** Round a ratio onto the grid the route will accept, so both sides agree on the cache key. */
+export function quantizeRatio(ratio: number): number | undefined {
+  if (!Number.isFinite(ratio) || ratio <= 0) return undefined;
+
+  const clamped = Math.min(RATIO_MAX, Math.max(RATIO_MIN, ratio));
+  return Math.round(clamped * RATIO_STEPS) / RATIO_STEPS;
 }
 
 /**
@@ -64,6 +98,12 @@ export function isIdentityVariant(variant: MediaVariant): boolean {
 export function mediaVariantUrl(url: string, variant: MediaVariant): string {
   const params: string[] = [];
   if (variant.width !== undefined) params.push(`${MEDIA_VARIANT_WIDTH}=${variant.width}`);
+  if (variant.ratio !== undefined) {
+    // Quantised on the way out as well as in, so the URL a consumer builds is the one the route
+    // would have derived — otherwise every candidate misses the cache by a rounding difference.
+    const ratio = quantizeRatio(variant.ratio);
+    if (ratio !== undefined) params.push(`${MEDIA_VARIANT_RATIO}=${ratio}`);
+  }
   if (variant.format !== undefined) params.push(`${MEDIA_VARIANT_FORMAT}=${variant.format}`);
   if (params.length === 0) return url;
 
@@ -90,6 +130,12 @@ export function parseMediaVariant(params: URLSearchParams): MediaVariant {
         MEDIA_VARIANT_WIDTHS.find((rung) => rung >= width) ??
         MEDIA_VARIANT_WIDTHS[MEDIA_VARIANT_WIDTHS.length - 1];
     }
+  }
+
+  const rawRatio = params.get(MEDIA_VARIANT_RATIO);
+  if (rawRatio !== null) {
+    const ratio = quantizeRatio(Number.parseFloat(rawRatio));
+    if (ratio !== undefined) variant.ratio = ratio;
   }
 
   const rawFormat = params.get(MEDIA_VARIANT_FORMAT);

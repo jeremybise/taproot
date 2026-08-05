@@ -53,7 +53,23 @@ export async function GET(context: APIContext): Promise<Response> {
    */
   const row = await taproot.db.db
     .selectFrom('media')
-    .select(['mime_type', 'filename'])
+    /*
+     * The crop columns are selected because a `?ar=` variant is cropped server-side, and the
+     * rectangle is resolved here from the stored hotspot and crop rather than sent by the client —
+     * one authority for what the picture is, shared with the admin's preview frames.
+     */
+    .select([
+      'mime_type',
+      'filename',
+      'width',
+      'height',
+      'hotspot_x',
+      'hotspot_y',
+      'crop_top',
+      'crop_right',
+      'crop_bottom',
+      'crop_left',
+    ])
     .where('storage_key', '=', key)
     .executeTakeFirst();
 
@@ -75,7 +91,7 @@ export async function GET(context: APIContext): Promise<Response> {
    * heavier, never broken.
    */
   const variant = parseMediaVariant(context.url.searchParams);
-  const resized = await resizeImage(taproot.images, bytes, row.mime_type, variant);
+  const resized = await resizeImage(taproot.images, bytes, row.mime_type, variant, row);
 
   if (resized) {
     return new Response(resized.bytes as BodyInit, {
