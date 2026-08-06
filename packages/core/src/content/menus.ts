@@ -148,9 +148,11 @@ export interface MenuItemInput {
 /**
  * Normalise and check a target, so exactly the column matching `target_type` is set.
  *
- * Done here rather than as a CHECK constraint because SQLite, D1, and Postgres disagree about
- * enough constraint syntax to make one portable expression awkward — and because a rejected save
- * should explain what was wrong rather than surface a constraint name.
+ * Done here rather than as a CHECK constraint. The original reason was cross-dialect constraint
+ * syntax and it no longer applies — D1 carries CHECK — but the second reason is the one that was
+ * always doing the work: a rejected save has to tell an editor which target they left half-filled,
+ * and a constraint surfaces a name. Adding the CHECK *as well* would be defensible; replacing this
+ * with one is not.
  */
 function resolveTarget(input: MenuItemInput): Pick<
   MenuItemRow,

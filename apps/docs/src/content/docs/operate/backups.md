@@ -23,10 +23,34 @@ both.
 **D1**: use Cloudflare's export. `wrangler d1 export <name> --remote --output backup.sql` produces
 a file you can restore from.
 
+D1 refuses to export a database containing a virtual table, and Taproot has one — `content_item_fts`,
+the full-text search index. Drop it, export, and recreate it:
+
+```sql
+drop table content_item_fts;
+```
+
+```bash
+wrangler d1 export <name> --remote --output backup.sql
+```
+
+```sql
+create virtual table content_item_fts using fts5(text);
+insert into content_item_fts(rowid, text) select rowid, text from content_item_text;
+```
+
+Nothing is lost by leaving it out of the backup, and that is by design rather than luck: the index is
+derived, the prose it indexes lives in `content_item_text`, which exports normally, and
+`npm run db:reindex` rebuilds it from there on a restored database. What you must not do is restore a
+backup and skip the rebuild — search then returns nothing, with no error to say why.
+
 **Local SQLite**: copy the file at `TAPROOT_SQLITE_PATH`, under `apps/studio`. Stop the CMS dev
 server first, or you may copy it mid-write.
 
-**Postgres**: `pg_dump`, as usual.
+**Time Travel is the one you will actually use.** D1 keeps a continuous point-in-time record and can
+restore to any minute within the last 30 days (7 on the free plan) with no setup and no export step.
+An export is for the things Time Travel does not cover: keeping a copy longer than the window, and
+taking one off Cloudflare entirely.
 
 How often depends on how much editing you would accept losing. Revisions mean an editor can undo
 their own mistakes without a restore, so backups are really for the whole-database failure — which

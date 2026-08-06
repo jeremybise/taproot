@@ -11,7 +11,7 @@ import { slugify, uniqueSlug } from './paths.js';
  *
  * Terms deliberately carry no materialised path, unlike content items — see the 0003 migration for
  * the reasoning. Every tree query here runs off `parent_id` with a recursive CTE, the same
- * `WITH RECURSIVE` form that works identically on SQLite, D1, and Postgres.
+ * `WITH RECURSIVE` form that works identically on both drivers.
  */
 
 export class TaxonomyError extends Error {

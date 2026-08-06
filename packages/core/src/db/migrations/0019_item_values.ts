@@ -9,7 +9,7 @@ import { sql, type Kysely } from 'kysely';
  * ordering.
  *
  * **A derived index rather than `json_extract`.** Reading the JSON in place would work on SQLite and
- * D1 and need different syntax on Postgres, making this the first dialect-branched query building in
+ * D1, but is an unindexed scan of every row unless an expression index exists per content type per field, which is the reason that survives in
  * the repo; it would also be an unindexed scan of every row unless an expression index existed per
  * content type per field. Plain columns sort and range-filter on all three dialects with no
  * branching and one index.

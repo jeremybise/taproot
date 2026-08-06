@@ -73,7 +73,7 @@ describe('listMedia', () => {
 
   it('searches filenames case-insensitively', async () => {
     // Lowercased on both sides rather than trusting the collation: SQLite's LIKE ignores ASCII
-    // case and Postgres's does not, so an unqualified LIKE would behave differently in production.
+    // case only, so lowercasing both sides is what makes the match rule predictable.
     await seedAsset('Quad-Autumn.JPG', 'image/jpeg');
     await seedAsset('library.jpg', 'image/jpeg');
 

@@ -9,9 +9,9 @@ that reads from one. This package is what those are built on.
 
 ## What is in it
 
-- **A portable SQL layer** over Kysely — the same code on SQLite (development), Cloudflare D1
-  (production), or Postgres. Both drivers are written in-tree, because Kysely ships no D1 dialect
-  and the community one is unmaintained.
+- **A SQL layer** over Kysely — the same code and the same SQL on Node's built-in SQLite
+  (development) and Cloudflare D1 (production). One dialect, two drivers, both written in-tree
+  because Kysely ships no D1 dialect and the community one is unmaintained.
 - **Content services**: hierarchical paths with cascading renames and automatic redirects,
   revisions, taxonomies, menus, blocks, reusable blocks, releases, the workflow graph, and the
   scheduler.
@@ -41,7 +41,8 @@ the data layer.
 
 ## Requirements
 
-Node 22.12 or newer. `pg` is an optional peer dependency, needed only for Postgres.
+Node 22.12 or newer. No native dependencies and no optional peers — `npm install` never needs a C++
+toolchain.
 
 ## Documentation
 

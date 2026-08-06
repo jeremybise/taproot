@@ -56,14 +56,6 @@
     "kysely": "^0.29.4",
     "zod": "^4.4.3"
   },
-  "peerDependencies": {
-    "pg": "^8.20.0"
-  },
-  "peerDependenciesMeta": {
-    "pg": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260728.1"
   }

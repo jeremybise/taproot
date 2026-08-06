@@ -55,7 +55,8 @@ toolchain — Taproot has zero native dependencies.
 
 ## What works today
 
-- **Portable data layer.** One codebase on SQLite (dev), Cloudflare D1 (production), or Postgres.
+- **Zero-setup data layer.** Node's built-in SQLite locally, Cloudflare D1 in production — one
+  dialect, no server to install, and no native dependencies to compile.
 - **A visual content-type builder.** Add a field, pick its type, configure it in a form — with a
   live preview rendered through the same control the real editor uses, so it cannot drift. Text,
   richtext, number, boolean, date, select, media, taxonomy, relation, block, and repeater — every
@@ -217,8 +218,8 @@ of driver are custom; the adapter, introspector, and query compiler are Kysely's
 
 D1 has no interactive transactions — Cloudflare's reasoning being that one Worker request anywhere
 in the world could otherwise block the whole database. What D1 does have is `batch()`, which is
-atomic. So `batchWrite()` takes a list of statements: on D1 it maps to the native batch, on SQLite
-and Postgres to a real transaction.
+atomic. So `batchWrite()` takes a list of statements: on D1 it maps to the native batch, on the local
+SQLite driver to a real transaction.
 
 The constraint this imposes is real: **you cannot read your own writes mid-batch.** Do the reads
 first, compute, then write once. A cascading path move reads the subtree with one recursive CTE,

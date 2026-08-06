@@ -212,6 +212,12 @@ items have never been indexed; anything above zero on a database with content in
 not been run. That number does not fall on its own — nothing sweeps it — and the symptom without it
 is a search returning less than it should, with no error anywhere.
 
+**`0025_item_text_fts` is deliberately not on that list.** It adds the FTS5 index that ranks search
+results, and it fills itself: everything it needs is one column of `content_item_text`, not a walk
+over stored JSON, so the migration ends with the index populated. Worth saying explicitly because the
+two migrations above it trained the opposite habit — no reindex step, no window where search is
+quietly returning nothing.
+
 > Only needed on a database that already had content when the migration was applied. A fresh
 > deployment has nothing to backfill, and `npm run db:seed` indexes what it creates.
 

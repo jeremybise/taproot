@@ -129,7 +129,7 @@ class D1Introspector extends SqliteIntrospector {
     return rows.map((row) => ({
       name: row.name,
       isView: row.type === 'view',
-      // SQLite has no foreign tables; the field exists for Postgres.
+      // SQLite has no foreign tables; the field is part of Kysely's shared metadata shape.
       isForeign: false,
       columns: [],
     }));
@@ -169,9 +169,9 @@ class D1Driver implements Driver {
 
   async beginTransaction(): Promise<never> {
     throw new Error(
-      'D1 does not support interactive transactions (BEGIN/COMMIT). Use the portable ' +
-        '`batchWrite()` helper from @taprootcms/core/db, which maps to D1\'s atomic batch() and to a ' +
-        'real transaction on SQLite and Postgres.',
+      'D1 does not support interactive transactions (BEGIN/COMMIT). Use the `batchWrite()` helper ' +
+        "from @taprootcms/core/db, which maps to D1's atomic batch() and to a real transaction on " +
+        'the local SQLite driver.',
     );
   }
 

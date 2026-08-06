@@ -445,6 +445,103 @@ describe('content items', () => {
     expect(second.slug).toBe('apply-2');
   });
 
+  it('lets a root page and a collection item share a slug', async () => {
+    // Regression, and the reason `0024_root_slug_scope` exists: `parent_id` is null for a collection
+    // item as well as a root page, so the original `(slug) WHERE parent_id IS NULL` index put them
+    // in one namespace. `siblingSlugs` scopes by content type and never saw the clash, so the write
+    // reached the driver — on D1, as `D1 batch failed at statement 1 of N`. The two address
+    // different URLs and must both save, unchanged.
+    const { type: pageType, fields: pageFields } = await seedPageType();
+    const eventType = await createContentType(handle.db, {
+      api_id: 'event',
+      name: 'Event',
+      name_plural: 'Events',
+      kind: 'collection',
+      description: null,
+      icon: null,
+      url_prefix: 'events',
+      title_field: null,
+    });
+
+    const page = await createItem(handle, pageType, pageFields, {
+      contentTypeId: pageType.id,
+      title: 'Financial Aid',
+    });
+    const event = await createItem(handle, eventType, [], {
+      contentTypeId: eventType.id,
+      title: 'Financial Aid',
+    });
+
+    expect(page.slug).toBe('financial-aid');
+    expect(page.path).toBe('/financial-aid');
+    expect(event.slug).toBe('financial-aid');
+    expect(event.path).toBe('/events/financial-aid');
+  });
+
+  it('disambiguates two root items of different page types', async () => {
+    // The mirror image: these are siblings of neither each other nor anything else `siblingSlugs`
+    // would return, and they resolve to the *same* path — so `content_items_path_unique` would have
+    // rejected the second. Disambiguating against the path namespace is what catches both directions.
+    const { type: pageType, fields: pageFields } = await seedPageType();
+    const landingType = await createContentType(handle.db, {
+      api_id: 'landing_page',
+      name: 'Landing Page',
+      name_plural: 'Landing Pages',
+      kind: 'page',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      title_field: null,
+    });
+
+    const first = await createItem(handle, pageType, pageFields, {
+      contentTypeId: pageType.id,
+      title: 'Apply',
+    });
+    const second = await createItem(handle, landingType, [], {
+      contentTypeId: landingType.id,
+      title: 'Apply',
+    });
+
+    expect(first.path).toBe('/apply');
+    expect(second.path).toBe('/apply-2');
+  });
+
+  it('disambiguates a rename that would collide across content types', async () => {
+    // `updateItem` has its own slug branch, so it needs its own proof — a rename is the likelier
+    // route into this than a create, because the editor picks the word deliberately.
+    const { type: pageType, fields: pageFields } = await seedPageType();
+    const eventType = await createContentType(handle.db, {
+      api_id: 'event',
+      name: 'Event',
+      name_plural: 'Events',
+      kind: 'collection',
+      description: null,
+      icon: null,
+      url_prefix: 'events',
+      title_field: null,
+    });
+
+    await createItem(handle, eventType, [], { contentTypeId: eventType.id, title: 'Open House' });
+    const second = await createItem(handle, eventType, [], {
+      contentTypeId: eventType.id,
+      title: 'Spring Fair',
+    });
+
+    const renamed = await updateItem(handle, eventType, [], second.id, { slug: 'open-house' });
+
+    expect(renamed.path).toBe('/events/open-house-2');
+
+    // And a rename that collides with nothing still gets the slug it asked for — the events one
+    // above sits at /events/open-house, which is a different path from this page's /open-house.
+    const page = await createItem(handle, pageType, pageFields, {
+      contentTypeId: pageType.id,
+      title: 'Visit',
+    });
+    const moved = await updateItem(handle, pageType, pageFields, page.id, { slug: 'open-house' });
+    expect(moved.path).toBe('/open-house');
+  });
+
   it('enforces singleton uniqueness', async () => {
     const type = await createContentType(handle.db, {
       api_id: 'weather_banner',

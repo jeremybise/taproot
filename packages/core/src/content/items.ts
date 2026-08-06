@@ -15,6 +15,7 @@ import { now, parseJson, stringifyJson } from '../db/values.js';
 import { newId } from '../ids.js';
 import { validateItemData } from '../validation/fields.js';
 import type { ItemSort } from './itemSort.js';
+import { rankedSearchIds, toMatchQuery } from './search.js';
 import {
   buildRevisionStatement,
   getRevision,
@@ -23,7 +24,11 @@ import {
   RevisionError,
 } from './revisions.js';
 import { planAssignmentIndex } from './taxonomies.js';
-import { planDerivedIndexes, type IndexedValueKind } from './derivedIndex.js';
+import {
+  planDerivedIndexes,
+  planTextIndexDelete,
+  type IndexedValueKind,
+} from './derivedIndex.js';
 import { blockTypeRegistry, type ContentTypeWithFields } from './types.js';
 import {
   buildCollectionPath,
@@ -31,7 +36,6 @@ import {
   computeSubtreeRewrite,
   normalizePath,
   slugify,
-  uniqueSlug,
   wouldCreateCycle,
   type PathRewrite,
   type SubtreeNode,
@@ -308,8 +312,9 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
   }
   if (filters.search) {
     const needle = `%${filters.search.toLowerCase()}%`;
+    const match = toMatchQuery(filters.search);
     /**
-     * Title, path, and the item's own prose through the derived text index.
+     * Title, path, and the item's own prose through the full-text index.
      *
      * The third term is the whole of what makes this search rather than a title filter, and it is
      * here — in the predicate the listing and its status facets share — rather than in a function of
@@ -317,20 +322,38 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
      * endpoint all narrow identically. A second implementation for the consumer would be a search
      * that finds a page the CMS cannot, which is the failure SCOPE names.
      *
-     * EXISTS rather than a join, for the reason the taxonomy filter states: it must not multiply a
-     * row, and the facet counts read this same builder.
+     * **An uncorrelated `in (subquery)`, which is what keeps this a predicate.** It matters that the
+     * `MATCH` sits in a subquery depending on nothing outside it: SQLite materialises it once and
+     * feeds a primary-key seek, so the plan is `LIST SUBQUERY` over the FTS index rather than the
+     * `SCAN content_items` the old `like '%needle%'` forced on every search. Written as a correlated
+     * `EXISTS` — the shape the taxonomy and value filters correctly use — it would instead re-run the
+     * whole full-text query once per row, which is worse than the scan it replaced. The difference is
+     * invisible in the results and total in the cost.
+     *
+     * Title and path stay `LIKE`. They are short columns on rows already being visited, and folding
+     * them into the FTS index would mean an item's own address changing its search text.
+     *
+     * `match` is null when the query has no word characters at all (`?`, `!!!`). The prose term is
+     * dropped rather than matching nothing, so such a search still finds a page *titled* that.
      */
     q = q.where((eb) =>
       eb.or([
         eb(sql`lower(title)`, 'like', needle),
         eb(sql`lower(path)`, 'like', needle),
-        eb.exists(
-          eb
-            .selectFrom('content_item_text')
-            .select('content_item_text.content_item_id')
-            .whereRef('content_item_text.content_item_id', '=', 'content_items.id')
-            .where(sql`lower(content_item_text.text)`, 'like', needle),
-        ),
+        ...(match
+          ? [
+              eb(
+                'content_items.id',
+                'in',
+                sql<string>`(
+                  select t.content_item_id
+                  from content_item_fts f
+                  join content_item_text t on t.rowid = f.rowid
+                  where content_item_fts match ${match}
+                )`,
+              ),
+            ]
+          : []),
       ]),
     );
   }
@@ -432,13 +455,27 @@ export type ContentItemSummary = Omit<ContentItemRow, 'data' | 'seo'>;
 async function listWith<T>(
   db: Kysely<Database>,
   options: ListItemsOptions,
-  page: (query: ReturnType<typeof applyItemFilters>) => Promise<T[]>,
+  page: (query: ReturnType<typeof applyItemFilters>, rankedIds: string[]) => Promise<T[]>,
 ): Promise<{ rows: T[]; total: number }> {
   const query = applyItemFilters(db.selectFrom('content_items'), options);
 
+  /**
+   * The `bm25` order, resolved once here so both list functions get it identically.
+   *
+   * Only for the ranked path — a listing sorted by `newest` pays nothing. And only the *ordering*
+   * depends on it: `applyItemFilters` carries its own FTS predicate, so a page that skipped this
+   * would still return exactly the right items, just in path order. That asymmetry is deliberate.
+   * Correctness must not rest on a caller remembering a second call, which is the failure mode
+   * `termIdsForBranch` has to live with and this does not.
+   */
+  const ranked =
+    listOrder(options) === 'relevance' && options.search
+      ? await rankedSearchIds(db, options.search)
+      : { ids: [] as string[], truncated: false };
+
   const [totalRow, rows] = await Promise.all([
     query.select((eb) => eb.fn.countAll<number>().as('count')).executeTakeFirst(),
-    page(query),
+    page(query, ranked.ids),
   ]);
 
   return { rows, total: Number(totalRow?.count ?? 0) };
@@ -458,8 +495,14 @@ export async function listItems(
   db: Kysely<Database>,
   options: ListItemsOptions = {},
 ): Promise<{ items: ContentItem[]; total: number }> {
-  const { rows, total } = await listWith(db, options, (query) =>
-    applyItemSort(query.selectAll(), listOrder(options), options.sortField, options.search)
+  const { rows, total } = await listWith(db, options, (query, rankedIds) =>
+    applyItemSort(
+      query.selectAll(),
+      listOrder(options),
+      options.sortField,
+      options.search,
+      rankedIds,
+    )
       .limit(options.limit ?? 50)
       .offset(options.offset ?? 0)
       .execute(),
@@ -485,12 +528,13 @@ export async function listItemSummaries(
   db: Kysely<Database>,
   options: ListItemsOptions = {},
 ): Promise<{ items: ContentItemSummary[]; total: number }> {
-  const { rows, total } = await listWith(db, options, (query) =>
+  const { rows, total } = await listWith(db, options, (query, rankedIds) =>
     applyItemSort(
       query.select([...ITEM_SUMMARY_COLUMNS]),
       listOrder(options),
       options.sortField,
       options.search,
+      rankedIds,
     )
       .limit(options.limit ?? 50)
       .offset(options.offset ?? 0)
@@ -512,32 +556,49 @@ export async function listItemSummaries(
  * timestamp can swap places between page 1 and page 2 and an item is silently shown twice or not at
  * all.
  *
- * `coalesce` rather than a bare column, because SQLite sorts NULL as the smallest value and Postgres
- * sorts it as the largest: a draft with no `published_at` would lead the list on one dialect and
- * trail it on the other, which is the sort of difference that only ever shows up in production.
+ * `coalesce` rather than a bare column, and it outlived the portability argument that introduced it
+ * (NULL sorting smallest on SQLite and largest on Postgres). What it means now is the thing worth
+ * keeping: `newest` is "when did this reach a reader", so an item awaiting its scheduling sweep sorts
+ * by when it was written rather than as though it had no date at all.
  */
 function applyItemSort<Q extends { orderBy: (...args: any[]) => Q }>(
   query: Q,
   sort: ListOrder,
   sortField?: ListItemsOptions['sortField'],
   search?: string,
+  rankedIds?: string[],
 ): Q {
   /**
-   * Relevance: a `CASE` over where the term was found, best match first.
+   * Relevance: a title band, then `bm25` from the full-text index.
    *
-   * Five bands rather than a score, because there is no score to compute — a `LIKE` answers whether
-   * a term appears, not how often or how near the start, and inventing arithmetic on top of that
-   * would be a ranking that looks principled and is not. What the bands do encode is the one thing
-   * that is genuinely knowable: a term in the title is what the page is *about*, a term in the body
-   * is what the page *mentions*, and a visitor searching for "financial aid" wants the page called
-   * that above the twenty that link to it.
+   * **The bands stay; `bm25` breaks ties inside them.** The first instinct on getting a real score
+   * was to delete the `CASE` and rank by `bm25` alone, and a test that predates this caught it: the
+   * index is built from `content_item_text`, which holds the item's *prose* and not its title, so a
+   * page called "Bursaries and aid" whose body never says the word scores nothing at all and sorted
+   * below a page merely mentioning it. The old comment's claim was narrower than it read — a `LIKE`
+   * cannot rank a *body*, which is what `bm25` fixes; the bands were never about the body. They
+   * encode the thing that is still true and still unknowable to the index: a term in the title is
+   * what a page is *about*.
    *
-   * Ends with `path` like every other order, so paging stays stable when a hundred pages share a
-   * band — without it, two items in band 4 can swap between page 1 and page 2 and one is shown twice.
+   * So the shape is bands first, then score within a band — which is strictly more than either had
+   * alone, because the old fifth band (everything matching only in the body) was ordered by `path`,
+   * i.e. alphabetically, which is no ranking whatsoever on the largest band.
+   *
+   * `rankedIds` is the ordinal from `rankedSearchIds`, arriving as **one** delimited parameter read
+   * with `instr` — a `CASE` of five hundred branches or an `in` list of five hundred bound values
+   * would both be worse, and it is evaluated only on rows the filter already kept. An item outside
+   * the ranked window, or matched on its title with no body hit at all, gets 0 from `instr`; the
+   * extra `case` is what stops 0 sorting *first* and putting exactly those items above the best
+   * matches in their band.
+   *
+   * Ends with `path` like every other order, so paging stays stable when a hundred pages tie —
+   * without it, two items with the same score can swap between page 1 and page 2 and one is shown
+   * twice.
    */
   if (sort === 'relevance' && search) {
     const term = search.toLowerCase();
     const contains = `%${term}%`;
+    const haystack = rankedIds && rankedIds.length > 0 ? `|${rankedIds.join('|')}|` : '';
 
     return query
       .orderBy(
@@ -549,6 +610,13 @@ function applyItemSort<Q extends { orderBy: (...args: any[]) => Q }>(
               else 4
             end`,
       )
+      .orderBy(
+        sql`case
+              when instr(${haystack}, '|' || content_items.id || '|') = 0 then 1
+              else 0
+            end`,
+      )
+      .orderBy(sql`instr(${haystack}, '|' || content_items.id || '|')`)
       .orderBy('path', 'asc');
   }
 
@@ -809,7 +877,7 @@ export async function getChildren(
 /**
  * Read an item and every descendant, in one recursive query.
  *
- * `WITH RECURSIVE` works identically on SQLite, D1, and Postgres, which is what makes cascading
+ * `WITH RECURSIVE` works identically on both drivers, which is what makes cascading
  * moves implementable rather than something to special-case away.
  */
 export async function getSubtree(db: Kysely<Database>, rootId: string): Promise<SubtreeNode[]> {
@@ -925,11 +993,18 @@ export async function createItem(
     throw new ContentItemError(`Parent item ${parentId} not found.`, 'invalid_parent');
   }
 
+  // Still read, but only for `position` below — the slug comes from the path namespace now, because
+  // sibling slugs and addressable paths are not the same set. See `uniquePathSlug`.
   const siblings = await siblingSlugs(db, contentType.id, parentId);
   // `||` rather than `??`: an editor who leaves the slug blank sends an empty string, not
-  // undefined, and `??` would let it through to `uniqueSlug` — which slugifies it to nothing and
+  // undefined, and `??` would let it through to `uniquePathSlug` — which slugifies it to nothing and
   // falls back to the literal "item". Blank means "derive it from the title".
-  const slug = uniqueSlug(blankToUndefined(input.slug) || slugify(input.title), siblings);
+  const slug = await uniquePathSlug(
+    db,
+    contentType,
+    parent?.path ?? null,
+    blankToUndefined(input.slug) || slugify(input.title),
+  );
   const path = resolveItemPath(contentType, parent?.path ?? null, slug);
 
   const timestamp = now();
@@ -1096,8 +1171,7 @@ export async function updateItem(
       throw new ContentItemError(`Parent item ${nextParentId} not found.`, 'invalid_parent');
     }
 
-    const taken = await siblingSlugs(db, contentType.id, nextParentId, id);
-    slug = uniqueSlug(desiredSlug, taken);
+    slug = await uniquePathSlug(db, contentType, parent?.path ?? null, desiredSlug, id);
     path = resolveItemPath(contentType, parent?.path ?? null, slug);
     parentId = nextParentId;
     depth = parent ? parent.depth + 1 : 0;
@@ -1372,7 +1446,18 @@ export async function deleteItem(handle: TaprootDb, id: string): Promise<void> {
     throw new ItemError(`Cannot delete this item: ${blockers[0]}`, 'in_use');
   }
 
-  await handle.db.deleteFrom('content_items').where('id', '=', id).execute();
+  /**
+   * Batched, so the full-text retraction and the delete cannot land apart.
+   *
+   * Every other derived table cascades on `content_items.id` and needs nothing here.
+   * `content_item_fts` cannot: it is an external-content FTS5 index with no foreign key to cascade
+   * along, and retracting an item's terms needs the text — which the cascade is about to take away.
+   * So it goes first, in the same batch. See `planTextIndexDelete`.
+   */
+  await handle.batch([
+    planTextIndexDelete(handle.db, id),
+    handle.db.deleteFrom('content_items').where('id', '=', id),
+  ]);
 }
 
 /** One item pointing at another through a `relation` field. */
@@ -1570,6 +1655,56 @@ export function resolveItemPath(
       throw new Error(`Unhandled content type kind: ${String(exhaustive)}`);
     }
   }
+}
+
+/**
+ * Pick a slug whose resulting **path** is free, which is the namespace that actually has to be unique.
+ *
+ * `siblingSlugs` answers a different question — who sits beside this item in the admin — and the two
+ * disagree in both directions. A collection item and a root page are not siblings and can still
+ * collide (see `0024_root_slug_scope`), and two root items of two different `page`-kind types *are*
+ * addressed identically (`/apply` twice) while being siblings of neither. Disambiguating against
+ * `path` covers both, because `content_items_path_unique` is the constraint that was going to be
+ * enforced either way — the only question is whether the CMS resolves it or the driver rejects it.
+ *
+ * Probed in one batch rather than one query per candidate: a loop of `await`s here would be exactly
+ * the N+1 that `npm run query-count` exists to catch, and `path in (...)` seeks the unique index once
+ * for the whole set. Twenty-five candidates is far past what any real collision needs, so the common
+ * case — nothing taken — costs a single round trip and returns the base slug.
+ *
+ * A singleton maps every candidate onto the same fixed `/__singleton/{api_id}`, which is harmless:
+ * `createItem` has already refused a second one by the time this runs, so the first candidate is free
+ * and comes back unchanged.
+ */
+async function uniquePathSlug(
+  db: Kysely<Database>,
+  contentType: ContentTypeRow,
+  parentPath: string | null,
+  desired: string,
+  excludeId?: string,
+): Promise<string> {
+  const base = slugify(desired) || 'item';
+  const BATCH = 25;
+
+  for (let start = 1; start < 1000; start += BATCH) {
+    const candidates: string[] = [];
+    for (let n = start; n < start + BATCH; n++) {
+      candidates.push(n === 1 ? base : `${base}-${n}`);
+    }
+    const paths = candidates.map((slug) => resolveItemPath(contentType, parentPath, slug));
+
+    let query = db.selectFrom('content_items').select('path').where('path', 'in', paths);
+    if (excludeId) query = query.where('id', '!=', excludeId);
+    const taken = new Set((await query.execute()).map((row) => row.path));
+
+    const free = paths.findIndex((path) => !taken.has(path));
+    if (free !== -1) return candidates[free]!;
+  }
+
+  throw new ContentItemError(
+    `Could not find a free path for "${desired}" after 1000 attempts.`,
+    'validation_failed',
+  );
 }
 
 async function siblingSlugs(

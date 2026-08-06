@@ -215,7 +215,7 @@ export async function listUsers(db: Kysely<Database>): Promise<User[]> {
  * answer is obtained.)
  *
  * Raw SQL rather than the query builder because this shape has no Kysely spelling that stays
- * readable, and it is identical on SQLite, D1, and Postgres.
+ * readable, and it is identical on both drivers.
  */
 export async function createFirstAdmin(
   target: BatchTarget,

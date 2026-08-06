@@ -10,7 +10,7 @@ import type { Kysely } from 'kysely';
  * Defaults to 0 rather than being backfilled per row. Reads order by `position` then `name`, so a
  * site that never touches the order keeps today's alphabetical listing, and one that does gets
  * real positions written for every type at once. That avoids a backfill needing `ROW_NUMBER`,
- * which is the kind of thing SQLite, D1, and Postgres do not agree about.
+ * which a migration has no cheap portable form for and which nothing needs.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema

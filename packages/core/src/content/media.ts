@@ -74,9 +74,10 @@ function applyMediaFilters(query: MediaQuery, filters: MediaFilters): MediaQuery
 
   if (filters.search) {
     /**
-     * Lowercased on both sides rather than relying on the collation: SQLite's LIKE is
-     * case-insensitive for ASCII and Postgres's is not, so an unqualified LIKE would quietly
-     * behave differently in production than in dev. Same approach as the content-item search.
+     * Lowercased on both sides rather than relying on the collation. SQLite's LIKE is
+     * case-insensitive for ASCII only, so an unqualified LIKE finds `RÉSUMÉ.pdf` for `résumé` on
+     * neither side of the accent — being explicit keeps the rule one an editor can predict rather
+     * than one the collation happens to give. Same approach as the content-item search.
      *
      * `%` and `_` in the needle are left as wildcards. Filenames do contain underscores, so this
      * over-matches slightly — but over-matching a search box still shows the file the editor was

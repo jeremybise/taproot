@@ -48,9 +48,11 @@ silently dropping it would leave you believing you had scoped something.
 | | |
 |---|---|
 | `TAPROOT_SQLITE_PATH` | Local SQLite file, relative to `apps/studio`. Created automatically |
-| `DATABASE_URL` | Switches to Postgres. Requires `npm install pg` |
 
-On Cloudflare, the D1 binding takes over and neither is read.
+On Cloudflare, the D1 binding takes over and this is not read. A `DATABASE_URL` naming a Postgres
+database **throws on startup** rather than being ignored — Taproot has no Postgres driver, and
+falling back to a local file would let a deployment look healthy while writing every page somewhere
+nobody is backing up.
 
 ## Media
 

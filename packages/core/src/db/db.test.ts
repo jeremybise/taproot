@@ -204,7 +204,7 @@ describe('hierarchical paths', () => {
   });
 
   it('reads a whole subtree with a recursive CTE', async () => {
-    // This is the read half of a cascading move: WITH RECURSIVE works on SQLite, D1, and Postgres,
+    // This is the read half of a cascading move: WITH RECURSIVE works on both drivers,
     // which is what makes re-parenting implementable rather than special-cased away.
     await handle.db
       .insertInto('content_items')

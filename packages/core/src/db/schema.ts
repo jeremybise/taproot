@@ -3,9 +3,9 @@ import type { ColumnType, Generated, Insertable, Selectable, Updateable } from '
 /**
  * Timestamps are stored as ISO-8601 strings rather than native date types.
  *
- * SQLite/D1 have no date type at all, and Postgres `timestamptz` round-trips through `pg` as a
- * JS Date. Normalising on ISO strings at the column level means the repository layer does not
- * have to branch per dialect, and lexicographic ordering still matches chronological ordering.
+ * SQLite and D1 have no date type at all, so something has to be chosen; ISO-8601 is the encoding
+ * whose lexicographic order already matches chronological order, which is what lets every `order by`
+ * and every range filter in the codebase treat these as ordinary indexed text.
  */
 export type Timestamp = ColumnType<string, string | undefined, string>;
 
@@ -16,7 +16,12 @@ export type Timestamp = ColumnType<string, string | undefined, string>;
  */
 export type SqlBool = ColumnType<number, number | undefined, number>;
 
-/** JSON payloads are TEXT on SQLite/D1 and jsonb on Postgres; both round-trip as a string here. */
+/**
+ * JSON payloads are TEXT, serialised and parsed explicitly at the repository rather than by a
+ * plugin — `toSqlValue` throws on a plain object reaching the driver, so the conversion stays
+ * greppable. Queries never read into these; see `content_item_values` and `content_item_text` for
+ * why the answer is a derived index rather than `json_extract`.
+ */
 export type JsonText = ColumnType<string, string | undefined, string>;
 
 // ---------------------------------------------------------------------------

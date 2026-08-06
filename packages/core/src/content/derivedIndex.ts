@@ -1,4 +1,4 @@
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 
 import type { BatchStatement } from '../db/batch.js';
 import type { TaprootDb } from '../db/client.js';
@@ -286,11 +286,69 @@ function planTextIndex(
   const text = parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SEARCH_TEXT);
 
   return [
+    ftsForget(db, contentItemId),
     db
       .insertInto('content_item_text')
       .values({ content_item_id: contentItemId, text })
       .onConflict((oc) => oc.column('content_item_id').doUpdateSet({ text })),
+    ftsRemember(db, contentItemId),
   ];
+}
+
+/**
+ * Retract an item's old terms from the full-text index — see `0025_item_text_fts`.
+ *
+ * By `rowid`, resolved through a subquery against `content_item_text` whose rowid the index mirrors,
+ * so **the database does the lookup** and `planDerivedIndexes` stays synchronous and read-free rather
+ * than growing a read on the hot write path.
+ *
+ * Ordering is the whole contract, and it is why this is a separate statement: it runs *before* the
+ * upsert, while the row still describes the old prose, and `ftsRemember` runs *after* it. Reversed,
+ * the index keeps terms for text the item no longer has and a search returns a page whose matching
+ * word was deleted a month ago. A batch is sequential, so this holds on D1 and on SQLite alike — SQL
+ * reading an earlier statement's write is not the application branching on it, which is the thing
+ * `batchWrite` actually forbids.
+ *
+ * Deleting nothing is fine, and that is load-bearing rather than incidental: it covers the ordinary
+ * create, and it is why an index that has drifted from the text is repaired by the next save instead
+ * of failing it. The external-content form of this table could not do either.
+ */
+function ftsForget(db: Kysely<Database>, contentItemId: string): BatchStatement {
+  // `sql` templates need an executor to compile, unlike a query builder — same shape as
+  // `createFirstAdmin`'s. Raw because `content_item_fts` is a virtual table, which the typed builder
+  // has no schema entry for.
+  return {
+    compile: () =>
+      sql`
+        delete from content_item_fts
+        where rowid in (select rowid from content_item_text where content_item_id = ${contentItemId})
+      `.compile(db),
+  };
+}
+
+/** Index an item's current terms. Runs after the upsert; see `ftsForget` for why the pair is ordered. */
+function ftsRemember(db: Kysely<Database>, contentItemId: string): BatchStatement {
+  return {
+    compile: () =>
+      sql`
+        insert into content_item_fts(rowid, text)
+        select rowid, text from content_item_text where content_item_id = ${contentItemId}
+      `.compile(db),
+  };
+}
+
+/**
+ * Retract a deleted item's terms, for the one path that removes the row rather than rewriting it.
+ *
+ * `content_item_text` cascades on the item delete; a virtual table has no foreign key to cascade
+ * along, so it is not told. Left alone the entries are *harmless to correctness* — every read joins
+ * back through `content_item_text`, whose row is gone, so nothing matches — but they accumulate, they
+ * skew `bm25`'s corpus statistics, and SQLite reuses rowids, so an orphan can eventually sit on the
+ * rowid a future item is given. Must be batched **before** the delete that cascades: after it, the
+ * subquery that finds the rowid has nothing to find.
+ */
+export function planTextIndexDelete(db: Kysely<Database>, contentItemId: string): BatchStatement {
+  return ftsForget(db, contentItemId);
 }
 
 export interface DerivedIndexOptions {
@@ -361,6 +419,19 @@ export async function reindexDerived(
   // Once for the whole run rather than per item: it is the same map for every one of them, and this
   // walks the entire site.
   const blockTypes = await blockTypeRegistry(db);
+
+  /**
+   * Clear the full-text index before the walk repopulates it, which is what makes this a repair.
+   *
+   * The per-item statements below cannot remove an entry belonging to an item that no longer exists,
+   * because they find rowids *through* `content_item_text` — so an orphan left by anything that went
+   * around `deleteItem` would survive every reindex, and SQLite reuses rowids, which eventually makes
+   * an orphan somebody else's search result. Emptying first is the only form that converges.
+   *
+   * Search returns nothing for the duration, which is the honest cost and the reason this is a
+   * command an operator runs rather than something on a schedule.
+   */
+  await sql`delete from content_item_fts`.execute(db);
 
   let done = 0;
   for (const item of items) {

@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { sql } from 'kysely';
+
 import { createDb, type TaprootDb } from '../db/client.js';
 import { migrateToLatest } from '../db/migrations/index.js';
 import { createContentType, createField } from './types.js';
-import { createItem, listItemSummaries, updateItem } from './items.js';
+import { createItem, deleteItem, listItemSummaries, updateItem } from './items.js';
 import { createReusableBlock } from './reusableBlocks.js';
 import { reindexDerived } from './derivedIndex.js';
-import { buildExcerpt, loadSearchExcerpts, searchIndexStatus } from './search.js';
+import { buildExcerpt, loadSearchExcerpts, searchIndexStatus, toMatchQuery } from './search.js';
 import type { ContentTypeRow, FieldRow } from '../db/schema.js';
 
 /**
@@ -434,5 +436,163 @@ describe('excerpts', () => {
 
   it('answers an empty page of results without asking the database for `in ()`', async () => {
     expect(await loadSearchExcerpts(handle.db, [], 'anything')).toEqual(new Map());
+  });
+});
+
+/**
+ * The full-text index, and specifically the ways it can go wrong without anything erroring.
+ *
+ * `content_item_fts` is an external-content FTS5 table with no triggers — `0025_item_text_fts` says
+ * why, and the consequence is that its consistency rests entirely on two statements `planTextIndex`
+ * emits in the right order. Every failure mode here is silent: a search that keeps returning a page
+ * whose word was deleted, or a query that errors only on punctuation nobody tested with.
+ */
+describe('full-text index', () => {
+  async function ftsIntegrityOk(): Promise<boolean> {
+    try {
+      await sql`insert into content_item_fts(content_item_fts) values ('integrity-check')`.execute(
+        handle.db,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  it('forgets the old prose when an item is edited', async () => {
+    // The single most important property, and the one an index without triggers has to earn: FTS5
+    // stores an inverted index and no copy, so a save that indexes the new text without retracting
+    // the old leaves both searchable. Nothing errors — the page simply keeps answering a search for
+    // a word it no longer contains, forever.
+    const item = await makePage('Programme', { body: '<p>Endowment and bursaries.</p>' });
+    expect(await titlesFor('endowment')).toEqual(['Programme']);
+
+    await updateItem(handle, pageType, fields, item.id, {
+      data: { body: '<p>Scholarships and grants.</p>' },
+    });
+
+    expect(await titlesFor('endowment')).toEqual([]);
+    expect(await titlesFor('scholarships')).toEqual(['Programme']);
+    expect(await ftsIntegrityOk()).toBe(true);
+  });
+
+  it('retracts a deleted item from the index', async () => {
+    // `content_item_text` cascades, but an external-content index has no foreign key to cascade
+    // along. Reads join back through the text table so an orphan cannot surface as a result — what it
+    // does is accumulate and skew bm25, which `integrity-check` is the only thing that notices.
+    const item = await makePage('Doomed', { body: '<p>Convocation.</p>' });
+    expect(await titlesFor('convocation')).toEqual(['Doomed']);
+
+    await deleteItem(handle, item.id);
+
+    expect(await titlesFor('convocation')).toEqual([]);
+    expect(await ftsIntegrityOk()).toBe(true);
+  });
+
+  it('repairs a drifted index on the next save rather than failing it', async () => {
+    /**
+     * The reason `0025_item_text_fts` stores the text instead of using `content='content_item_text'`.
+     *
+     * An external-content index can only retract a row by being given the text it indexed, so once
+     * the index and the text disagree, the *next save* of that item throws `database disk image is
+     * malformed` — an editor pressing save on an ordinary page and being told the database is
+     * corrupt, with no action available to them. This is the case that found it.
+     */
+    const item = await makePage('Prospectus', { body: '<p>Matriculation.</p>' });
+
+    await sql`delete from content_item_fts`.execute(handle.db);
+
+    await expect(
+      updateItem(handle, pageType, fields, item.id, { data: { body: '<p>Graduation.</p>' } }),
+    ).resolves.toBeDefined();
+
+    expect(await titlesFor('graduation')).toEqual(['Prospectus']);
+    expect(await ftsIntegrityOk()).toBe(true);
+  });
+
+  it('matches a prefix, so a half-typed word still finds the page', async () => {
+    await makePage('Aid', { body: '<p>Scholarship deadlines.</p>' });
+    expect(await titlesFor('schol')).toEqual(['Aid']);
+  });
+
+  it('ands its terms rather than oring them', async () => {
+    await makePage('Both', { body: '<p>Autumn convocation ceremony.</p>' });
+    await makePage('One', { body: '<p>Autumn leaves.</p>' });
+
+    expect(await titlesFor('autumn convocation')).toEqual(['Both']);
+  });
+
+  it('survives punctuation that is FTS5 syntax', async () => {
+    // Every one of these is meaningful in an FTS5 MATCH expression, so passing a search box through
+    // unfiltered turns an ordinary query into a SQL error. `toMatchQuery` re-quotes tokens rather
+    // than escaping in place, which is the same argument `sanitizeHtml` makes one layer up.
+    await makePage('Languages', { body: '<p>We teach C++ and Python.</p>' });
+
+    for (const query of ['C++', '"open', 'AND', 'NEAR(', 'a OR b', '*', 'x:y', '^caret', '-dash']) {
+      await expect(titlesFor(query)).resolves.toBeInstanceOf(Array);
+    }
+
+    // And a query made only of punctuation still finds a page by *title*, rather than matching
+    // nothing — `toMatchQuery` returns null and the prose term drops out of the OR.
+    await makePage('!!!', {});
+    expect(await titlesFor('!!!')).toEqual(['!!!']);
+  });
+
+  it('ranks by bm25 inside a band rather than alphabetically', async () => {
+    // The gain over the CASE bands this replaced. All three match only in the body, so all three sit
+    // in the old fifth band, which was ordered by `path` — alphabetical, i.e. no ranking at all on
+    // the largest band there is. Zed says it most and must lead despite sorting last by title.
+    await makePage('Alpha', { body: '<p>Bursary. Then a great deal of unrelated filler prose.</p>' });
+    await makePage('Mid', { body: '<p>Bursary bursary. Plus unrelated filler prose here.</p>' });
+    await makePage('Zed', { body: '<p>Bursary bursary bursary.</p>' });
+
+    expect(await titlesFor('bursary')).toEqual(['Zed', 'Mid', 'Alpha']);
+  });
+
+  it('keeps a title match above a body match that scores higher', async () => {
+    // The regression the pre-existing ranking test caught while this was being written: bm25 is
+    // computed over `content_item_text`, which carries prose and not the title, so ranking by score
+    // alone puts a page merely mentioning the word above the page named after it.
+    await makePage('Bursary', { body: '<p>Nothing else here.</p>' });
+    await makePage('Costs', { body: '<p>Bursary bursary bursary bursary.</p>' });
+
+    expect(await titlesFor('bursary')).toEqual(['Bursary', 'Costs']);
+  });
+
+  it('is rebuilt wholesale by the reindex, including from an index that drifted', async () => {
+    // What makes `db:reindex` a repair rather than a replay — and the recovery path for a database
+    // restored from an export, which cannot carry a virtual table at all.
+    await makePage('Restored', { body: '<p>Matriculation.</p>' });
+
+    // Exactly what a restored export looks like: the text survives, the virtual table does not.
+    await sql`delete from content_item_fts`.execute(handle.db);
+    expect(await titlesFor('matriculation')).toEqual([]);
+
+    await reindexDerived(handle);
+
+    expect(await titlesFor('matriculation')).toEqual(['Restored']);
+    expect(await ftsIntegrityOk()).toBe(true);
+  });
+});
+
+describe('toMatchQuery', () => {
+  it('quotes each token and prefixes only the last', () => {
+    expect(toMatchQuery('financial aid')).toBe('"financial" "aid"*');
+  });
+
+  it('keeps letters and digits across scripts, and drops everything else', () => {
+    expect(toMatchQuery('Peña 2026!')).toBe('"Peña" "2026"*');
+    expect(toMatchQuery('C++')).toBe('"C"*');
+  });
+
+  it('neutralises FTS5 operators by quoting them as words', () => {
+    expect(toMatchQuery('cats AND dogs')).toBe('"cats" "AND" "dogs"*');
+  });
+
+  it('is null when there is nothing to match on', () => {
+    // Not "match nothing" — the caller drops the prose term and still searches title and path.
+    expect(toMatchQuery('!!!')).toBeNull();
+    expect(toMatchQuery('   ')).toBeNull();
+    expect(toMatchQuery('')).toBeNull();
   });
 });

@@ -80,7 +80,7 @@ export async function listRedirects(
   const search = options.search?.trim().toLowerCase();
   if (search) {
     // Lowercased on both sides, matching `listMedia` — SQLite's `like` is case-insensitive for
-    // ASCII and Postgres's is not, so the dialects would otherwise disagree.
+    // ASCII only, so being explicit is what makes the match rule predictable rather than incidental.
     query = query.where((eb) =>
       eb.or([
         eb(eb.fn('lower', ['from_path']), 'like', `%${search}%`),

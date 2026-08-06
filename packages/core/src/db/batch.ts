@@ -8,9 +8,11 @@ import { toSqlParameters } from './values.js';
  * A write that must land atomically, expressed as a list of statements rather than a callback.
  *
  * D1 has no interactive transactions, so a `db.transaction(async trx => …)` API cannot be
- * implemented portably. What D1 *does* have is `batch()`, which runs a statement list atomically.
- * Expressing atomic writes as a list is therefore the largest common denominator across all three
- * backends, and it is the shape the rest of Taproot is written against.
+ * implemented against it at all. What D1 *does* have is `batch()`, which runs a statement list
+ * atomically. Expressing atomic writes as a list is therefore the shape the rest of Taproot is
+ * written against — and note that committing to Cloudflare cements this rather than relaxing it:
+ * the local SQLite driver could offer a transaction callback, and a codebase written against one
+ * would not run on the target it deploys to.
  *
  * The constraint this imposes is real and worth stating plainly: **you cannot read your own writes
  * mid-batch, and you cannot branch on an intermediate result.** Do the reads first, compute the
@@ -30,7 +32,7 @@ export interface BatchTarget {
  * Execute a list of statements atomically on whichever backend is configured.
  *
  * - **D1** — compiled and handed to the native `batch()`, which is atomic.
- * - **SQLite / Postgres** — wrapped in a real transaction, which rolls back on any failure.
+ * - **SQLite** — wrapped in a real transaction, which rolls back on any failure.
  *
  * An empty list is a no-op rather than an error, so callers can build statement lists
  * conditionally without guarding every call site.

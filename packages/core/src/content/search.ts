@@ -101,6 +101,79 @@ export async function loadSearchExcerpts(
   return new Map(rows.map((row) => [row.content_item_id, buildExcerpt(row.text, term)]));
 }
 
+/**
+ * Turn what somebody typed into an FTS5 `MATCH` expression, or null if there is nothing to match.
+ *
+ * **This is a boundary, not a convenience.** FTS5's query language is a language: `AND`, `OR`, `NOT`,
+ * `NEAR`, quotes, parentheses, `*`, and column filters all mean something in it. Passing a search box
+ * straight through means an editor typing `C++` or `"open house` or a bare `AND` gets a SQL error
+ * rather than a result — not a security hole, since parameters are still bound, but a search that
+ * breaks on ordinary punctuation is a search nobody trusts. Every token is therefore extracted and
+ * re-quoted rather than escaped in place: the same allowlist-serialiser argument `sanitizeHtml`
+ * makes, one layer down.
+ *
+ * Tokens are runs of letters and digits, Unicode-aware — `\p{L}` rather than `a-z`, or a search for
+ * `Peña` splits in the middle of the name.
+ *
+ * Terms are ANDed, because that is what a second word means to somebody narrowing a search. The
+ * **last** token gets a `*`, so typing "schol" finds "scholarship" while the editor is still typing;
+ * earlier tokens do not, since a completed word is a word they meant.
+ *
+ * Returns null for input with no tokens at all (`!!!`, or whitespace). That is deliberately not the
+ * same as matching nothing — the caller still runs the title and path predicates, so searching `?`
+ * finds a page called `?` rather than erroring.
+ */
+export function toMatchQuery(input: string): string | null {
+  const tokens = input.match(/[\p{L}\p{N}]+/gu);
+  if (!tokens || tokens.length === 0) return null;
+
+  return tokens
+    .map((token, index) => {
+      // Quoted so a token that happens to spell `OR` or `NEAR` is a word to search for, not an
+      // operator. FTS5 escapes a quote inside a string by doubling it; tokens cannot contain one
+      // after the extraction above, and doing it anyway is what keeps that true if the pattern changes.
+      const quoted = `"${token.replace(/"/g, '""')}"`;
+      return index === tokens.length - 1 ? `${quoted}*` : quoted;
+    })
+    .join(' ');
+}
+
+/**
+ * Item ids matching a search, best first, for the ordering pass only.
+ *
+ * Matching does **not** depend on this: `ItemFilters.search` carries its own FTS predicate, so a
+ * caller that never calls this still narrows correctly, and the facet counts beside it agree because
+ * they share that predicate. What this adds is `bm25`, which cannot be reached from inside the shared
+ * builder — a correlated `MATCH` would re-run the full-text query once per row, which is the one
+ * shape worse than the scan this replaced.
+ *
+ * Capped, and the cap is **reported rather than silently applied** — a search matching more than
+ * `MAX_RANKED` items ranks the strongest `MAX_RANKED` and leaves the rest in path order, which is a
+ * fact a caller may want to say out loud. Bounded because the ids travel back into the query as one
+ * delimited parameter.
+ */
+export const MAX_RANKED = 500;
+
+export async function rankedSearchIds(
+  db: Kysely<Database>,
+  search: string,
+): Promise<{ ids: string[]; truncated: boolean }> {
+  const match = toMatchQuery(search);
+  if (!match) return { ids: [], truncated: false };
+
+  const rows = await sql<{ id: string }>`
+    select t.content_item_id as id
+    from content_item_fts f
+    join content_item_text t on t.rowid = f.rowid
+    where content_item_fts match ${match}
+    order by bm25(content_item_fts)
+    limit ${MAX_RANKED + 1}
+  `.execute(db);
+
+  const ids = rows.rows.map((row) => row.id);
+  return { ids: ids.slice(0, MAX_RANKED), truncated: ids.length > MAX_RANKED };
+}
+
 export interface SearchIndexStatus {
   /** Every content item, whatever its status. */
   items: number;

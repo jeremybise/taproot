@@ -8,23 +8,29 @@ import type { Kysely } from 'kysely';
  * has no SQL path through that: matching the raw blob would match markup, attribute values and
  * stored uuids as readily as prose, and would miss nothing only by matching far too much.
  *
- * **Not FTS5, and not `tsvector`.** Either would buy real ranking and cost the thing this repo has
- * protected since Phase 0: one migration set that runs unbranched on SQLite, D1 and Postgres.
- * FTS5 is a virtual table D1 does not reliably carry and Postgres does not have; `tsvector` is
- * Postgres only, and promoting it to a second real code path means every search bug can be a bug in
- * one dialect. What this stores instead is flattened plain text, matched with the lowercased `LIKE`
- * idiom already used for the admin's title search and ranked with a `CASE`.
+ * **Superseded in part by `0025_item_text_fts`, and this paragraph is why it survives as a note.**
+ * What stood here said "Not FTS5, and not `tsvector`" — either would buy real ranking and cost one
+ * migration set running unbranched on SQLite, D1 and Postgres — and it was wrong on one fact and
+ * overtaken on the other. **D1 does document FTS5**, including `fts5vocab`; the claim that it "does
+ * not reliably carry" it was true of an earlier D1 and was never rechecked. And Postgres is gone, so
+ * the portability half no longer costs anything to spend. `0025` adds an FTS5 index over this table's
+ * column and `bm25` replaces most of the `CASE`.
  *
- * **The table is here to materialise the text, not to make it indexed.** `like '%needle%'` is a scan
- * on every dialect — a leading wildcard cannot use a B-tree — so an index on `text` would be paid
- * for on every write and spent on nothing. What the table buys is that the scan reads one flattened
- * column instead of parsing every item's JSON and walking it in JS, and that the walk happens once
- * per save rather than once per query.
+ * **This table stays, and is not made redundant by that.** It is the durable, exportable half: it is
+ * what `loadSearchExcerpts` reads to build an excerpt, what `searchIndexStatus` counts to tell
+ * "nothing matched" apart from "nobody reindexed", and — since a `wrangler d1 export` cannot carry a
+ * virtual table at all — the only copy of the flattened prose that survives a dump and restore.
+ * `0025` is rebuilt from *this*, not the other way round.
+ *
+ * The original point of materialising the text also stands unchanged: the walk happens once per save
+ * rather than once per query, so no read parses every item's JSON.
  *
  * **One row per item rather than one per field.** Search asks whether an *item* mentions something;
  * a row per field would multiply the table by the field count to answer a question that never names
  * one, and the ranking that matters — a title match above a body match — reads `content_items` for
- * the title anyway.
+ * the title anyway. That last clause is still load-bearing under `0025`: `bm25` scores this column,
+ * which holds no title, which is why the title bands in `applyItemSort` were kept rather than
+ * replaced by the score.
  *
  * Same status and same rules as `content_item_values` and `taxonomy_assignments`: derived,
  * rebuilt inside the item's own write batch, with the authored value in `data` staying the source of

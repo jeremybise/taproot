@@ -110,7 +110,10 @@ never installs it.
 Locally, a SQLite file at `apps/studio/data/taproot.sqlite`, through Node's built-in SQLite. No server
 to install, nothing to configure.
 
-In production, Cloudflare D1. Postgres is wired but is not the tested target.
+In production, Cloudflare D1 — the same SQL, the same migrations, and the same one dialect. Taproot
+does not support Postgres or MySQL, which is a deliberate narrowing rather than a gap: committing to
+one target is what pays for real full-text search, since a second database engine would mean two
+search implementations that have to agree.
 
 ## Development runs on Node, production on Workers
 

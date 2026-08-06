@@ -16,7 +16,7 @@ import { sql, type Kysely } from 'kysely';
  * - `url`  — anything external, or a path this CMS does not own.
  *
  * A CHECK constraint would be the tidier way to enforce "exactly the matching column is set", but
- * D1 and SQLite disagree with Postgres about enough constraint syntax that it is validated in the
+ * a rejected save has to name the half-filled target rather than a constraint, so it is validated in the
  * service instead, where the error message can say something useful.
  */
 export async function up(db: Kysely<any>): Promise<void> {

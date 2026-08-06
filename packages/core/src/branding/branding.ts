@@ -153,7 +153,7 @@ export const MAX_TITLE_LENGTH = 60;
  *
  * An upsert rather than a read-then-branch: two requests arriving together would both find no row
  * and both insert, and the loser of that race is a primary-key violation on a screen that was doing
- * nothing unusual. `ON CONFLICT` is available identically on SQLite, D1, and Postgres.
+ * nothing unusual. `ON CONFLICT` behaves identically on both drivers.
  */
 export async function updateBranding(
   db: Kysely<Database>,

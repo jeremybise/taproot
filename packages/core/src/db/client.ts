@@ -6,13 +6,22 @@ import { batchWrite } from './batch.js';
 import type { D1DatabaseLike } from './dialects/d1.js';
 
 /**
- * Where Taproot's data lives. One codebase, three backends:
- * SQLite for local development, D1 in production, Postgres for Node deployments.
+ * Where Taproot's data lives. One dialect, two drivers: `node:sqlite` locally, D1 in production.
+ *
+ * **Not two dialects.** Both go through Kysely's `SqliteQueryCompiler`, so the SQL is byte-identical
+ * and there is no branch anywhere in query building — what differs is the driver underneath (a real
+ * transaction here, `batch()` there; see `batchWrite`). That is why the local driver is not a
+ * portability layer and dropping it would buy nothing: 31 test files and every CLI script run on it,
+ * and workerd has no `node:sqlite`, which is exactly why dev renders on Node.
+ *
+ * A Postgres driver was wired here from Phase 0 and removed once it was clear nothing tested it,
+ * nothing documented it, and no deployment used it — while the *promise* of it was what ruled out
+ * FTS5 for search (`0021_item_text`), since a second real dialect means two index implementations
+ * that have to agree. Committing to Cloudflare is what bought real ranking; see `0025_item_text_fts`.
  */
 export type DbConfig =
   | { driver: 'sqlite'; location: string }
-  | { driver: 'd1'; database: D1DatabaseLike }
-  | { driver: 'postgres'; connectionString: string; max?: number };
+  | { driver: 'd1'; database: D1DatabaseLike };
 
 export type DbDriver = DbConfig['driver'];
 
@@ -73,32 +82,6 @@ async function createKysely(config: DbConfig): Promise<Kysely<Database>> {
       });
     }
 
-    case 'postgres': {
-      // Postgres is wired but is not the tested target for Phase 0; SQLite and D1 are.
-      // `pg` is an optional peer dependency, so it is only required if this branch is taken.
-      const { PostgresDialect } = await import('kysely');
-      const specifier = 'pg';
-      const pg = (await import(/* @vite-ignore */ specifier)) as {
-        default?: { Pool: new (opts: unknown) => unknown };
-        Pool?: new (opts: unknown) => unknown;
-      };
-      const Pool = pg.Pool ?? pg.default?.Pool;
-      if (!Pool) {
-        throw new Error(
-          "The 'postgres' driver requires the optional peer dependency `pg`. Run `npm install pg`.",
-        );
-      }
-      return new Kysely<Database>({
-        dialect: new PostgresDialect({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          pool: new Pool({
-            connectionString: config.connectionString,
-            max: config.max ?? 10,
-          }) as any,
-        }),
-      });
-    }
-
     default: {
       const exhaustive: never = config;
       throw new Error(`Unknown database driver: ${JSON.stringify(exhaustive)}`);
@@ -110,8 +93,8 @@ async function createKysely(config: DbConfig): Promise<Kysely<Database>> {
  * Build a `DbConfig` from environment variables.
  *
  * Precedence is deliberate: an explicit D1 binding always wins, because in a Workers deployment
- * the binding is the only thing that can work. Otherwise `DATABASE_URL` selects Postgres, and
- * everything else falls back to a local SQLite file so `npm run dev` needs no configuration.
+ * the binding is the only thing that can work. Everything else falls back to a local SQLite file so
+ * `npm run dev` needs no configuration.
  */
 export function dbConfigFromEnv(
   env: Record<string, string | undefined>,
@@ -121,9 +104,22 @@ export function dbConfigFromEnv(
     return { driver: 'd1', database: bindings.DB };
   }
 
+  /**
+   * A Postgres `DATABASE_URL` throws rather than being ignored.
+   *
+   * Same rule `TAPROOT_DEV_AUTH` follows: silently dropping a variable an operator deliberately set
+   * leaves them believing they configured something. Falling through to the SQLite default would be
+   * the worst version of it — a deployment that starts cleanly, serves happily, and writes every
+   * page into a local file nobody is backing up, while the connection string sits in the dashboard
+   * looking honoured.
+   */
   const url = env.DATABASE_URL;
   if (url && (url.startsWith('postgres://') || url.startsWith('postgresql://'))) {
-    return { driver: 'postgres', connectionString: url };
+    throw new Error(
+      'DATABASE_URL names a Postgres database, and Taproot no longer has a Postgres driver. ' +
+        'Deploy on Cloudflare D1 (bind it as `DB`), or unset DATABASE_URL to use a local SQLite ' +
+        'file via TAPROOT_SQLITE_PATH.',
+    );
   }
 
   return { driver: 'sqlite', location: env.TAPROOT_SQLITE_PATH ?? './data/taproot.sqlite' };
