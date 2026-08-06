@@ -14,7 +14,7 @@ import { PURGE_SECRET_HEADER } from '@taprootcms/core/pure';
 const SECRET = 'a-shared-secret-value';
 
 function request(headers: Record<string, string> = {}): Request {
-  return new Request('https://site.example/_taproot/purge', {
+  return new Request('https://site.example/taproot/purge', {
     method: 'POST',
     headers,
     body: JSON.stringify({ tags: ['item:a'] }),

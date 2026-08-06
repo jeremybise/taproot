@@ -11,7 +11,7 @@
  * therefore owns the path, the runtime, and the secret's provenance. Mount it as:
  *
  * ```ts
- * // src/pages/_taproot/purge.ts
+ * // src/pages/taproot/purge.ts
  * import { createTaprootPurgeHandler } from '@taprootcms/astro';
  * import { env } from 'cloudflare:workers';
  *

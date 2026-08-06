@@ -6,7 +6,7 @@
  * branch that protects previews. One constant and one helper is the whole fix.
  *
  * The numbers are the site's to choose — Taproot has no say in how long a consumer caches HTML it
- * rendered. What makes a long TTL safe here is the purge callback at `/_taproot/purge`: the CMS
+ * rendered. What makes a long TTL safe here is the purge callback at `/taproot/purge`: the CMS
  * clears this cache when content changes, so the TTL is a backstop for a purge that never arrived
  * rather than the mechanism that keeps the site fresh.
  */

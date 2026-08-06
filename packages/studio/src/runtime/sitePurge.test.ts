@@ -17,7 +17,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const CONFIG = { url: 'https://site.example/_taproot/purge', secret: 'shhh' };
+const CONFIG = { url: 'https://site.example/taproot/purge', secret: 'shhh' };
 
 describe('sitePurgeConfig', () => {
   it('needs both halves, so a partial setup behaves like no setup', async () => {

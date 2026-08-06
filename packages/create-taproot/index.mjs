@@ -448,7 +448,7 @@ function envExample() {
 # Both or neither — a URL with no secret is treated as no configuration rather than as a broken
 # setup. The secret must match \`TAPROOT_PURGE_SECRET\` on the site, which mounts
 # \`createTaprootPurgeHandler\` from @taprootcms/astro.
-# TAPROOT_SITE_PURGE_URL=https://www.example.edu/_taproot/purge
+# TAPROOT_SITE_PURGE_URL=https://www.example.edu/taproot/purge
 # TAPROOT_SITE_PURGE_SECRET=
 
 # --- Optional: media served from a bucket custom domain ---------------------------

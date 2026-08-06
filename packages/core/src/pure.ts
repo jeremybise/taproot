@@ -80,12 +80,21 @@ export const PREVIEW_PARAM = 'taproot_preview';
  * A header rather than a bearer token in the URL, because a URL lands in access logs — the same
  * reasoning that keeps a freshly minted API key out of a query string.
  *
- * The path is only a *convention*: `createTaprootPurgeHandler` works wherever it is mounted, and
- * `TAPROOT_SITE_PURGE_URL` is a full URL rather than an origin, so a site that already owns
- * `/_taproot/*` can put it elsewhere. What the constant buys is that the documented default and the
- * scaffolded example cannot drift apart.
+ * **No leading underscore, and that is not cosmetic.** This was `/_taproot/purge` for exactly one
+ * release, and **Astro excludes any file or directory in `src/pages` whose name starts with `_`
+ * from routing** — so the endpoint silently did not exist. It type-checked, it built without a
+ * warning, the route string appeared in the bundle (as a doc comment), and every purge the CMS sent
+ * would have 404'd, been queued as failed, retried eight times and reported on Settings → System as
+ * a problem with no cause visible anywhere in the code. Found only by grepping the built output for
+ * the handler and not finding it. `purgePathIsRoutable` in `cacheTags.test.ts` is what stops it
+ * coming back.
+ *
+ * The path is otherwise only a *convention*: `createTaprootPurgeHandler` works wherever it is
+ * mounted, and `TAPROOT_SITE_PURGE_URL` is a full URL rather than an origin, so a site that already
+ * owns `/taproot/*` can put it elsewhere — as long as it avoids the underscore too. What the
+ * constant buys is that the documented default and the scaffolded example cannot drift apart.
  */
-export const PURGE_PATH = '/_taproot/purge';
+export const PURGE_PATH = '/taproot/purge';
 export const PURGE_SECRET_HEADER = 'x-taproot-purge-secret';
 
 /**

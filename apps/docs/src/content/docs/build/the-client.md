@@ -456,7 +456,7 @@ Cloudflare scopes cache purging to the Worker that owns the cache, so the CMS cl
 JSON cannot touch the HTML you rendered from it. Mount an endpoint and it can:
 
 ```ts
-// src/pages/_taproot/purge.ts
+// src/pages/taproot/purge.ts
 import { createTaprootPurgeHandler } from '@taprootcms/astro';
 
 export const prerender = false;
