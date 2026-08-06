@@ -372,7 +372,7 @@ that is not there.
 
 ## Caching
 
-Delivery responses carry an `ETag`, `s-maxage=60`, and a `Cache-Tag` header. A conditional request
+Delivery responses carry an `ETag`, `s-maxage=86400`, and a `Cache-Tag` header. A conditional request
 costs a 304 with no body — and, on the CMS side, no page resolution at all: the validator is answered
 from a single indexed lookup rather than by building the payload and discarding it.
 
@@ -425,17 +425,57 @@ if (result.kind === 'item') {
 Ignoring `cacheTags` entirely is fine and is what every site did before they existed — you fall back
 to `s-maxage` expiring, which is the backstop either way.
 
-### What the ETag does not cover
+### A day is a long time, so read the next two sections
 
-The validator is built from the item's `updated_at`, so it notices an edit, a publish, a status
-change, a move, and a release applying a staged version. It cannot notice a **reusable block edited
-in the library**, because that changes what the page renders without touching the page's row. That is
-exactly what the `block:` tag is for, and `s-maxage=60` is the bound if you are not purging.
+`s-maxage=86400` is only safe because purging is what keeps content fresh; the TTL is the backstop
+for a purge that never arrived. If you cache this site's own HTML for a day as well — which you
+should — mount the purge endpoint below, or an edit will take a day to appear.
 
-For the same reason, do not build a response cache keyed on the ETag in your own client. It would
-work right up until somebody edits a shared block, at which point the tag keeps matching and your
-copy goes stale with no expiry at all. `@taprootcms/astro` deduplicates *concurrent* requests for one
-resource within a render and deliberately stops there.
+### What the ETag covers
+
+The validator is built from the item's `updated_at` **and a stamp for the reusable-block library**,
+so it notices an edit, a publish, a status change, a move, a release applying a staged version, and
+an entry edited in the library.
+
+That last one used to be a documented gap here, and the gap was worse than this page once claimed.
+It said a library edit left a client "stale until `s-maxage` lapses". There was no such bound: when
+a cached copy expires a shared cache *revalidates* rather than refetching, the CMS answered 304
+because the page's own row had not changed, and [RFC 9111
+§4.3.4](https://www.rfc-editor.org/rfc/rfc9111#section-4.3.4) says a 304 refreshes the stored
+response's freshness — so the stale copy renewed itself indefinitely. Folding the library's stamp
+into the validator is what fixes it.
+
+Even so, **do not build a response cache keyed on the ETag in your own client**. The reasoning has
+changed but the advice has not: you would be reimplementing a shared cache badly, without the purge
+callback that makes the long TTL safe. `@taprootcms/astro` deduplicates *concurrent* requests for
+one resource within a render and deliberately stops there.
+
+### Clearing your own cache
+
+Cloudflare scopes cache purging to the Worker that owns the cache, so the CMS clearing its cached
+JSON cannot touch the HTML you rendered from it. Mount an endpoint and it can:
+
+```ts
+// src/pages/_taproot/purge.ts
+import { createTaprootPurgeHandler } from '@taprootcms/astro';
+
+export const prerender = false;
+export const POST = createTaprootPurgeHandler({ secret: process.env.TAPROOT_PURGE_SECRET });
+```
+
+Then set `TAPROOT_SITE_PURGE_URL` and `TAPROOT_SITE_PURGE_SECRET` on the **studio**, with the secret
+matching. Both or neither — the CMS treats a URL without a secret as no configuration at all, so a
+half-finished setup behaves like an absent one rather than a broken one.
+
+It flushes your whole cache rather than purging the tags it was sent, deliberately. Only `resolve`
+exposes `cacheTags`; `/delivery/items` and `/delivery/menu` do not, so a listing page cannot derive
+what it depended on — and tag-precise purging would silently never invalidate exactly the pages most
+likely to be stale, like an index that should be showing a newly published item. At a few edits a
+day the re-warm costs nothing and cannot be wrong.
+
+Leaving it unmounted is supported: the endpoint answers 404 when no secret is set, the CMS records
+the failed purge and retries it, and Settings → System reports it. What you give up is prompt
+invalidation — your pages then change only when your own TTL lapses.
 
 Previews are always `no-store`. Do not cache a response you fetched with a preview token — see
 [Preview and types](/build/preview-and-types/).

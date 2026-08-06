@@ -10,6 +10,7 @@ import {
 } from '@taprootcms/core';
 
 import { apiError, handleScoped, json } from '../_shared.js';
+import { DELIVERY_CACHE_CONTROL, listingCacheTagHeader } from './cache.js';
 
 /**
  * A filtered list of visible items — index pages, term archives, "latest news", a staff directory.
@@ -188,7 +189,15 @@ export const GET = handleScoped(
         // "a term with nothing in it" — which are a 404 and an empty archive respectively.
         ...(term ? { term } : {}),
       },
-      { headers: { 'cache-control': 'public, max-age=0, s-maxage=60', vary: 'authorization' } },
+      {
+        headers: {
+          'cache-control': DELIVERY_CACHE_CONTROL,
+          vary: 'authorization',
+          // Without this a listing is purgeable by nothing and lives out its whole TTL, however
+          // long that is. See `listingCacheTagHeader`.
+          'cache-tag': await listingCacheTagHeader(db, typeApiId),
+        },
+      },
     );
   },
   { scope: 'content:read' },

@@ -29,7 +29,7 @@ if (result.kind === 'not_found') {
 
 const { item, breadcrumbs, children, media } = result;
 
-Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=86400');
 ---
 
 <Layout title={item.seo.title} description={item.seo.description}>
@@ -209,7 +209,7 @@ if (previewToken) {
   Astro.response.headers.set('cache-control', 'no-store');
   Astro.response.headers.set('x-robots-tag', 'noindex, nofollow');
 } else {
-  Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+  Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=86400');
 }
 ---
 
@@ -399,7 +399,7 @@ if (previewToken) {
     );
   }
 } else {
-  Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+  Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=86400');
 }
 ---
 

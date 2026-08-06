@@ -323,10 +323,31 @@ The deferred caching work from the URL-structure section above, now that Phase 3
 
 Two costs found by measuring rather than reading: the five-minute housekeeping sweep was running **two full table scans** on unindexed columns forever, and `blockTypeRegistry` scanned `content_types` on **every page view** including pages with no blocks. Migration `0020_perf_indexes` and a gate fix those; `npm run query-count` and `queryPlans.test.ts` are what stop them coming back. Note the trap the plan walked into and had to be corrected on: indexing both sides of `purgeStaleResetTokens`' `or` changed the query plan by *nothing at all* — SQLite's OR-to-union optimisation does not fire there — so the delete had to be split into two statements to spend the indexes. Measured with `explain query plan` at 0 and 20,000 rows.
 
-**Deliberately not done, and left for Phase 6:** the site-side purge loop. The studio purges its own cache in-process; invalidating a *consumer's* cached HTML means the CMS making an authenticated outbound request to an endpoint the site mounts, which is the outbound-HTTP layer Phase 6 owns plus new configuration on both sides. Until then a consumer's HTML is bounded by its own `s-maxage`, which is what every site had before. Also rejected on purpose: memoising `verifyApiKey` (it would delay revocation to save one indexed row read) and an ETag-keyed response cache in `@taprootcms/astro` (the validator cannot see a reusable-block edit, so a client-side body cache would go stale with no bound at all).
+**Phase 5.7 — Purge repair** *(complete)*
+The site-side purge loop, plus the repairs that had to come first. Raising the TTL from 60s to a day
+exposed that purging was substantially broken and had always been: `SITE_TAG` was emitted on **no
+response at all**, so publishing a release and running the scheduler purged nothing; reusable
+blocks, menus, content types, fields, taxonomies and terms had no `invalidate` call; the three
+listing endpoints emitted no `Cache-Tag`, making them purgeable by nothing; and the cron sweep had
+no execution context to purge from. Each was invisible at 60s and a day-long bug at 86400.
+
+Sharpest of them: **an ETag that cannot change turns bounded staleness into unbounded staleness.**
+A shared cache revalidates rather than refetching when a TTL lapses, the CMS answered 304 because a
+library edit touches no referencing row, and RFC 9111 §4.3.4 says a 304 *refreshes* the stored
+copy's freshness — so it renewed itself forever. `deliveryCache` now folds
+`reusableBlockLibraryVersion` into the validator. Verified against a live deployment, which answered
+304 to a tag whose page had changed.
+
+The purge callback itself is a row plus an HTTP POST: Cloudflare scopes purging to the Worker that
+owns the cache, so the CMS cannot reach a consumer's HTML directly. A failed purge is queued in
+`pending_purges` and retried by the five-minute sweep with backoff, then reported on Settings →
+System — because "never throws" also means "never tells anybody", which is affordable at 60s and not
+at a day. The consumer flushes wholesale rather than by tag, since `/delivery/items` and
+`/delivery/menu` expose no `cacheTags` and a listing page therefore cannot derive its own
+dependencies.
 
 **Phase 6 — Integrations**
-Webhooks, tracking script manager, MCP server, workflow notifications, **and the cache-purge callback into a consumer site**. Grouped because they share the outbound-HTTP layer and the API-key scope layer. (Redirects moved to Phase 1 — see URL structure section above. API keys moved to Phase 3.75, which cannot ship without them.)
+Webhooks, tracking script manager, MCP server, and workflow notifications. Grouped because they share the outbound-HTTP layer and the API-key scope layer. (The cache-purge callback into a consumer site was grouped here for the same reason and shipped early in Phase 5.7 — raising the TTL made it a prerequisite rather than an integration.) (Redirects moved to Phase 1 — see URL structure section above. API keys moved to Phase 3.75, which cannot ship without them.)
 
 **MCP server exposure** belongs here rather than on the radar: let AI agents query/create/update content through an MCP server rather than raw REST. The visual content-type builder already gives every content type an introspectable typed schema, and API keys already provide an auth/scoping mechanism that doubles as agent-access control. Note that `API_KEY_SCOPES` is a **one-element array** today, consumed with a cast that assumes a non-empty tuple — MCP and webhooks both need a second scope, and that expansion is a small but non-zero piece of this phase.
 

@@ -229,11 +229,75 @@ follow:
   request arriving in between repopulates it with exactly what the purge was for. It also never
   throws, for `recordAuditEntry`'s reason — the write already happened and was already reported
   successful.
-- **Do not build an ETag-keyed response cache in `@taprootcms/astro`.** The validator cannot see a
-  reusable block edited in the library, so the tag keeps matching and a client-side body would go
-  stale with *no bound at all*; `s-maxage` is what bounds that today. The client deduplicates
+- **Do not build an ETag-keyed response cache in `@taprootcms/astro`.** The validator now *does* see
+  a library edit (see the RFC 9111 paragraph below), so the original reason is gone — but the advice
+  stands: it would reimplement a shared cache badly, without the purge callback that makes a long
+  TTL safe. The client deduplicates
   concurrent requests for one resource and stops there, and `verifyApiKey` is likewise not memoised —
   it would delay revocation to save one indexed row read.
+
+**A tag nothing emits purges nothing, and the purge will report success.** `SITE_TAG` was defined,
+imported, and passed to `invalidate()` by the release-publish and scheduler routes for a whole phase
+while appearing on **no response at all** — so both cleared zero entries, silently. The three listing
+endpoints (`/items`, `/search`, taxonomy `terms`) emitted no `cache-tag` either, making them
+purgeable by nothing. The only defence is asserting the tag is **on the wire**: a test that the write
+path purges `site` passes throughout. Four rules follow:
+- **`type:` is what a listing carries**, not `item:`. An item write purges both, and `type:` is the
+  one covering an item the listing has never seen — which is the entire problem a listing has. Tagged
+  even when the query matched nothing, since an empty index is exactly what the first publish changes.
+- **The taxonomy terms endpoint needs both axes.** Vocabulary edits purge `SITE_TAG`; the `itemCount`
+  beside each term moves on an ordinary content write, which purges `type:`. Tagged for only the
+  first, a facet keeps showing numbers the grid disagrees with.
+- **Where a purge would clear nothing, do not add one** — redirects only change `resolve`'s
+  `not_found` and `redirect` branches, which carry no tag and are capped at `s-maxage=30` on purpose.
+  Branding and `theme.ts` are admin-only. A purge added "for symmetry" is the same bug again.
+- **A cron trigger has no `locals`.** It reaches `worker.ts`'s `scheduled` export, whose third
+  argument *is* the `ExecutionContext`; `purgeFromExecutionContext` is the entry for that.
+
+**A 304 renews a cached copy's freshness, so a validator that cannot change is not bounded by the
+TTL — it is unbounded.** This file and `cache.ts` both used to claim that a reusable-block edit left
+a page "stale until `s-maxage` lapses, and sixty seconds is the bound". There was no bound: a shared
+cache revalidates rather than refetching on lapse, `updated_at` had not moved because the edit
+touched no referencing row, the CMS answered 304, and RFC 9111 §4.3.4 says that refreshes the stored
+response. It renewed itself forever. `deliveryCache` folds `reusableBlockLibraryVersion` into the
+ETag, which is **global rather than per page** — resolving which entries a page places means walking
+its `data`, exactly the work the cheap validator lookup exists to avoid. It costs one aggregate per
+page view that `npm run query-count` **cannot see**, because that script measures `resolveDelivery`
+rather than the route. Both validator sites must compute the same stamp or every conditional request
+misses; `resolve.ts` reads it once and passes it to both.
+
+**`s-maxage` is 86400 and there is deliberately no `stale-while-revalidate`.** Cloudflare disables
+stale-serving outright in the presence of `s-maxage`, so adding SWR beside it is inert — the worst of
+the three options, because it looks like it works. Getting SWR means using `max-age` as the freshness
+window, which lets a **browser** hold a page for a day, and a purge cannot reach a browser. A rare
+blocking revalidation beats a copy nothing can correct. The number lives once, in
+`DELIVERY_CACHE_CONTROL`; five routes used to hardcode the string beside a constant that governed
+only `resolve`.
+
+**Cloudflare scopes purging to the Worker that owns the cache, so clearing a consumer's HTML is an
+HTTP call.** `sitePurge.ts` POSTs to an endpoint the site mounts from
+`createTaprootPurgeHandler`; `PURGE_PATH` and `PURGE_SECRET_HEADER` live in `pure.ts` so both ends
+spell them once. Four things hold it up:
+- **The consumer flushes everything rather than purging by tag.** Only `resolve` exposes
+  `cacheTags` — `/delivery/items` and `/delivery/menu` do not — so a listing page cannot derive its
+  dependencies, and tag-precision would silently never invalidate the index that should show a newly
+  published item. The tags travel in the body anyway, so precision stays available later.
+- **Both config halves or neither.** A URL with no secret is treated as no configuration, so a
+  half-finished deployment behaves like an unconfigured one rather than a broken one. Not derived
+  from `TAPROOT_SITE_URL`: that names where a preview link points, and this enables a write surface.
+- **Unconfigured answers 404, not 401** — a site with no secret should look like a site with no such
+  route, not one guarding something worth guessing at.
+- **The consumer's handler *does* report failure**, unlike every purge inside the CMS. There is no
+  committed write to protect there; the caller is the retry queue, and its only way to replay is a
+  response saying it failed.
+
+**A dropped purge is silent, and silence is only affordable at a short TTL.** `pending_purges` plus
+the five-minute sweep is what bounds it — `enqueuePurge` on failure, `drainPurgeQueue` with backoff,
+a ceiling after which a row is left stuck and reported on Settings → System. Three rules: the drain
+**branches on `target`**, or a queued site purge replays against the CMS's own cache and is deleted
+as delivered; retries pass **no `db`**, or each failure enqueues another row forever; and the outcome
+is **read, not caught**, because these functions never throw and a `try`/`catch` would delete every
+row whether or not its purge landed.
 
 **Query plans are asserted, not assumed — `npm run query-count` and `queryPlans.test.ts` are why.**
 Nothing in the suite counted round trips, so an `await` inside a loop or an unconditional lookup

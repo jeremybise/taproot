@@ -3,6 +3,7 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
 import Timestamp from '../../components/Timestamp.astro';
 import {
   getConfiguredProviders,
+  purgeQueueStatus,
   schedulerStatus,
   searchIndexStatus,
   twoFactorStatus,
@@ -16,6 +17,7 @@ const user = taproot.user;
 const providers = getConfiguredProviders(taproot.auth);
 const scheduler = await schedulerStatus(taproot.db.db);
 const searchIndex = await searchIndexStatus(taproot.db.db);
+const purgeQueue = await purgeQueueStatus(taproot.db.db);
 const twoFactor = await twoFactorStatus(taproot.db.db, user.id);
 
 /**
@@ -249,6 +251,51 @@ const account = [
           been indexed, so search cannot see their content. Run{' '}
           <code class="font-mono text-xs">npm run db:reindex</code> once against this database. It is
           safe to run again at any time.
+        </p>
+      )
+    }
+  </section>
+
+  <section aria-labelledby="cache-heading" class="mb-10">
+    <h2 id="cache-heading" class="mb-3 text-base font-semibold">Cache purges</h2>
+
+    <p class="mb-3 max-w-prose text-sm text-content-muted">
+      Saving content clears the cached copies that depended on it. A purge that cannot be delivered
+      is kept and retried by the scheduled sweep, because a save is never failed over a caching
+      problem — which also means a purge that never lands would otherwise go unmentioned.
+    </p>
+
+    <dl class="divide-y divide-border overflow-hidden rounded-lg border border-border">
+      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+        <dt class="text-content-muted">Waiting to retry</dt>
+        <dd class="font-mono text-xs">{purgeQueue.pending}</dd>
+      </div>
+      <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+        <dt class="text-content-muted">Given up on</dt>
+        <dd class="font-mono text-xs">{purgeQueue.stuck}</dd>
+      </div>
+    </dl>
+
+    {
+      /*
+        Only the stuck count is worth a warning. Rows waiting to retry are the ordinary state
+        between a blip and the next sweep, and warning about those would train an operator to
+        ignore this box — which is precisely when the row that matters appears.
+
+        What a stuck row means is concrete: content somewhere is being served from a cache that was
+        supposed to have been cleared, and nothing will clear it until its TTL lapses.
+      */
+      purgeQueue.stuck > 0 && (
+        <p class="mt-3 max-w-prose rounded-md border border-status-scheduled bg-status-scheduled-subtle px-4 py-3 text-sm">
+          {purgeQueue.stuck} cache {purgeQueue.stuck === 1 ? 'purge has' : 'purges have'} failed
+          repeatedly and {purgeQueue.stuck === 1 ? 'is' : 'are'} no longer being retried, so some
+          pages may be served from cache until their cache lifetime expires.
+          {purgeQueue.lastError && (
+            <>
+              {' '}
+              The last error was <code class="font-mono text-xs">{purgeQueue.lastError}</code>.
+            </>
+          )}
         </p>
       )
     }

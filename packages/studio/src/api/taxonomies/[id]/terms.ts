@@ -1,4 +1,4 @@
-import { createTerm, getTaxonomy, listTerms } from '@taprootcms/core';
+import { SITE_TAG, createTerm, getTaxonomy, listTerms } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json } from '../../_shared.js';
@@ -52,6 +52,8 @@ export const POST = handle(
     if (isForm) {
       try {
         const term = await createTerm(taproot.db.db, taxonomyId, parsed.data);
+        // A new term changes the facet list a filter UI is built from, which is a cached response.
+        taproot.invalidate([SITE_TAG]);
         return backToTaxonomy({ added: term.name });
       } catch (error) {
         return backToTaxonomy({
@@ -60,7 +62,10 @@ export const POST = handle(
       }
     }
 
-    return json({ term: await createTerm(taproot.db.db, taxonomyId, parsed.data) }, { status: 201 });
+    const term = await createTerm(taproot.db.db, taxonomyId, parsed.data);
+    taproot.invalidate([SITE_TAG]);
+
+    return json({ term }, { status: 201 });
   },
   { role: 'editor' },
 );

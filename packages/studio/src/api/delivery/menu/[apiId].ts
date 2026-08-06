@@ -1,6 +1,7 @@
 import { cacheTagHeader, deliverMenu } from '@taprootcms/core';
 
 import { handleScoped, json } from '../../_shared.js';
+import { DELIVERY_CACHE_CONTROL } from '../cache.js';
 
 /**
  * A menu, with term targets left unresolved.
@@ -36,7 +37,7 @@ export const GET = handleScoped(
       { items },
       {
         headers: {
-          'cache-control': 'public, max-age=0, s-maxage=60',
+          'cache-control': DELIVERY_CACHE_CONTROL,
           vary: 'authorization',
           ...(tag ? { 'cache-tag': tag } : {}),
         },

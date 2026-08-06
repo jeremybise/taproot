@@ -3,6 +3,7 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 import { BlockRenderer, TaprootImage, TaprootPreviewBridge } from '@taprootcms/astro/components';
 import { PREVIEW_PARAM } from '@taprootcms/astro';
 import { applyTermHrefs } from '@taprootcms/astro';
+import { PAGE_CACHE_CONTROL, PREVIEW_CACHE_CONTROL } from '../cache.ts';
 import { taproot, PUBLIC_TERM_TAXONOMIES, termHref } from '../taproot.ts';
 import { BLOCK_COMPONENTS } from '../blocks/index.ts';
 
@@ -160,7 +161,7 @@ const canonical = item && !previewToken ? new URL(item.path, Astro.url.origin).t
  * somebody with no token at all.
  */
 if (previewToken) {
-  Astro.response.headers.set('cache-control', 'no-store');
+  Astro.response.headers.set('cache-control', PREVIEW_CACHE_CONTROL);
   Astro.response.headers.set('x-robots-tag', 'noindex, nofollow');
 
   /**
@@ -187,7 +188,7 @@ if (previewToken) {
     );
   }
 } else {
-  Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+  Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
 }
 ---
 

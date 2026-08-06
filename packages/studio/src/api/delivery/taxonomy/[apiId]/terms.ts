@@ -1,6 +1,7 @@
 import { deliverTaxonomyTerms, getContentTypeByApiId } from '@taprootcms/core';
 
 import { apiError, handleScoped, json } from '../../../_shared.js';
+import { DELIVERY_CACHE_CONTROL, listingCacheTagHeader } from '../../cache.js';
 
 /**
  * A taxonomy's terms, for a consumer building a facet.
@@ -57,7 +58,20 @@ export const GET = handleScoped(
     if (!taxonomy) return apiError(404, `No taxonomy with api_id "${apiId}".`);
 
     return json(taxonomy, {
-      headers: { 'cache-control': 'public, max-age=0, s-maxage=60', vary: 'authorization' },
+      headers: {
+        'cache-control': DELIVERY_CACHE_CONTROL,
+        vary: 'authorization',
+        /**
+         * Tagged on both axes it can go stale on, which are not the same axis.
+         *
+         * The *terms* change when an editor edits the vocabulary, and every term write purges
+         * `SITE_TAG`. The **counts** change when an ordinary item is filed under a term or
+         * unpublished — a content write, which purges `type:`. A facet whose numbers disagree with
+         * the grid behind it is the failure `itemCount` is documented to prevent, and it would come
+         * straight back if this were tagged only for vocabulary edits.
+         */
+        'cache-tag': await listingCacheTagHeader(db, typeApiId),
+      },
     });
   },
   { scope: 'content:read' },

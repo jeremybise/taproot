@@ -4,10 +4,12 @@ import {
   createContentType,
   createField,
   createItem,
+  createReusableBlock,
   createTaxonomy,
   createTerm,
   getApiKey,
   revokeApiKey,
+  updateReusableBlock,
   type ContentTypeRow,
   type FieldRow,
   type User,
@@ -193,6 +195,91 @@ describe('the resolve endpoint', () => {
   });
 
   /**
+   * The hole the validator used to have, and it was unbounded rather than sixty seconds.
+   *
+   * Editing a library entry changes what every referencing page renders and touches none of their
+   * rows, so an `updated_at` validator kept matching. The old comment called that "stale until
+   * `s-maxage` lapses" — but a shared cache *revalidates* on lapse rather than refetching, gets a
+   * 304, and RFC 9111 §4.3.4 says a 304 refreshes the stored copy's freshness. The stale copy
+   * renewed itself forever.
+   *
+   * Note the block is edited but never *placed* on this page. That is the point: the stamp is
+   * global, so it does not depend on resolving which entries a page uses — work the cheap validator
+   * lookup exists to avoid.
+   */
+  it('stops matching when a reusable block is edited, which updated_at cannot see', async () => {
+    const item = await published('Admissions');
+
+    const blockType = await createContentType(h.db.db, {
+      api_id: 'notice',
+      name: 'Notice',
+      name_plural: 'Notices',
+      kind: 'block',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      title_field: 'title',
+    });
+    const noticeFields = [
+      await createField(h.db.db, blockType.id, {
+        api_id: 'body',
+        label: 'Body',
+        type: 'text',
+        required: false,
+        localized: false,
+        position: 0,
+        config: {},
+        help_text: null,
+      }),
+    ];
+    const entry = await createReusableBlock(h.db.db, noticeFields, {
+      name: 'Closure notice',
+      description: null,
+      blockType: 'notice',
+      data: { body: 'Closed Monday.' },
+      userId: editor.id,
+    });
+
+    h.as(editor);
+    const before = await resolveGet(
+      h.context({ url: `/api/taproot/delivery/resolve?path=${item.path}` }),
+    );
+    const stale = before.headers.get('etag')!;
+
+    await updateReusableBlock(h.db.db, noticeFields, entry.id, {
+      data: { body: 'Closed Tuesday.' },
+    });
+
+    /**
+     * The stamp is pinned rather than left to the clock, and the reason is worth keeping.
+     *
+     * `updated_at` has millisecond resolution, so creating and editing an entry inside the same
+     * millisecond produces the same stamp and the ETag legitimately does not move. That made this
+     * test pass alone and fail in a full run — a flake, and a real (tiny) limit of the mechanism:
+     * two library edits within one millisecond are one edit as far as the validator is concerned.
+     * It does not matter in practice because the `block:` purge is what makes an edit visible
+     * immediately; the stamp is the backstop for when a purge never lands, and a backstop that is
+     * one millisecond coarse is not the failure mode anyone will meet.
+     */
+    await h.db.db
+      .updateTable('reusable_blocks')
+      .set({ updated_at: new Date(Date.now() + 60_000).toISOString() })
+      .where('id', '=', entry.id)
+      .execute();
+
+    const after = await resolveGet(
+      h.context({
+        url: `/api/taproot/delivery/resolve?path=${item.path}`,
+        headers: { 'if-none-match': stale },
+      }),
+    );
+
+    // 200, not 304 — otherwise the cache in front of this renews a copy it can never correct.
+    expect(after.status).toBe(200);
+    expect(after.headers.get('etag')).not.toBe(stale);
+  });
+
+  /**
    * The claim a validator is actually making.
    *
    * "Answers 304" was already asserted above and was true while the route resolved the entire page
@@ -273,6 +360,27 @@ describe('the resolve endpoint', () => {
     expect(payload.cacheTags).toContain(`item:${item.id}`);
   });
 
+  /**
+   * Its own test because its own absence was invisible.
+   *
+   * `SITE_TAG` shipped emitted by nothing while `releases/[id]/publish.ts` and `scheduler/run.ts`
+   * both purged it — so publishing a release and running the sweep cleared zero entries, silently,
+   * for a whole phase. Cloudflare accepts a purge for a tag nothing carries and reports success.
+   * Asserting the *write* side purges `site` would have passed throughout; only asserting it is on
+   * the wire catches it.
+   */
+  it('carries the site tag, without which a release publish purges nothing', async () => {
+    const item = await published('Admissions');
+    h.as(editor);
+
+    const response = await resolveGet(
+      h.context({ url: `/api/taproot/delivery/resolve?path=${item.path}` }),
+    );
+
+    expect((response.headers.get('cache-tag') ?? '').split(',')).toContain('site');
+    expect((await body<{ cacheTags: string[] }>(response)).cacheTags).toContain('site');
+  });
+
   it('varies on authorization, since a different principal could see differently', async () => {
     const item = await published('Admissions');
     h.as(editor);
@@ -285,6 +393,49 @@ describe('the resolve endpoint', () => {
 });
 
 describe('the items endpoint', () => {
+  /**
+   * A listing that cannot be purged lives out its whole TTL, and the whole point of a listing is to
+   * show items it did not previously contain. All three listing endpoints shipped with no
+   * `Cache-Tag` at all — survivable at sixty seconds, and at a long TTL the difference between
+   * "publish an event" and "the events index shows it tomorrow".
+   */
+  it('names the type it lists, so publishing into it purges the listing', async () => {
+    await published('Admissions');
+    h.as(editor);
+
+    const response = await itemsGet(
+      h.context({ url: `/api/taproot/delivery/items?type=${type.api_id}` }),
+    );
+
+    const tags = (response.headers.get('cache-tag') ?? '').split(',');
+    expect(tags).toContain(`type:${type.api_id}`);
+    expect(tags).toContain('site');
+  });
+
+  /**
+   * The case with no results to derive a tag from, which is the one most needing invalidation — an
+   * empty index is exactly what the first publish into a type has to change.
+   */
+  it('names the type even when nothing matched', async () => {
+    h.as(editor);
+
+    const response = await itemsGet(
+      h.context({ url: `/api/taproot/delivery/items?type=${type.api_id}&q=nothingmatchesthis` }),
+    );
+
+    expect((response.headers.get('cache-tag') ?? '').split(',')).toContain(`type:${type.api_id}`);
+  });
+
+  /** With no filter the listing spans every type, so every type has to be able to purge it. */
+  it('names every type when the caller narrowed to none', async () => {
+    await published('Admissions');
+    h.as(editor);
+
+    const response = await itemsGet(h.context({ url: '/api/taproot/delivery/items' }));
+
+    expect((response.headers.get('cache-tag') ?? '').split(',')).toContain(`type:${type.api_id}`);
+  });
+
   it('omits singletons, whose paths nothing serves', async () => {
     await published('Admissions');
 
@@ -595,6 +746,28 @@ describe('a collection whose items have no pages', () => {
 });
 
 describe('the taxonomy terms endpoint', () => {
+  /**
+   * Two axes, not one. The vocabulary changes on a term write (`site`); the `itemCount` beside each
+   * term changes on an ordinary content write (`type:`). A facet tagged only for the first would
+   * keep showing counts the grid behind it disagrees with — the exact failure `itemCount` exists to
+   * prevent.
+   */
+  it('is purgeable by a term write and by a content write alike', async () => {
+    await departmentTaxonomy();
+    h.as(editor);
+
+    const response = await termsGet(
+      h.context({
+        url: '/api/taproot/delivery/taxonomy/department/terms?counts=1',
+        params: { apiId: 'department' },
+      }),
+    );
+
+    const tags = (response.headers.get('cache-tag') ?? '').split(',');
+    expect(tags).toContain('site');
+    expect(tags).toContain(`type:${type.api_id}`);
+  });
+
   async function departmentTaxonomy() {
     const taxonomy = await createTaxonomy(h.db.db, {
       api_id: 'department',
@@ -690,6 +863,21 @@ describe('the taxonomy terms endpoint', () => {
 });
 
 describe('the search endpoint', () => {
+  /**
+   * A search result is a link, so a search that cannot be purged eventually offers links to content
+   * that no longer exists — and the visitor's next click is the failure. This endpoint used to
+   * document *not* having a tag as deliberate; that reasoning held only while the TTL was 60s.
+   */
+  it('names every type it could match, so a content write purges it', async () => {
+    h.as(editor);
+
+    const response = await searchGet(h.context({ url: '/api/taproot/delivery/search?q=anything' }));
+
+    const tags = (response.headers.get('cache-tag') ?? '').split(',');
+    expect(tags).toContain(`type:${type.api_id}`);
+    expect(tags).toContain('site');
+  });
+
   /** A published page whose body carries the phrase, so a match can be a body match. */
   async function page(title: string, bodyText: string) {
     return createItem(h.db, type, fields, {

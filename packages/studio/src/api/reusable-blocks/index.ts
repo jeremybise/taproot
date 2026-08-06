@@ -48,6 +48,15 @@ export const POST = handle(
       userId: user.id,
     });
 
+    /**
+     * Deliberately no `invalidate` here, unlike PATCH and DELETE.
+     *
+     * A `block:` tag is recorded on a delivery response by the pages that *place* the entry, and a
+     * just-created one is placed nowhere — so there is no cached response carrying the tag and the
+     * purge would clear nothing. Adding it for symmetry is the tempting move and would be the same
+     * mistake `SITE_TAG` shipped with: a purge that succeeds, reports success, and does nothing.
+     * The page that promoted a block into the library is a separate item write, and that one purges.
+     */
     return json({ reusableBlock: created }, { status: 201 });
   },
   { role: 'editor' },

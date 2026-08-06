@@ -12,7 +12,7 @@ import type { StorageAdapter } from '../storage/types.js';
 import { parseJson } from '../db/values.js';
 import { repeaterRowFields } from '../validation/fields.js';
 import { parseVisibility, type VisibilityCondition } from '../validation/visibility.js';
-import { blockTag, itemTag, menuTag, normalizeCacheTags, typeTag } from './cacheTags.js';
+import { SITE_TAG, blockTag, itemTag, menuTag, normalizeCacheTags, typeTag } from './cacheTags.js';
 import {
   resolveItemQueries,
   resultData,
@@ -441,6 +441,18 @@ export async function buildItemPayload(
     terms,
     queries: resolvedQueries.queries,
     cacheTags: normalizeCacheTags([
+      /**
+       * Every cacheable response carries it, which is what makes `SITE_TAG` mean anything.
+       *
+       * It was emitted nowhere for a whole phase while two write paths purged it — a release
+       * publish and the scheduler sweep — so both cleared exactly zero entries. Cloudflare accepts
+       * a purge for a tag no response carries and reports success, which is the failure this
+       * repository already names for cache tags: a mismatch makes the purge succeed, report
+       * success, and clear nothing. The only defence is asserting the tag is on the wire, which
+       * `deliveryRoutes.test.ts` now does.
+       */
+      SITE_TAG,
+
       itemTag(item.id),
       typeTag(contentType.api_id),
 
@@ -857,7 +869,10 @@ export async function deliverMenu(
    * deliberately drops the ids: a menu target is exposed to a consumer as a `path`, and a path is
    * the thing that changes when a page moves, so it cannot identify what to purge.
    */
-  const tags = [menuTag(apiId)];
+  // `SITE_TAG` for the reason `resolveDelivery` carries it: a tag nothing emits purges nothing. A
+  // menu is the response most exposed to that, having no `updated_at` to build a validator from —
+  // so a purge is the only thing that can invalidate one inside its TTL.
+  const tags = [SITE_TAG, menuTag(apiId)];
   const walk = (entries: ResolvedMenuItem[]) => {
     for (const entry of entries) {
       if (entry.contentItemId) tags.push(itemTag(entry.contentItemId));

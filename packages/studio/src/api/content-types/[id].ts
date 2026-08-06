@@ -3,6 +3,7 @@ import {
   deleteContentType,
   getContentType,
   recordAuditEntry,
+  typeTag,
   updateContentType,
 } from '@taprootcms/core';
 
@@ -22,6 +23,18 @@ export const PATCH = handle(
   async ({ context, taproot }) => {
     const input = await readJson(context.request, patchSchema);
     const contentType = await updateContentType(taproot.db.db, context.params.id!, input);
+
+    /**
+     * `typeTag` is precise here *because* `api_id` is not patchable.
+     *
+     * It is omitted from `patchSchema` right above, so the tag cannot be renamed out from under the
+     * cached responses that already carry it — which is the trap `SITE_TAG`'s own documentation
+     * names. Everything this route can change reaches items of this type and nothing else:
+     * `default_og_image_id` is inherited by `resolveSeo`, and `url_prefix` and `item_pages` change
+     * whether and where they are served.
+     */
+    taproot.invalidate([typeTag(contentType.api_id)]);
+
     return json({ contentType });
   },
   { role: 'admin' },
@@ -55,6 +68,8 @@ export const POST = handle(
 
     try {
       await deleteContentType(taproot.db.db, id);
+      // `contentType` was read above, so the `api_id` the tag is spelled with survives the delete.
+      taproot.invalidate([typeTag(contentType.api_id)]);
       await recordAuditEntry(taproot.db.db, {
         action: 'content_type.deleted',
         subjectType: 'content_type',
@@ -79,7 +94,12 @@ export const POST = handle(
 
 export const DELETE = handle(
   async ({ context, taproot }) => {
-    await deleteContentType(taproot.db.db, context.params.id!);
+    const id = context.params.id!;
+    const contentType = await getContentType(taproot.db.db, id);
+
+    await deleteContentType(taproot.db.db, id);
+    if (contentType) taproot.invalidate([typeTag(contentType.api_id)]);
+
     return noContent();
   },
   { role: 'admin' },

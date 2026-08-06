@@ -69,6 +69,26 @@ export type { ItemSort } from './content/itemSort.js';
 export const PREVIEW_PARAM = 'taproot_preview';
 
 /**
+ * The path a consumer mounts its cache-purge endpoint at, and the header the CMS authenticates with.
+ *
+ * Here for the reason `PREVIEW_PARAM` is: the CMS builds the request through the main barrel and the
+ * consumer's handler reads it through `/pure`, so there is exactly one spelling. A mismatch here
+ * fails **silently and in the worst direction** — the CMS would POST to a path that 404s, the purge
+ * would be recorded as failed, retried eight times, and the site would serve stale pages while
+ * every save reported success.
+ *
+ * A header rather than a bearer token in the URL, because a URL lands in access logs — the same
+ * reasoning that keeps a freshly minted API key out of a query string.
+ *
+ * The path is only a *convention*: `createTaprootPurgeHandler` works wherever it is mounted, and
+ * `TAPROOT_SITE_PURGE_URL` is a full URL rather than an origin, so a site that already owns
+ * `/_taproot/*` can put it elsewhere. What the constant buys is that the documented default and the
+ * scaffolded example cannot drift apart.
+ */
+export const PURGE_PATH = '/_taproot/purge';
+export const PURGE_SECRET_HEADER = 'x-taproot-purge-secret';
+
+/**
  * The postMessage vocabulary the split-view preview pane and the consumer's bridge share.
  *
  * Here for the same reason `PREVIEW_PARAM` is: the pane reads it through the main barrel and the

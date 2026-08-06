@@ -59,11 +59,12 @@ export async function POST(context: APIContext): Promise<Response> {
    * what it published, and a scheduled item going live is a change whose blast radius includes
    * every listing that might now include it.
    *
-   * Note this covers the HTTP entry point only. A Cloudflare **cron trigger** reaches the sweep
-   * through `worker.ts`'s `scheduled` export, which never passes through this middleware and has no
-   * `locals` to record onto — so a cron-published item is bounded by `s-maxage` rather than purged.
-   * That is the same asymmetry Settings → System already documents about scheduling, one level
-   * along, and it fails in the safe direction: stale for a minute, never wrong forever.
+   * This covers the HTTP entry point only, and it is no longer the only one that purges. A
+   * Cloudflare **cron trigger** reaches the sweep through `worker.ts`'s `scheduled` export, which
+   * never passes through this middleware and has no `locals` to record onto — so it purges for
+   * itself, from the `ExecutionContext` it is handed. Both paths therefore invalidate, and neither
+   * relies on the other. That mattered little while the TTL was sixty seconds and matters entirely
+   * at a long one: a 9am publish that nothing purges is stale until 9am tomorrow.
    */
   if (result.published.length > 0 || releases.published.length > 0) {
     taproot.invalidate([SITE_TAG]);

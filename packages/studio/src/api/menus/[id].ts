@@ -1,4 +1,4 @@
-import { deleteMenu, getMenu, resolveMenu, updateMenu } from '@taprootcms/core';
+import { deleteMenu, getMenu, menuTag, resolveMenu, updateMenu } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent, readJson } from '../_shared.js';
@@ -37,14 +37,32 @@ const patchSchema = z.strictObject(
 export const PATCH = handle(
   async ({ context, taproot }) => {
     const input = await readJson(context.request, patchSchema);
-    return json({ menu: await updateMenu(taproot.db.db, context.params.id!, input) });
+    const menu = await updateMenu(taproot.db.db, context.params.id!, input);
+
+    /**
+     * `menuTag`, not `SITE_TAG`.
+     *
+     * The only cached response carrying a menu is `/delivery/menu/{apiId}` — a page's own payload
+     * does not embed one — so the precise tag clears everything that went stale. Reaching for
+     * `SITE_TAG` would give the whole site a cold cache every time somebody renamed a nav link,
+     * and a nav restructure is a dozen of these in a row.
+     */
+    taproot.invalidate([menuTag(menu.api_id)]);
+
+    return json({ menu });
   },
   { role: 'admin' },
 );
 
 export const DELETE = handle(
   async ({ context, taproot }) => {
+    // Read before the delete, or the `api_id` the tag is spelled with is already gone — the same
+    // ordering `items/[id].ts` uses to keep a deleted item's tags.
+    const menu = await getMenu(taproot.db.db, context.params.id!);
+
     await deleteMenu(taproot.db.db, context.params.id!);
+    if (menu) taproot.invalidate([menuTag(menu.api_id)]);
+
     return noContent();
   },
   { role: 'admin' },

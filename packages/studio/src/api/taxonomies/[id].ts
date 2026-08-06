@@ -1,4 +1,4 @@
-import { deleteTaxonomy, getTaxonomy, listTerms, updateTaxonomy } from '@taprootcms/core';
+import { SITE_TAG, deleteTaxonomy, getTaxonomy, listTerms, updateTaxonomy } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent, readJson } from '../_shared.js';
@@ -35,6 +35,17 @@ export const PATCH = handle(
   async ({ context, taproot }) => {
     const input = await readJson(context.request, patchSchema);
     const taxonomy = await updateTaxonomy(taproot.db.db, context.params.id!, input);
+
+    /**
+     * `SITE_TAG`, because a taxonomy has no tag of its own and its reach is genuinely wide.
+     *
+     * A renamed vocabulary surfaces in every item payload's `terms` map, in any menu entry
+     * targeting one of its terms, and in the facet list a filter UI is built from. Inventing a
+     * `taxonomy:` tag would mean emitting it from three response shapes to save a purge that
+     * happens when an administrator edits the content model — which is rare by construction.
+     */
+    taproot.invalidate([SITE_TAG]);
+
     return json({ taxonomy });
   },
   { role: 'admin' },
@@ -43,6 +54,8 @@ export const PATCH = handle(
 export const DELETE = handle(
   async ({ context, taproot }) => {
     await deleteTaxonomy(taproot.db.db, context.params.id!);
+    taproot.invalidate([SITE_TAG]);
+
     return noContent();
   },
   { role: 'admin' },

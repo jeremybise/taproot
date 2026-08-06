@@ -1,4 +1,4 @@
-import { createMenuItem, getMenu, type MenuTargetType } from '@taprootcms/core';
+import { createMenuItem, getMenu, menuTag, type MenuTargetType } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json } from '../../_shared.js';
@@ -58,16 +58,19 @@ export const POST = handle(
     if (isForm) {
       try {
         await createMenuItem(taproot.db.db, menuId, parsed.data);
+        // Inside the `try` and after the write, so a refused target does not purge for a change
+        // that never happened.
+        taproot.invalidate([menuTag(menu.api_id)]);
         return back({ added: '1' });
       } catch (error) {
         return back({ error: error instanceof Error ? error.message : 'Could not add that item.' });
       }
     }
 
-    return json(
-      { item: await createMenuItem(taproot.db.db, menuId, parsed.data) },
-      { status: 201 },
-    );
+    const item = await createMenuItem(taproot.db.db, menuId, parsed.data);
+    taproot.invalidate([menuTag(menu.api_id)]);
+
+    return json({ item }, { status: 201 });
   },
   { role: 'admin' },
 );

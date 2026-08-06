@@ -546,10 +546,8 @@ correct-looking index, unchanged scan.
 **If you are upgrading, run `npm run db:migrate`** for `0020_perf_indexes`. Nothing breaks without
 it; the sweep just keeps scanning.
 
-Left for Phase 6, deliberately: purging a *consumer's* cached HTML. The CMS purges its own cache
-in-process, but reaching into a site's cache means an authenticated outbound call to an endpoint the
-site mounts, which is the outbound-HTTP layer Phase 6 already owns. Until then a site's HTML is
-bounded by its own `s-maxage`, exactly as before.
+Purging a *consumer's* cached HTML was left for Phase 6 here and shipped early — see **Phase 5.7**
+below, because raising the TTL turned it from an integration into a prerequisite.
 
 **Phase 5.6 — responsive images — is done.** `TaprootImage` shipped one `<img>` at the source's full
 width, so a phone got whatever an editor dragged in. It now emits a `srcset` and the CMS media route
@@ -574,6 +572,40 @@ Cloudflare bug.
 
 **If you set `TAPROOT_MEDIA_URL` to an R2 custom domain, media bypasses the Worker route and the
 resizing goes with it, silently.** Pick one or the other — see [DEPLOYMENT.md](DEPLOYMENT.md).
+
+**Phase 5.7 — purge repair — is done.** The TTL went from 60 seconds to a day, and getting there
+meant finding out that purging had never really worked.
+
+`SITE_TAG` was defined, imported, and passed to `invalidate()` by the release-publish and scheduler
+routes — while appearing on **no response at all**. Both purged zero entries and reported success,
+because a cache accepts a purge for a tag nothing carries. Reusable blocks, menus, content types,
+fields, taxonomies and terms had no `invalidate` call whatsoever; the three listing endpoints emitted
+no `Cache-Tag`, so nothing could purge an index; and a cron-triggered publish had no execution
+context to purge from. Every one of those was invisible at 60 seconds and a day-long bug at 86400.
+
+**The sharpest was the ETag, and it was worse than the code claimed.** `cache.ts` said a
+reusable-block edit left a page "stale until `s-maxage` lapses. Sixty seconds is the bound." There
+was no bound. A shared cache *revalidates* rather than refetching when a TTL lapses; the CMS answered
+304 because the edit touched no referencing row; and [RFC 9111
+§4.3.4](https://www.rfc-editor.org/rfc/rfc9111#section-4.3.4) says a 304 refreshes the stored copy's
+freshness. The stale page renewed itself indefinitely. Confirmed against a live deployment, which
+answered 304 to a tag whose page had changed. The validator now carries a stamp for the library.
+
+Purging a consumer's HTML shipped with it, early from Phase 6, because a long TTL made it a
+prerequisite: Cloudflare scopes purging to the Worker that owns the cache, so the CMS clearing its own
+cached JSON cannot touch the HTML a site rendered from it. A site mounts
+`createTaprootPurgeHandler` and the CMS calls it. A purge that fails is queued and retried by the
+five-minute sweep, then reported under **Settings → System → Cache purges** — because "never throws"
+also means "never tells anybody", which is fine at a minute and not at a day.
+
+No `stale-while-revalidate`, deliberately: Cloudflare disables stale-serving whenever `s-maxage` is
+present, so adding it is inert, and getting it instead by using `max-age` would let a *browser* hold
+a page for a day — where no purge can reach it.
+
+**If you are upgrading, run `npm run db:migrate`** for `0023_pending_purges`. Nothing to backfill and
+no reindex. To get prompt invalidation, set `TAPROOT_SITE_PURGE_URL` and `TAPROOT_SITE_PURGE_SECRET`
+on the studio and mount the purge route on your site; without them the CMS still purges its own cache
+and your site's HTML waits out its TTL, exactly as before.
 
 **Phase 4.6 — the admin UI pass — is done.** Part A: one sticky action bar per screen, status
 transitions behind a promoted action plus a menu, add-to-release moved into the Publishing panel

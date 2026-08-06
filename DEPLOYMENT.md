@@ -254,6 +254,24 @@ https://your-domain/api/taproot/auth/callback/<provider>
 
 …where `<provider>` is `github`, `google`, or `microsoft`.
 
+**The cache-purge secret**, if your site caches its own HTML — and it should:
+
+```bash
+npx wrangler secret put TAPROOT_SITE_PURGE_SECRET
+```
+
+Set the same value as `TAPROOT_PURGE_SECRET` on the site, and add `TAPROOT_SITE_PURGE_URL` as a
+plain variable pointing at the endpoint the site mounts (`https://your-site/_taproot/purge` by
+convention). Cloudflare scopes cache purging to the Worker that owns the cache, so this callback is
+the only way the CMS can clear a page your site rendered — without it, a published page appears when
+the site's own `s-maxage` lapses, which is a day.
+
+**Both or neither.** A URL with no secret is treated as no configuration at all, so a half-finished
+setup behaves like an absent one rather than a broken one. A purge that cannot be delivered is kept
+and retried by the scheduled sweep, and one that has been given up on is reported under
+**Settings → System → Cache purges** — the only place a silently broken purge becomes visible, since
+a save is never failed over a caching problem.
+
 ### Plain variables
 
 Add to the `vars` block in `apps/studio/wrangler.jsonc`:

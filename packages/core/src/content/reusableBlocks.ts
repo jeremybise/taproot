@@ -43,6 +43,46 @@ function hydrate(row: ReusableBlockRow): ReusableBlock {
   return { ...row, data: parseJson<Record<string, unknown>>(row.data, {}) };
 }
 
+/**
+ * A stamp that changes whenever any library entry does, for folding into a delivery ETag.
+ *
+ * **This closes the one hole in the validator, and the hole was worse than it was documented to
+ * be.** A page's ETag is built from its own `updated_at`, and editing a reusable block touches no
+ * referencing row — so the validator kept matching. The comment on `deliveryCache` used to call
+ * that "stale until `s-maxage` lapses, and sixty seconds is the bound on that staleness", which is
+ * not what happens: a cache revalidates rather than refetching when the TTL lapses, the CMS answers
+ * **304**, and per RFC 9111 §4.3.4 a 304 *refreshes* the stored copy's freshness. An unchanging
+ * validator is therefore not bounded by the TTL at all — it renews itself indefinitely. Verified
+ * against a live deployment, which answered 304 to a stale tag.
+ *
+ * **Global rather than per page, deliberately.** Resolving which entries a page places would mean
+ * reading and walking its `data` — exactly the work the cheap validator lookup exists to avoid, on
+ * the hot path of every conditional request. One aggregate over a table with tens of rows is the
+ * cheaper answer, and it is over-broad in the same way `SITE_TAG` is: a library edit invalidates
+ * every page's validator, which is rare by construction and costs a revalidation rather than a
+ * re-render.
+ *
+ * **It costs one query per page view, and that is a deliberate purchase.** `npm run query-count`
+ * measures `resolveDelivery` rather than the route, so it does not see this one — say so when
+ * changing it rather than assuming a green run means no cost. It is a single indexed aggregate over
+ * the smallest table in the schema, and what it buys is the difference between "stale until the TTL
+ * lapses" and "stale until somebody notices", which at a long TTL is the difference between a
+ * working cache and a broken site. It also cannot be memoised across requests: an isolate holding
+ * yesterday's stamp is the same bug one level up.
+ *
+ * Returns `0` for an empty library so the stamp is a stable number rather than sometimes absent —
+ * a validator that changes shape when the first entry is created would invalidate every page once,
+ * for nothing.
+ */
+export async function reusableBlockLibraryVersion(db: Kysely<Database>): Promise<number> {
+  const row = await db
+    .selectFrom('reusable_blocks')
+    .select((eb) => eb.fn.max<string | null>('updated_at').as('latest'))
+    .executeTakeFirst();
+
+  return row?.latest ? Date.parse(row.latest) || 0 : 0;
+}
+
 export async function listReusableBlocks(
   db: Kysely<Database>,
   options: { blockType?: string } = {},

@@ -5,10 +5,13 @@ import {
   listItemSummaries,
   loadSearchExcerpts,
   type ContentStatus,
+  type Database,
   type ItemSort,
 } from '@taprootcms/core';
+import type { Kysely } from 'kysely';
 
 import { apiError, handleScoped, json } from '../_shared.js';
+import { DELIVERY_CACHE_CONTROL, listingCacheTagHeader } from './cache.js';
 
 /** Results per page, and the ceiling a caller may raise it to. */
 const DEFAULT_LIMIT = 20;
@@ -43,7 +46,9 @@ export const GET = handleScoped(
      * practice: submitting an empty form is an ordinary thing a visitor does, and it would surface
      * as the site's error page rather than as "no results".
      */
-    if (!term) return json({ results: [], total: 0, query: '' }, { headers: cacheHeaders() });
+    if (!term) {
+      return json({ results: [], total: 0, query: '' }, { headers: await cacheHeaders(db) });
+    }
 
     const typeApiId = params.get('type');
     let contentTypeId: string | undefined;
@@ -131,19 +136,31 @@ export const GET = handleScoped(
         // searched for — which is trimmed, and may not be the raw string it sent.
         query: term,
       },
-      { headers: cacheHeaders() },
+      { headers: await cacheHeaders(db) },
     );
   },
   { scope: 'content:read' },
 );
 
 /**
- * The listing endpoint's headers, and no `Cache-Tag` for the reason it has none either.
+ * The listing endpoint's headers, tags included.
  *
- * A search spans every content type, so the only tag that would be honest is one naming all of them
- * — which is a purge nobody wants to issue and which would clear the whole edge cache on any save.
- * `s-maxage` bounds the staleness instead, which is what a listing has always lived with.
+ * This used to argue *against* a `Cache-Tag`: a search spans every content type, so the only honest
+ * tag names all of them, "which is a purge nobody wants to issue and which would clear the whole
+ * edge cache on any save." That conflated naming a tag on a response with issuing a purge for it.
+ * Nothing purges every type at once; what the tag means is that a search result drops when an item
+ * of a type it could have matched is written — which is precisely when it went stale, and no
+ * broader than what `resolveDelivery` has always done by carrying `typeTag` on every page.
+ *
+ * The old reasoning also leaned on `s-maxage` as the bound, "which is what a listing has always
+ * lived with". That was survivable at sixty seconds and is not at a long TTL: a search that cannot
+ * be purged keeps answering with content that no longer exists for as long as the TTL allows, and
+ * a search result is a link — so the visitor's next click is the failure.
  */
-function cacheHeaders(): Record<string, string> {
-  return { 'cache-control': 'public, max-age=0, s-maxage=60', vary: 'authorization' };
+async function cacheHeaders(db: Kysely<Database>): Promise<Record<string, string>> {
+  return {
+    'cache-control': DELIVERY_CACHE_CONTROL,
+    vary: 'authorization',
+    'cache-tag': await listingCacheTagHeader(db),
+  };
 }

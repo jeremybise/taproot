@@ -2,6 +2,7 @@
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { TaprootImage } from '@taprootcms/astro/components';
 import { applyTermHrefs } from '@taprootcms/astro';
+import { PAGE_CACHE_CONTROL } from '../cache.ts';
 import { taproot, termHref } from '../taproot.ts';
 
 export const prerender = false;
@@ -67,7 +68,7 @@ const depthOf = (parentId: string | null): number => {
   return depth;
 };
 
-Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
 ---
 
 <SiteLayout title="Directory" description="Who works at Riverbend, and where to find them." nav={nav}>

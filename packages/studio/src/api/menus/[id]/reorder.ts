@@ -1,4 +1,4 @@
-import { getMenu, listMenuItems, reorderMenuItems } from '@taprootcms/core';
+import { getMenu, listMenuItems, menuTag, reorderMenuItems } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, readJson } from '../../_shared.js';
@@ -36,6 +36,8 @@ export const POST = handle(
     }
 
     await reorderMenuItems(taproot.db, orderedIds);
+    taproot.invalidate([menuTag(menu.api_id)]);
+
     return json({ ok: true });
   },
   { role: 'admin' },

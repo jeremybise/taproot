@@ -383,7 +383,10 @@ export type TaprootClient = ReturnType<typeof createTaprootClient>;
  * own preview and a consumer's rendering cannot disagree — which was the bug `TaprootImage` was
  * written to fix in the first place.
  */
+export { createTaprootPurgeHandler, type TaprootPurgeHandlerOptions } from './purge.js';
+
 export {
+  PURGE_PATH,
   PREVIEW_PARAM,
   PREVIEW_MESSAGE,
   applyTermHrefs,

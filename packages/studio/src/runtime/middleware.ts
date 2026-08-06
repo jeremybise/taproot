@@ -10,6 +10,7 @@ import {
 
 import { createContext, readRuntimeEnv } from './context.js';
 import { apiKeyPrincipal, userPrincipal } from './guards.js';
+import { purgeSite, sitePurgeConfig } from './sitePurge.js';
 import { purgeInvalidated } from './purge.js';
 import { applyDefaultCacheControl } from './responseCache.js';
 
@@ -96,7 +97,29 @@ export const onRequest = defineMiddleware(async (context, next) => {
    * committed one, so a request arriving in between would repopulate the cache with exactly the
    * content the purge was meant to remove. There is no lock to take here — only an order.
    */
-  await purgeInvalidated(context.locals, taproot.invalidated);
+  await purgeInvalidated(context.locals, taproot.invalidated, { db: taproot.db.db });
+
+  /**
+   * And the consumer's cache, which this deployment cannot reach any other way.
+   *
+   * `ctx.cache.purge()` above clears the CMS's own cached JSON; the site holds HTML rendered *from*
+   * that JSON in a cache Cloudflare scopes to the site's own Worker. Without this call a published
+   * page reaches visitors only when the site's `s-maxage` lapses.
+   *
+   * Handed to `waitUntil` where the runtime offers one. An editor pressing Save must not wait on an
+   * HTTP round trip to another origin, and the response is already built — but the request must
+   * still outlive the response, which is exactly what `waitUntil` is for. Where it is absent
+   * (`npm run dev`) it is awaited, which is fine: there is no consumer configured there either.
+   */
+  const site = sitePurgeConfig(process.env);
+  if (site && taproot.invalidated.size > 0) {
+    const sending = purgeSite(site, taproot.invalidated, { db: taproot.db.db });
+    const ctx = (context.locals as { cfContext?: { waitUntil?: (p: Promise<unknown>) => void } })
+      .cfContext;
+
+    if (ctx?.waitUntil) ctx.waitUntil(sending);
+    else await sending;
+  }
 
   return response;
 });

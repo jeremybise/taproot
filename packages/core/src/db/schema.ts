@@ -697,6 +697,26 @@ export interface SettingsTable {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Cache purges that failed and are waiting for the sweep to retry them — see
+ * `0023_pending_purges` for why a fire-and-forget purge needs a durable second chance.
+ */
+export interface PendingPurgesTable {
+  id: string;
+  /** `self` for this deployment's own edge cache, `site` for a consumer's over HTTP. */
+  target: PurgeTarget;
+  /** Comma-separated, exactly as a `Cache-Tag` header spells them. Empty means purge everything. */
+  tags: string;
+  attempts: number;
+  last_error: string | null;
+  next_attempt_at: string;
+  created_at: string;
+}
+
+/** Which cache a queued purge is replaying against. */
+export type PurgeTarget = 'self' | 'site';
+
 // Database
 // ---------------------------------------------------------------------------
 
@@ -767,10 +787,12 @@ export interface Database {
   menus: MenusTable;
   menu_items: MenuItemsTable;
   settings: SettingsTable;
+  pending_purges: PendingPurgesTable;
 }
 
 export type User = Selectable<UsersTable>;
 export type ApiKeyRow = Selectable<ApiKeysTable>;
+export type PendingPurgeRow = Selectable<PendingPurgesTable>;
 export type AuditLogRow = Selectable<AuditLogTable>;
 export type PasswordResetTokenRow = Selectable<PasswordResetTokensTable>;
 export type NewUser = Insertable<UsersTable>;

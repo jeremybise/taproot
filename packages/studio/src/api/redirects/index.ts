@@ -35,6 +35,14 @@ const createSchema = z.strictObject(
  * The form path exists for the same reason every other admin write has one: the admin is
  * server-rendered so it keeps working without JavaScript, and a screen that only submits JSON
  * would quietly depend on it.
+ *
+ * **No `invalidate` here, or on any redirect write, and that is deliberate.** The only responses a
+ * redirect changes are `resolve`'s `not_found` and `redirect` branches, and neither carries a
+ * `cache-tag` — so any purge would name a tag nothing holds and clear nothing, which is the mistake
+ * `SITE_TAG` shipped with. Both branches are capped at `s-maxage=30` for exactly this reason, each
+ * with its own comment saying so, and 30 seconds is a tighter bound than a purge round trip would
+ * give anyway. Reaching for `SITE_TAG` would hand the whole site a cold cache to fix something
+ * already self-correcting inside half a minute.
  */
 export const POST = handle(
   async ({ context, taproot }) => {

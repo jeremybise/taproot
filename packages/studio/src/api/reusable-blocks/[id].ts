@@ -1,4 +1,5 @@
 import {
+  blockTag,
   blockTypeRegistry,
   deleteReusableBlock,
   getReusableBlock,
@@ -45,6 +46,18 @@ export const PATCH = handle(
       input,
     );
 
+    /**
+     * The one invalidation with no backstop behind it.
+     *
+     * Every other write moves a content item's `updated_at`, so a stale copy is caught by the ETag
+     * on the next revalidation even if the purge never lands. A library edit touches no referencing
+     * row at all — and a 304 *renews* a cached copy's freshness, so an unchanging validator is not
+     * bounded by `s-maxage`, it is unbounded. `deliveryCache` folds the library's own stamp into the
+     * ETag for exactly that reason; this purge is what makes the change visible immediately rather
+     * than at the next revalidation.
+     */
+    taproot.invalidate([blockTag(updated.id)]);
+
     return json({ reusableBlock: updated });
   },
   { role: 'editor' },
@@ -52,7 +65,13 @@ export const PATCH = handle(
 
 export const DELETE = handle(
   async ({ context, taproot }) => {
-    await deleteReusableBlock(taproot.db.db, context.params.id!);
+    const id = context.params.id!;
+    await deleteReusableBlock(taproot.db.db, id);
+
+    // `deleteReusableBlock` refuses while anything still references it, so nothing here can strand a
+    // page — but the library screens are cached too, and the entry has to leave them.
+    taproot.invalidate([blockTag(id)]);
+
     return noContent();
   },
   { role: 'editor' },

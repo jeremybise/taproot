@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { purgeInvalidated } from './purge.js';
+import { purgeFromExecutionContext, purgeInvalidated } from './purge.js';
 
 /**
  * Locals shaped exactly as `@astrojs/cloudflare` builds them.
@@ -38,7 +38,7 @@ describe('purgeInvalidated', () => {
 
     await expect(
       purgeInvalidated(adapterLocals({ cache: { purge } }), new Set(['item:a', 'type:page'])),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ ok: true });
 
     expect(purge).toHaveBeenCalledWith({ tags: ['item:a', 'type:page'] });
   });
@@ -48,17 +48,17 @@ describe('purgeInvalidated', () => {
     // and the save that already committed must not be reported as a failure because of it.
     await expect(
       purgeInvalidated(adapterLocals(undefined), new Set(['item:a'])),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ ok: true });
   });
 
   it('does not fail the request when the purge itself rejects', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const purge = vi.fn().mockRejectedValue(new Error('purge unavailable'));
 
-    await expect(
-      purgeInvalidated(adapterLocals({ cache: { purge } }), new Set(['item:a'])),
-    ).resolves.toBeUndefined();
+    // `ok: false` is what the retry sweep reads; a thrown error would break every other caller.
+    const outcome = await purgeInvalidated(adapterLocals({ cache: { purge } }), new Set(['item:a']));
 
+    expect(outcome.ok).toBe(false);
     expect(error).toHaveBeenCalled();
   });
 
@@ -66,6 +66,48 @@ describe('purgeInvalidated', () => {
     const purge = vi.fn();
 
     await purgeInvalidated(adapterLocals({ cache: { purge } }), new Set());
+
+    expect(purge).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The cron path, which has no `locals` at all.
+ *
+ * A Cloudflare cron trigger reaches `worker.ts`'s `scheduled` export directly, so the object
+ * carrying `cache` is the `ExecutionContext` itself rather than `locals.cfContext`. Reading it with
+ * the `locals` accessor finds nothing and silently purges nothing — which is exactly how a
+ * scheduled publish stayed stale until its TTL lapsed.
+ */
+describe('purgeFromExecutionContext', () => {
+  it('purges from an ExecutionContext, which carries cache directly', async () => {
+    const purge = vi.fn().mockResolvedValue({});
+
+    await purgeFromExecutionContext({ cache: { purge } }, ['site']);
+
+    expect(purge).toHaveBeenCalledWith({ tags: ['site'] });
+  });
+
+  it('is not reachable through the locals accessor, which is why it exists', async () => {
+    const purge = vi.fn();
+
+    // The ExecutionContext shape passed to `purgeInvalidated`, which looks for `.cfContext.cache`.
+    await purgeInvalidated({ cache: { purge } }, new Set(['site']));
+
+    expect(purge).not.toHaveBeenCalled();
+  });
+
+  it('never throws when the runtime exposes no cache, as under npm run dev', async () => {
+    // `ok: true` rather than a failure: nothing cached the response, so there is nothing to retry
+    // and nothing for Settings -> System to report.
+    await expect(purgeFromExecutionContext(undefined, ['site'])).resolves.toEqual({ ok: true });
+    await expect(purgeFromExecutionContext({}, ['site'])).resolves.toEqual({ ok: true });
+  });
+
+  it('does not purge when the sweep published nothing', async () => {
+    const purge = vi.fn();
+
+    await purgeFromExecutionContext({ cache: { purge } }, []);
 
     expect(purge).not.toHaveBeenCalled();
   });

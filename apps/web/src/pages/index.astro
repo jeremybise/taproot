@@ -1,6 +1,7 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { applyTermHrefs } from '@taprootcms/astro';
+import { PAGE_CACHE_CONTROL } from '../cache.ts';
 import { taproot, termHref } from '../taproot.ts';
 
 export const prerender = false;
@@ -31,7 +32,7 @@ const cmsUrl = import.meta.env.TAPROOT_API_URL ?? 'http://localhost:4321';
  * Every other route sets this and this one did not, so the most-requested URL on the site was also
  * the only one paying full price on every visit.
  */
-Astro.response.headers.set('cache-control', 'public, max-age=0, s-maxage=60');
+Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
 ---
 
 <SiteLayout title="Home" nav={nav}>

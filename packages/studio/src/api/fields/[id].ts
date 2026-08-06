@@ -1,7 +1,24 @@
-import { deleteField, updateField, visibilityCondition } from '@taprootcms/core';
+import {
+  deleteField,
+  getContentType,
+  typeTag,
+  updateField,
+  visibilityCondition,
+} from '@taprootcms/core';
+import type { Kysely } from 'kysely';
+import type { Database } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { handle, json, noContent, readJson } from '../_shared.js';
+
+/**
+ * The owning type's tag, for the same reason `content-types/[id]/fields.ts` computes one: every
+ * item of the type renders this field, so `type:` is exactly what went stale.
+ */
+async function typeTagsForField(db: Kysely<Database>, contentTypeId: string): Promise<string[]> {
+  const contentType = await getContentType(db, contentTypeId);
+  return contentType ? [typeTag(contentType.api_id)] : [];
+}
 
 /**
  * Written out explicitly rather than derived from `fieldInputSchema` with `.partial()`.
@@ -48,6 +65,8 @@ export const PATCH = handle(
   async ({ context, taproot }) => {
     const input = await readJson(context.request, patchSchema);
     const field = await updateField(taproot.db.db, context.params.id!, input);
+    taproot.invalidate(await typeTagsForField(taproot.db.db, field.content_type_id));
+
     return json({ field });
   },
   { role: 'admin' },
@@ -55,7 +74,20 @@ export const PATCH = handle(
 
 export const DELETE = handle(
   async ({ context, taproot }) => {
-    await deleteField(taproot.db.db, context.params.id!);
+    const id = context.params.id!;
+
+    // Read before the delete: the row is what names the type whose responses have to drop.
+    const existing = await taproot.db.db
+      .selectFrom('fields')
+      .select('content_type_id')
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    await deleteField(taproot.db.db, id);
+    if (existing) {
+      taproot.invalidate(await typeTagsForField(taproot.db.db, existing.content_type_id));
+    }
+
     return noContent();
   },
   { role: 'admin' },

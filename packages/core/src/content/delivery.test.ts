@@ -330,6 +330,26 @@ describe('references', () => {
 });
 
 describe('menus, and the callback that cannot cross HTTP', () => {
+  /**
+   * `SITE_TAG` was emitted by nothing while two write paths purged it, so a release publish and the
+   * scheduler sweep both cleared zero entries and reported success. A menu is the response most
+   * exposed to that: it has no `updated_at` to build a validator from, so a purge is the *only*
+   * thing that can invalidate it inside its TTL.
+   */
+  it('tags a menu with site and its own api_id, or nothing can purge it', async () => {
+    const menu = await createMenu(handle.db, {
+      api_id: 'utility',
+      name: 'Utility',
+      description: null,
+    });
+    await createMenuItem(handle.db, menu.id, { targetType: 'url', label: 'Apply', url: '/apply' });
+
+    const { cacheTags } = await deliverMenu(handle.db, 'utility');
+
+    expect(cacheTags).toContain('site');
+    expect(cacheTags).toContain('menu:utility');
+  });
+
   it('returns a term target unresolved, for the consumer to route', async () => {
     const taxonomy = await createTaxonomy(handle.db, {
       api_id: 'department',

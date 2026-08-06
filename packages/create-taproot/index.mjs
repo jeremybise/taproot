@@ -440,6 +440,17 @@ function envExample() {
 # TAPROOT_MAIL_WEBHOOK_URL=
 # TAPROOT_MAIL_FROM=
 
+# --- Optional: clearing a site's cache when content changes ------------------------
+# Cloudflare scopes cache purging to the Worker that owns the cache, so this deployment purging its
+# own cached JSON cannot touch the HTML a site rendered from it. This callback is the only thing
+# that can; without it a published page reaches visitors when the site's own cache lifetime lapses.
+#
+# Both or neither — a URL with no secret is treated as no configuration rather than as a broken
+# setup. The secret must match \`TAPROOT_PURGE_SECRET\` on the site, which mounts
+# \`createTaprootPurgeHandler\` from @taprootcms/astro.
+# TAPROOT_SITE_PURGE_URL=https://www.example.edu/_taproot/purge
+# TAPROOT_SITE_PURGE_SECRET=
+
 # --- Optional: media served from a bucket custom domain ---------------------------
 # Without this, images are served through /api/taproot/media/file/…, which works but wakes a
 # Worker per image.

@@ -1,4 +1,11 @@
-import { deleteTerm, getTerm, listTerms, reorderTerms, updateTerm } from '@taprootcms/core';
+import {
+  SITE_TAG,
+  deleteTerm,
+  getTerm,
+  listTerms,
+  reorderTerms,
+  updateTerm,
+} from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent } from '../_shared.js';
@@ -84,6 +91,14 @@ export const POST = handle(
       }
 
       await updateTerm(taproot.db, termId, parsed.data);
+      /**
+       * `SITE_TAG` because a term has no tag of its own and reaches further than it looks.
+       *
+       * A renamed term appears in every item payload's `terms` map, in a menu entry targeting it,
+       * and in the facet list — and a *re-slugged* one changes what `?term=` resolves. There is no
+       * one response to name, so the coarse tag is the honest one.
+       */
+      taproot.invalidate([SITE_TAG]);
       return back({ updated: parsed.data.name ?? term.name });
     } catch (error) {
       return back({ error: error instanceof Error ? error.message : 'Could not save that term.' });
@@ -96,6 +111,8 @@ export const PATCH = handle(
   async ({ context, taproot }) => {
     const input = patchSchema.parse(await context.request.json());
     const term = await updateTerm(taproot.db, context.params.termId!, input);
+    taproot.invalidate([SITE_TAG]);
+
     return json({ term });
   },
   { role: 'editor' },
@@ -104,6 +121,8 @@ export const PATCH = handle(
 export const DELETE = handle(
   async ({ context, taproot }) => {
     await deleteTerm(taproot.db, context.params.termId!);
+    taproot.invalidate([SITE_TAG]);
+
     return noContent();
   },
   { role: 'editor' },

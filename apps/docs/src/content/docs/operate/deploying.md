@@ -169,7 +169,7 @@ than only that it does:
 
 **Cloudflare caches neither HTML nor JSON by default** — its default cache is keyed on file
 extension — and a Worker's own response is never cached unless the Worker opts in. Without that
-block, the `cache-control: public, max-age=0, s-maxage=60` on every delivery response and every
+block, the `cache-control: public, max-age=0, s-maxage=86400` on every delivery response and every
 rendered page is correct HTTP that nothing acts on. With it, Cloudflare checks the cache *before*
 invoking the Worker: a hit costs no CPU, makes no request to the CMS, touches no database, and
 collapses concurrent requests for the same URL into one.
@@ -178,6 +178,18 @@ Admin screens bypass it automatically (they set `Set-Cookie`), and so does every
 (`no-store`). Delivery responses also carry a `Cache-Tag`, and the CMS purges the tags a write
 touched — so a published page reaches visitors without waiting out the TTL. See
 [The client](/build/the-client/#cache-tags) for what a consumer does with the same tags.
+
+:::caution
+**A day is only safe because purging works.** The TTL is the backstop for a purge that never
+arrived, not the mechanism that keeps a site fresh — so the two halves belong together. If your site
+caches its own HTML (it should) it must also mount the purge endpoint, or a published page will take
+a day to appear no matter what the CMS invalidates. See
+[Clearing your own cache](/build/the-client/#clearing-your-own-cache).
+
+A purge that cannot be delivered is kept and retried by the scheduled sweep, and one that has been
+given up on is reported under **Settings → System → Cache purges**. That screen is the only place a
+silently broken purge becomes visible, because a save is never failed over a caching problem.
+:::
 
 The CMS also runs with `"placement": { "mode": "smart" }`, which puts the Worker near D1 rather than
 near the visitor. That is right for the CMS, where resolving a page is a chain of dependent database

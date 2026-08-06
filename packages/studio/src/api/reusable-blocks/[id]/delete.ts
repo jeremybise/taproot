@@ -1,4 +1,9 @@
-import { deleteReusableBlock, getReusableBlock, ReusableBlockError } from '@taprootcms/core';
+import {
+  blockTag,
+  deleteReusableBlock,
+  getReusableBlock,
+  ReusableBlockError,
+} from '@taprootcms/core';
 
 import { apiError, handle } from '../../_shared.js';
 
@@ -24,6 +29,10 @@ export const POST = handle(
         cause instanceof ReusableBlockError ? cause.message : 'Could not delete that block.';
       return context.redirect(`/admin/blocks/${id}?error=${encodeURIComponent(message)}`, 303);
     }
+
+    // After the try, never inside it: a refused delete changed nothing, and purging on a failure
+    // path is how a cache gets cleared for a write that did not happen.
+    taproot.invalidate([blockTag(id)]);
 
     return context.redirect(`/admin/blocks?deleted=${encodeURIComponent(block.name)}`, 303);
   },

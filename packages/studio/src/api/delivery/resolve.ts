@@ -5,6 +5,7 @@ import {
   normalizePath,
   resolveDelivery,
   resolvePreviewToken,
+  reusableBlockLibraryVersion,
 } from '@taprootcms/core';
 
 import { apiError, handleScoped, json } from '../_shared.js';
@@ -83,6 +84,18 @@ export const GET = handleScoped(
     const noStore = Boolean(preview);
 
     /**
+     * The library stamp, resolved once for both validator sites.
+     *
+     * The cheap lookup below and the full response at the bottom each build an ETag, and they must
+     * agree exactly or every conditional request misses and answers 200. `deliveryCache` is
+     * synchronous and called twice, so the read belongs here rather than inside it.
+     *
+     * Skipped under `no-store` along with the rest of the validator path: a preview is never
+     * revalidated, so there is nothing for a stamp to bound.
+     */
+    const libraryVersion = noStore ? 0 : await reusableBlockLibraryVersion(taproot.db.db);
+
+    /**
      * Answer a conditional request **before** resolving anything.
      *
      * This check used to sit at the bottom, after `resolveDelivery` had run every query and built
@@ -90,10 +103,10 @@ export const GET = handleScoped(
      * is the part Cloudflare does not charge for, while D1 bills rows read. A 304 cost exactly what
      * a 200 did, which is the opposite of what a validator is for.
      *
-     * One indexed lookup of `id` and `updated_at` answers it instead, because those two are the only
-     * inputs `deliveryCache` has. The full resolution below still recomputes the same tag for a
-     * request that turns out to need a body; there is no second definition of the validator, and
-     * `deliveryCache` stays the only place it is spelled.
+     * One indexed lookup of `id` and `updated_at`, plus the library stamp above, answers it instead
+     * — those are the only inputs `deliveryCache` has. The full resolution below recomputes the same
+     * tag for a request that turns out to need a body; there is no second definition of the
+     * validator, and `deliveryCache` stays the only place it is spelled.
      *
      * Skipped entirely under a preview token, which is `no-store` — a client holding a validator for
      * unpublished content is exactly what that header exists to prevent.
@@ -103,7 +116,7 @@ export const GET = handleScoped(
       // full request answers 404 — see `getItemVersionByPath`.
       const version = await getItemVersionByPath(taproot.db.db, path, { routableOnly: true });
       if (version) {
-        const cheap = deliveryCache(version.updatedAt, version.id);
+        const cheap = deliveryCache(version.updatedAt, version.id, undefined, libraryVersion);
         const unchanged = notModified(context.request, cheap.etag);
         if (unchanged) return unchanged;
       }
@@ -162,7 +175,12 @@ export const GET = handleScoped(
      * without resolving anything. A second check here could only ever be false, and a dead branch
      * that looks load-bearing is how the next person concludes the cheap path is optional.
      */
-    const cache = deliveryCache(result.item.updatedAt, result.item.id, result.cacheTags);
+    const cache = deliveryCache(
+      result.item.updatedAt,
+      result.item.id,
+      result.cacheTags,
+      libraryVersion,
+    );
 
     return json(result, {
       headers: noStore ? { ...cache.headers, 'cache-control': 'no-store' } : cache.headers,
