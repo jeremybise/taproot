@@ -50,7 +50,17 @@
   "compatibility_date": "2026-07-01",
 
   // Gives the Worker the Node built-ins Astro's server runtime expects.
-  "compatibility_flags": ["nodejs_compat"],
+  // `nodejs_compat` gives the Worker the Node built-ins Astro's server runtime expects.
+  //
+  // `global_fetch_strictly_public` is what lets a `fetch()` to another Worker on the *same
+  // Cloudflare account* actually leave and come back through the public edge. Without it the
+  // request is short-circuited internally and does not route the way a real one does — the
+  // cache-purge callback from the CMS to a consumer answered **404** for a URL that returned 401 to
+  // an identical curl from outside, which reads as a missing route rather than a missing flag and
+  // sends you looking in every wrong place. Both deployments carry it because the traffic crosses
+  // that boundary in both directions: the site fetches the delivery API, the CMS calls the purge
+  // endpoint.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
   "observability": {
     "enabled": true

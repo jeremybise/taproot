@@ -111,7 +111,17 @@ export const onRequest = defineMiddleware(async (context, next) => {
    * still outlive the response, which is exactly what `waitUntil` is for. Where it is absent
    * (`npm run dev`) it is awaited, which is fine: there is no consumer configured there either.
    */
-  const site = sitePurgeConfig(process.env);
+  /**
+   * `env` from `readRuntimeEnv`, **never `process.env`**.
+   *
+   * `readRuntimeEnv` reads the `cloudflare:workers` env first and folds `process.env` in only as a
+   * Node fallback, so it is correct on both runtimes by construction. `process.env` happens to work
+   * on Workers too — `nodejs_compat` populates it from the bindings — but that is a compatibility
+   * behaviour rather than this project's contract, and every other runtime read here already goes
+   * through `readRuntimeEnv`. One source, so a deployment cannot be configured in a way only half
+   * the code can see.
+   */
+  const site = sitePurgeConfig(env);
   if (site && taproot.invalidated.size > 0) {
     const sending = purgeSite(site, taproot.invalidated, { db: taproot.db.db });
     const ctx = (context.locals as { cfContext?: { waitUntil?: (p: Promise<unknown>) => void } })

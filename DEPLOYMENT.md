@@ -266,8 +266,40 @@ convention). Cloudflare scopes cache purging to the Worker that owns the cache, 
 the only way the CMS can clear a page your site rendered — without it, a published page appears when
 the site's own `s-maxage` lapses, which is a day.
 
+:::caution
+**Both Workers need `global_fetch_strictly_public` in `compatibility_flags`.** A `fetch()` from one
+Worker to another on the *same Cloudflare account* is otherwise short-circuited internally instead of
+going out through the public edge, and that loopback does not route the way a real request does. The
+symptom is a **404** from a URL that answers correctly to `curl` from outside — which reads as a
+missing route and sends you looking at the site's routing, its secret, and its deploy, in that order.
+`create-taproot` writes both flags; a project scaffolded before this needs the second one adding.
+:::
+
 **Both or neither.** A URL with no secret is treated as no configuration at all, so a half-finished
-setup behaves like an absent one rather than a broken one. A purge that cannot be delivered is kept
+setup behaves like an absent one rather than a broken one.
+
+**Set the secret on both sides from one value, without a trailing newline.** `wrangler secret put`
+keeps what it is given, so `echo "$SECRET" |` sends a newline and `printf '%s' "$SECRET" |` does not.
+Both ends trim, so a stray newline is survivable — but generating the value twice is not, and a
+mismatch surfaces only as a **401** the CMS retries to its ceiling:
+
+```bash
+SECRET=$(openssl rand -base64 32 | tr -d '\n')
+cd your-site && printf '%s' "$SECRET" | npx wrangler secret put TAPROOT_PURGE_SECRET
+cd your-cms  && printf '%s' "$SECRET" | npx wrangler secret put TAPROOT_SITE_PURGE_SECRET
+```
+
+Verify the site accepts it before wiring the CMS to it — a `204` proves the route exists *and* the
+secret matches, which is two of the three failure modes ruled out in one request:
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST \
+  -H "content-type: application/json" -H "x-taproot-purge-secret: $SECRET" -d '{}' \
+  https://your-site/taproot/purge
+```
+
+`404` is no route or no secret on the site; `401` is a secret mismatch; `403` on a `workers.dev`
+host means the request looked like a cross-site form post — add the `content-type` header. A purge that cannot be delivered is kept
 and retried by the scheduled sweep, and one that has been given up on is reported under
 **Settings → System → Cache purges** — the only place a silently broken purge becomes visible, since
 a save is never failed over a caching problem.

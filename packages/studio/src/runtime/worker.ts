@@ -30,7 +30,11 @@ import { purgeSite, sitePurgeConfig } from './sitePurge.js';
  * minutes against a production deployment, and finishing a tick later is a better trade than
  * saturating the outbound request budget.
  */
-async function drainPurgeQueue(db: Kysely<Database>, ctx: unknown): Promise<void> {
+async function drainPurgeQueue(
+  db: Kysely<Database>,
+  ctx: unknown,
+  env: Record<string, string | undefined>,
+): Promise<void> {
   for (const row of await duePurges(db)) {
     const tags = row.tags ? row.tags.split(',') : [];
 
@@ -52,7 +56,7 @@ async function drainPurgeQueue(db: Kysely<Database>, ctx: unknown): Promise<void
      */
     const outcome =
       row.target === 'site'
-        ? await purgeSite(sitePurgeConfig(process.env), tags)
+        ? await purgeSite(sitePurgeConfig(env), tags)
         : await purgeFromExecutionContext(ctx, tags);
 
     if (outcome.ok) await resolvePurge(db, row.id);
@@ -206,5 +210,8 @@ export const scheduled = async (
    * just failed for whatever reason the queued ones will too, and doing them second means this
    * tick's row is written before the sweep spends its budget retrying older ones.
    */
-  await drainPurgeQueue(result.db, ctx);
+  // `readRuntimeEnv` is cached, so this is a map lookup rather than a second binding scan — and it
+  // is the only source that carries Worker vars and secrets. See the note in `middleware.ts`.
+  const { env } = await readRuntimeEnv();
+  await drainPurgeQueue(result.db, ctx, env);
 };

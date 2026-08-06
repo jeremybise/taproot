@@ -140,6 +140,26 @@ describe('createTaprootPurgeHandler', () => {
     expect(response.status).toBe(500);
   });
 
+  /**
+   * The asymmetry that cost an afternoon.
+   *
+   * `sitePurgeConfig` on the CMS trims `TAPROOT_SITE_PURGE_SECRET`, so a handler comparing an
+   * untrimmed value rejects a secret that is identical to every human who looks at it — and the CMS
+   * retries that 401 to the attempt ceiling. One trailing newline from a paste is all it takes.
+   */
+  it('accepts a secret whose only difference is surrounding whitespace', async () => {
+    const purge = vi.fn().mockResolvedValue({});
+    const POST = createTaprootPurgeHandler({ secret: `${SECRET}\n` });
+
+    const response = await POST({
+      request: request({ [PURGE_SECRET_HEADER]: SECRET }),
+      locals: localsWith(purge),
+    });
+
+    expect(response.status).toBe(204);
+    expect(purge).toHaveBeenCalled();
+  });
+
   it('is never cacheable, being an authenticated write surface', async () => {
     const POST = createTaprootPurgeHandler({ secret: SECRET });
 

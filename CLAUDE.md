@@ -291,6 +291,20 @@ spell them once. Four things hold it up:
   committed write to protect there; the caller is the retry queue, and its only way to replay is a
   response saying it failed.
 
+**Two Workers on one Cloudflare account cannot reach each other without
+`global_fetch_strictly_public`.** A `fetch()` between them is otherwise short-circuited internally
+rather than going out through the public edge, and the loopback does not route the way a real request
+does: the consumer's purge endpoint answered **404** to the CMS while answering 401 to an identical
+`curl` from outside. That reads as a missing route, so the hours go into the site's routing, its
+secret and its deploy — none of which were wrong. Both `wrangler.jsonc` files carry the flag and so
+does the scaffolder. The general lesson is the one that cost the most today: **testing an endpoint
+from your laptop is not testing the caller**, because the caller is on a different network path.
+
+**Where two sides compare a shared secret, both trim or neither does.** `sitePurgeConfig` trimmed
+`TAPROOT_SITE_PURGE_SECRET` and `createTaprootPurgeHandler` compared its own untrimmed, so one
+trailing newline from a paste made two visually identical secrets disagree permanently — a 401 the
+CMS retried to its ceiling. One side trimming is the only arrangement that is silently wrong.
+
 **A dropped purge is silent, and silence is only affordable at a short TTL.** `pending_purges` plus
 the five-minute sweep is what bounds it — `enqueuePurge` on failure, `drainPurgeQueue` with backoff,
 a ceiling after which a row is left stuck and reported on Settings → System. Three rules: the drain

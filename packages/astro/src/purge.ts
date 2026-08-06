@@ -68,14 +68,27 @@ export function createTaprootPurgeHandler(options: TaprootPurgeHandlerOptions = 
     request: Request;
     locals?: unknown;
   }): Promise<Response> {
-    const { secret } = options;
+    /**
+     * Trimmed, because the sender trims.
+     *
+     * `sitePurgeConfig` on the CMS calls `.trim()` on `TAPROOT_SITE_PURGE_SECRET`, so comparing an
+     * untrimmed value here means one trailing newline — the kind a paste into `wrangler secret put`
+     * or a heredoc leaves behind — makes the two sides disagree permanently. The lengths differ, the
+     * constant-time compare returns false, and the CMS gets a 401 it will retry to the ceiling
+     * against a secret that is, to any human looking at it, identical.
+     *
+     * Both sides trim or neither does; one side trimming is the only arrangement that is silently
+     * wrong. Trimming is the safer half of that choice, since leading or trailing whitespace in a
+     * shared secret is far more likely to be an accident than a decision.
+     */
+    const secret = options.secret?.trim();
 
     // Never cached, never stored, and never indexed — this is an authenticated write surface.
     const headers = { 'cache-control': 'no-store' };
 
     if (!secret) return new Response(null, { status: 404, headers });
 
-    const presented = context.request.headers.get(PURGE_SECRET_HEADER);
+    const presented = context.request.headers.get(PURGE_SECRET_HEADER)?.trim();
     if (!presented || !secretMatches(presented, secret)) {
       return new Response(null, { status: 401, headers });
     }
