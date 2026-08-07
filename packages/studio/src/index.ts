@@ -132,6 +132,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/settings/redirects', 'settings/redirects'],
           ['/settings/users', 'settings/users'],
           ['/settings/api-keys', 'settings/api-keys'],
+          ['/settings/search', 'settings/search'],
           ['/settings/audit', 'settings/audit'],
           ['/settings/system', 'settings/system'],
         ];
@@ -207,6 +208,13 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/delivery/menu/[apiId]', 'delivery/menu/[apiId]'],
           ['/delivery/taxonomy/[apiId]/terms', 'delivery/taxonomy/[apiId]/terms'],
           ['/delivery/schema', 'delivery/schema'],
+          /**
+           * The one thing a site may *write*, and the reason it is not under `/delivery`: that
+           * namespace is the read contract, and this needs `search:write` rather than
+           * `content:read`. It is a separate path because it must never be cached — a log built
+           * from cached reads counts the popular terms least.
+           */
+          ['/search-log', 'search-log'],
           ['/scheduler/run', 'scheduler/run'],
           ['/theme', 'theme'],
         ];

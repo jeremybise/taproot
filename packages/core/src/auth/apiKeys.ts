@@ -22,8 +22,15 @@ import { hashSessionToken } from './session.js';
  * scopes are the only thing it can be asked about.
  */
 
-/** Every scope that exists. One, and that is the whole delivery API's requirement. */
-export const API_KEY_SCOPES: readonly ApiKeyScope[] = ['content:read'];
+/**
+ * Every scope that exists.
+ *
+ * `search:write` is the second, and the first that is not a read — so a key issued for a site now
+ * has a choice to make rather than an obvious answer. It admits appending one row to
+ * `search_queries` and nothing else: it cannot read the log back, cannot delete from it, and
+ * carries no access to content. A site that does not report searches should not be given it.
+ */
+export const API_KEY_SCOPES: readonly ApiKeyScope[] = ['content:read', 'search:write'];
 
 /**
  * How the token is spelled.

@@ -65,8 +65,14 @@ export interface SearchSegment {
  * So the fold is per code point and only applied when the result is the same width, which leaves a
  * character that cannot be folded that way exactly as it was. That is not a compromise — it is the
  * behaviour that matches FTS5, which also leaves `ø` and `ß` alone.
+ *
+ * Exported because the search *log* groups by it: two searches are the same search exactly when the
+ * matcher would treat them as the same words, so `normalizeSearchQuery` folds with this rather than
+ * with SQL's `lower()`. `lower()` folds ASCII and stops, which would agree for English and quietly
+ * disagree for every name carrying an accent — the report would show `Peña` and `pena` as two
+ * different terms while search treats them as one.
  */
-function foldForSearch(text: string): string {
+export function foldSearchText(text: string): string {
   // ASCII cannot carry a combining mark and lowercases one-for-one, which is nearly every excerpt a
   // site will ever render. Worth a branch: the general path calls `normalize` per character.
   if (!/[^\x20-\x7E]/.test(text)) return text.toLowerCase();
@@ -125,7 +131,7 @@ export function highlightTerms(text: string, query: string): SearchSegment[] {
 
   const pattern = tokens
     .map((token, index) => {
-      const folded = escapeRegExp(foldForSearch(token));
+      const folded = escapeRegExp(foldSearchText(token));
       const opening = `(?<!${WORD})${folded}`;
 
       // The final token carries FTS5's `*`, so it runs on to the end of whatever word it started.
@@ -144,7 +150,7 @@ export function highlightTerms(text: string, query: string): SearchSegment[] {
 
   // The fold is length-preserving, so an index found here is the same index in `text` — which is
   // what lets the marked span keep its own capitals and accents.
-  for (const found of foldForSearch(text).matchAll(new RegExp(pattern, 'gu'))) {
+  for (const found of foldSearchText(text).matchAll(new RegExp(pattern, 'gu'))) {
     const start = found.index;
     push(text.slice(cursor, start), false);
     push(text.slice(start, start + found[0].length), true);

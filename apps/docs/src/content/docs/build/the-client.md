@@ -452,6 +452,66 @@ script and mark the results there, so the browser and the server agree on which 
 use it: a no-JavaScript form gives a URL you can share, which is worth more than a list that updates
 as you type.
 
+### Reporting searches: `logSearch(entry)`
+
+Feeds **Settings → Search** in the CMS, which reports what visitors looked for and what your site
+failed to answer.
+
+```ts
+const found = await taproot.searchPage(Astro.url, { perPage: 10 });
+
+if (found.query) {
+  await taproot.logSearch({ query: found.query, resultCount: found.total, source: 'page' });
+}
+```
+
+Needs a key with the **`search:write`** scope. `content:read` is not enough, and a key made before
+this existed will not have it — an empty report beside a working search box is nearly always that.
+
+| `source` | When to send it |
+| --- | --- |
+| `page` | Somebody submitted the form. Unambiguous intent |
+| `suggest` | Somebody chose a result from a type-ahead |
+| `abandoned` | A type-ahead query that went idle and was never acted on |
+
+:::caution[Do not log from a cached response]
+This is a separate call rather than something `search` does for you, and the reason is caching.
+`/delivery/search` answers with a day-long `s-maxage`, and your own results page is probably cached
+too — so **the second person to search a term never reaches an origin**. A log fed by counting
+requests undercounts in proportion to how *popular* a term is, and would rank the terms nobody
+repeats as the most searched. It looks entirely plausible while doing it.
+
+So: report from the page, and make the page that reports uncachable. `apps/web/src/pages/search.astro`
+sets `private, no-store` for exactly this, and says so.
+:::
+
+`logSearch` never throws — a failed report is not something to fail a page render over, and the
+visitor already has their results. Await it rather than firing and forgetting: a Worker can be torn
+down as soon as it responds, and a floating promise is cancelled somewhere between "usually works"
+and "usually does not".
+
+### Reporting from the browser
+
+A type-ahead knows things the server cannot — whether somebody committed, picked a suggestion, or
+gave up. Mount the forwarding endpoint the same way you mounted the search proxy:
+
+```ts
+// src/pages/api/search-log.ts
+import { createTaprootSearchLogHandler } from '@taprootcms/astro';
+import { taproot } from '../../taproot.ts';
+
+export const prerender = false;
+export const POST = createTaprootSearchLogHandler({ client: taproot });
+```
+
+Your script then `POST`s `{ query, resultCount, source }` to `/api/search-log`. It answers `204`
+whatever happens, including a malformed body — telemetry a visitor is not waiting on should never
+give a client something to handle.
+
+**Do not log every keystroke.** "a → ap → app → appl → apply" is one search intent, not five. Report
+on submit, on choosing a suggestion, and — if you want the abandoned case — once after the box has
+gone idle for a second or two, keeping only the longest query of a run.
+
 :::caution[Upgrading an existing site]
 Search reads an index built when each item is saved, and the migration that adds it creates it empty.
 An operator has to run `npm run db:reindex` once against the CMS — until then, search finds items by

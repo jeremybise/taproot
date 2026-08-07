@@ -169,7 +169,16 @@ export interface PreviewTokensTable {
  * scope invented before anything writes would be a permission nobody has checked, which is worse
  * than an absent one because it reads as enforced.
  */
-export type ApiKeyScope = 'content:read';
+/**
+ * What a key may do.
+ *
+ * `search:write` is the first scope that is not a read, and it is deliberately narrow: it admits
+ * appending a row to `search_queries` and nothing else. It exists because a search log cannot be
+ * built from the delivery response — that response is cached for a day, so the second search for a
+ * term never reaches an origin and a request-counting log would report the most popular searches as
+ * the rarest.
+ */
+export type ApiKeyScope = 'content:read' | 'search:write';
 
 /**
  * A non-human principal.
@@ -793,12 +802,29 @@ export interface Database {
   menu_items: MenuItemsTable;
   settings: SettingsTable;
   pending_purges: PendingPurgesTable;
+  search_queries: SearchQueriesTable;
 }
 
 export type User = Selectable<UsersTable>;
 export type ApiKeyRow = Selectable<ApiKeysTable>;
 export type PendingPurgeRow = Selectable<PendingPurgesTable>;
 export type AuditLogRow = Selectable<AuditLogTable>;
+
+/** Where a logged search came from. See `0026_search_log` for why they are not one bucket. */
+export type SearchSource = 'page' | 'suggest' | 'abandoned';
+
+export interface SearchQueriesTable {
+  id: string;
+  /** As typed, trimmed and capped. */
+  query: string;
+  /** Folded for grouping, by `normalizeSearchQuery` and never by SQL's `lower()`. */
+  normalized: string;
+  result_count: number;
+  source: string;
+  created_at: Timestamp;
+}
+
+export type SearchQueryRow = Selectable<SearchQueriesTable>;
 export type PasswordResetTokenRow = Selectable<PasswordResetTokensTable>;
 export type NewUser = Insertable<UsersTable>;
 export type UserUpdate = Updateable<UsersTable>;

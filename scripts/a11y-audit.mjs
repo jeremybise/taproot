@@ -86,6 +86,12 @@ const ROUTES = [
    */
   '/admin/settings/api-keys',
   '/admin/settings/audit',
+  /*
+   * Worth auditing rather than assuming, because it is two data tables and a filter form — and the
+   * seed gives it rows, so the audit sees the populated version rather than the empty state. An
+   * empty table passes every rule it has no cells to break.
+   */
+  '/admin/settings/search',
   '/admin/account',
   '/admin/settings/system',
   '/admin/media',

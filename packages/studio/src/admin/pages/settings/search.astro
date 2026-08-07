@@ -1,0 +1,257 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import { searchLogStats, topSearchTerms, zeroResultSearchTerms } from '@taprootcms/core';
+import type { SearchSource } from '@taprootcms/core';
+import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
+
+/**
+ * What visitors searched for, and what the site failed to answer.
+ *
+ * **Editor-visible, unlike the audit log.** That one names people and is admin-only; this names
+ * nothing but words visitors typed, and the person who can act on "eleven people searched for
+ * transfer credit and found nothing" is whoever writes the pages. Gating it to admins would put the
+ * report in front of the one group that cannot fix it.
+ *
+ * The screen leads with **zero results** rather than with top searches, which is the opposite of
+ * how analytics tools order it. Top searches tell you what is working; the failures are the only
+ * part that names something to do, and burying them under a leaderboard is how a report becomes
+ * something people glance at once.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+/** Windows offered. Thirty days is the default — long enough to have signal, recent enough to act on. */
+const WINDOWS = [
+  { days: 7, label: 'Last 7 days' },
+  { days: 30, label: 'Last 30 days' },
+  { days: 90, label: 'Last 90 days' },
+] as const;
+
+const params = Astro.url.searchParams;
+const requested = Number(params.get('days'));
+const days = WINDOWS.some((w) => w.days === requested) ? requested : 30;
+const since = new Date(Date.now() - days * 86_400_000);
+
+/**
+ * Whether to count the type-ahead's abandoned queries.
+ *
+ * Off by default, and that is the honest default rather than the timid one: an `abandoned` row is
+ * whatever prefix somebody had reached when they gave up, so it may be half a word. Mixed into a
+ * leaderboard it produces advice like "write a page about nursi". Turned on, it is the only way to
+ * see the visitor who typed into the header, saw nothing, and never pressed anything.
+ */
+const includeAbandoned = params.get('abandoned') === '1';
+const sources: SearchSource[] = includeAbandoned
+  ? ['page', 'suggest', 'abandoned']
+  : ['page', 'suggest'];
+
+const [stats, top, zero] = await Promise.all([
+  searchLogStats(taproot.db.db, { since, sources }),
+  topSearchTerms(taproot.db.db, { since, sources, limit: 50 }),
+  zeroResultSearchTerms(taproot.db.db, { since, sources, limit: 50 }),
+]);
+
+/** Where a term goes to be answered: the admin's own cross-type search, pre-filled. */
+const investigateHref = (term: string) => `/admin/content?q=${encodeURIComponent(term)}`;
+
+const percentZero = stats.total === 0 ? 0 : Math.round((stats.zeroResult / stats.total) * 100);
+---
+
+<AdminLayout
+  title="Search"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Search' }]}
+>
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Search</h1>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      What visitors typed into the site's search box, and whether anything came back. Nothing here
+      identifies anybody — no addresses, no accounts, no sessions.
+    </p>
+  </header>
+
+  <form method="get" class="mb-6 flex flex-wrap items-end gap-3">
+    <div>
+      <label for="days" class="block text-sm font-medium">Period</label>
+      <select
+        id="days"
+        name="days"
+        class="mt-1.5 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+      >
+        {
+          WINDOWS.map((window) => (
+            <option value={window.days} selected={window.days === days}>
+              {window.label}
+            </option>
+          ))
+        }
+      </select>
+    </div>
+
+    <div class="flex items-center gap-2 pb-2">
+      <input
+        id="abandoned"
+        name="abandoned"
+        type="checkbox"
+        value="1"
+        checked={includeAbandoned}
+        class="h-4 w-4 rounded border-border-strong"
+      />
+      <label for="abandoned" class="text-sm">
+        Include abandoned searches
+        <span class="block text-xs text-content-muted">
+          Typed into the box and given up on. May be partial words.
+        </span>
+      </label>
+    </div>
+
+    <button
+      type="submit"
+      class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+    >
+      Update
+    </button>
+  </form>
+
+  {
+    stats.total === 0 ? (
+      <div class="rounded-lg border border-dashed border-border px-4 py-10 text-center">
+        <p class="text-sm text-content-muted">
+          No searches recorded in this period.
+        </p>
+        <p class="mx-auto mt-2 max-w-prose text-sm text-content-muted">
+          A site reports its searches by calling the CMS with a key that has the
+          <code class="rounded bg-surface-sunken px-1">search:write</code> scope. If your site has a
+          search box and nothing appears here, that scope is the first thing to check — see the
+          handbook under Building a site.
+        </p>
+      </div>
+    ) : (
+      <>
+        <dl class="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div class="rounded-lg border border-border bg-surface-raised p-4">
+            <dt class="text-sm text-content-muted">Searches</dt>
+            <dd class="mt-1 text-2xl font-semibold">{stats.total}</dd>
+          </div>
+          <div class="rounded-lg border border-border bg-surface-raised p-4">
+            <dt class="text-sm text-content-muted">Distinct terms</dt>
+            <dd class="mt-1 text-2xl font-semibold">{stats.terms}</dd>
+          </div>
+          <div class="rounded-lg border border-border bg-surface-raised p-4">
+            <dt class="text-sm text-content-muted">Found nothing</dt>
+            {/* The number and the share, because 40 failures means different things out of 60 and 6,000. */}
+            <dd class="mt-1 text-2xl font-semibold">
+              {stats.zeroResult}
+              <span class="ml-2 text-base font-normal text-content-muted">{percentZero}%</span>
+            </dd>
+          </div>
+        </dl>
+
+        <section class="mb-10">
+          <h2 class="text-lg font-semibold tracking-tight">Found nothing</h2>
+          <p class="mt-1 max-w-prose text-sm text-content-muted">
+            Searches whose most recent attempt returned no results — content that is missing, or
+            titled something a visitor would not guess. A term drops off this list as soon as one
+            search for it succeeds.
+          </p>
+
+          {zero.length === 0 ? (
+            <p class="mt-4 rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-content-muted">
+              Every search in this period found something.
+            </p>
+          ) : (
+            <div class="mt-4 overflow-x-auto rounded-lg border border-border">
+              <table class="w-full border-collapse text-sm">
+                <caption class="sr-only">Searches that returned no results</caption>
+              <thead>
+                <tr class="border-b border-border text-left">
+                  <th scope="col" class="py-2 pr-4 font-medium">Term</th>
+                  <th scope="col" class="py-2 pr-4 font-medium">Searches</th>
+                  <th scope="col" class="py-2 pr-4 font-medium">Last searched</th>
+                  <th scope="col" class="py-2 font-medium"><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {zero.map((term) => (
+                  <tr class="border-b border-border">
+                    <td class="py-2 pr-4 font-medium">{term.query}</td>
+                    <td class="py-2 pr-4 tabular-nums">{term.searches}</td>
+                    <td class="py-2 pr-4 text-content-muted">
+                      <Timestamp value={term.lastSearchedAt} />
+                    </td>
+                    <td class="py-2">
+                      <a
+                        href={investigateHref(term.query)}
+                        class="font-medium text-accent underline underline-offset-2"
+                      >
+                        Search content
+                        <span class="sr-only"> for {term.query}</span>
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h2 class="text-lg font-semibold tracking-tight">Most searched</h2>
+          <p class="mt-1 max-w-prose text-sm text-content-muted">
+            The result count is what the most recent search for that term found, so it says whether
+            the term works now rather than averaging over a period somebody may have fixed it in.
+          </p>
+
+          <div class="mt-4 overflow-x-auto rounded-lg border border-border">
+            <table class="w-full border-collapse text-sm">
+              <caption class="sr-only">Most searched terms</caption>
+            <thead>
+              <tr class="border-b border-border text-left">
+                <th scope="col" class="py-2 pr-4 font-medium">Term</th>
+                <th scope="col" class="py-2 pr-4 font-medium">Searches</th>
+                <th scope="col" class="py-2 pr-4 font-medium">Results</th>
+                <th scope="col" class="py-2 pr-4 font-medium">Last searched</th>
+                <th scope="col" class="py-2 font-medium"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {top.map((term) => (
+                <tr class="border-b border-border">
+                  <td class="py-2 pr-4 font-medium">{term.query}</td>
+                  <td class="py-2 pr-4 tabular-nums">{term.searches}</td>
+                  {/*
+                    Zero is called out in words as well as position, because colour alone would fail
+                    1.4.1 — the same rule the status badges follow.
+                  */}
+                  <td class="py-2 pr-4 tabular-nums">
+                    {term.resultCount === 0 ? (
+                      <span class="font-medium text-danger">None</span>
+                    ) : (
+                      term.resultCount
+                    )}
+                  </td>
+                  <td class="py-2 pr-4 text-content-muted">
+                    <Timestamp value={term.lastSearchedAt} />
+                  </td>
+                  <td class="py-2">
+                    <a
+                      href={investigateHref(term.query)}
+                      class="font-medium text-accent underline underline-offset-2"
+                    >
+                      Search content
+                      <span class="sr-only"> for {term.query}</span>
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            </table>
+          </div>
+        </section>
+      </>
+    )
+  }
+</AdminLayout>

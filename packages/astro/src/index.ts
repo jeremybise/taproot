@@ -497,6 +497,45 @@ export function createTaprootClient(options: TaprootClientOptions) {
       return items;
     },
 
+    /**
+     * Report a search, for the CMS's Settings → Search report.
+     *
+     * ```ts
+     * await taproot.logSearch({ query: found.query, resultCount: found.total, source: 'page' });
+     * ```
+     *
+     * **A separate call rather than something `search` does for you**, and the reason is caching.
+     * `/delivery/search` answers with a day-long `s-maxage`, and a consumer's own results page is
+     * usually cached too, so the second person to search a term never reaches an origin. A log fed
+     * by the read path would undercount in proportion to how popular a term is — the report would
+     * rank the terms nobody repeats as the most searched, and look entirely plausible doing it.
+     *
+     * It also carries the thing the CMS cannot work out: **intent**. A type-ahead fires per settled
+     * keystroke, and only the page knows whether a given one was somebody committing to a search
+     * (`page`), choosing a suggestion (`suggest`), or giving up (`abandoned`). The report keeps the
+     * three apart, because an abandoned query may be half a word.
+     *
+     * Needs a key with the `search:write` scope — `content:read` is not enough, and a site that
+     * does not report searches should not be given it. Never throws: a failed report is not
+     * something to fail a page render over, and by this point the visitor already has their
+     * results.
+     */
+    async logSearch(entry: {
+      query: string;
+      resultCount: number;
+      source: 'page' | 'suggest' | 'abandoned';
+    }): Promise<void> {
+      try {
+        await doFetch(`${base}/api/taproot/search-log`, {
+          method: 'POST',
+          headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify(entry),
+        });
+      } catch (error) {
+        console.error('[taproot] search log request failed', error);
+      }
+    },
+
     /** The content model. Read by the type generator; rarely useful at request time. */
     schema(): Promise<DeliverySchema> {
       return request<DeliverySchema>('/schema');
@@ -521,6 +560,11 @@ export {
   type TaprootSearchHandlerOptions,
   type TaprootSearchHandlerResponse,
 } from './search.js';
+
+export {
+  createTaprootSearchLogHandler,
+  type TaprootSearchLogHandlerOptions,
+} from './searchLog.js';
 
 export {
   PURGE_PATH,

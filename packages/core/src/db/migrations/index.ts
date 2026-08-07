@@ -28,6 +28,7 @@ import * as m0022 from './0022_item_pages.js';
 import * as m0023 from './0023_pending_purges.js';
 import * as m0024 from './0024_root_slug_scope.js';
 import * as m0025 from './0025_item_text_fts.js';
+import * as m0026 from './0026_search_log.js';
 
 /**
  * The migration registry.
@@ -66,6 +67,7 @@ export const migrations: Record<string, Migration> = {
   '0023_pending_purges': m0023,
   '0024_root_slug_scope': m0024,
   '0025_item_text_fts': m0025,
+  '0026_search_log': m0026,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

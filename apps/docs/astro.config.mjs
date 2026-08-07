@@ -123,6 +123,7 @@ export default defineConfig({
             { label: 'People and access', slug: 'admin/users' },
             { label: 'API keys', slug: 'admin/api-keys' },
             { label: 'Two-factor authentication', slug: 'admin/two-factor' },
+            { label: 'The search report', slug: 'admin/search-log' },
             { label: 'The audit log', slug: 'admin/audit-log' },
           ],
         },

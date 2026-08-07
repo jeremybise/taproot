@@ -2,7 +2,6 @@
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { applyTermHrefs } from '@taprootcms/astro';
 import { TaprootExcerpt } from '@taprootcms/astro/components';
-import { PAGE_CACHE_CONTROL } from '../cache.ts';
 import { taproot, termHref } from '../taproot.ts';
 
 export const prerender = false;
@@ -42,6 +41,26 @@ const [found, nav] = await Promise.all([
 ]);
 
 /**
+ * Report the search, for the CMS's Settings → Search report.
+ *
+ * `source: 'page'` — somebody submitted this, which is the least ambiguous intent there is. Awaited
+ * rather than fired and forgotten, because a Worker may be torn down the moment the response is
+ * returned and a floating promise would be cancelled somewhere between "usually works" and
+ * "usually does not". It never throws and never blocks on an error, so the cost is one request the
+ * visitor does not wait on the *result* of.
+ *
+ * Only when a term was actually searched. Logging the blank render would put an empty row at the
+ * top of every report.
+ */
+if (found.query) {
+  await taproot.logSearch({
+    query: found.query,
+    resultCount: found.total,
+    source: 'page',
+  });
+}
+
+/**
  * Search results are never indexed.
  *
  * An infinite space of URLs holding other pages' content, which every search engine's guidance asks
@@ -50,10 +69,19 @@ const [found, nav] = await Promise.all([
  */
 Astro.response.headers.set('x-robots-tag', 'noindex, follow');
 /**
- * Cached briefly and per URL, like every other route here — the query is in the URL, so two
- * visitors searching for different things cannot be served each other's results.
+ * **Not cached, and the search log is why.**
+ *
+ * This used to carry `PAGE_CACHE_CONTROL` like every other route. That is a day at the edge, so the
+ * second person to search "nursing" would be served a stored copy and this frontmatter — and the
+ * `logSearch` call in it — would never run. The report would then undercount in proportion to how
+ * *popular* a term is, ranking the terms nobody repeats as the most searched, and looking entirely
+ * plausible while doing it.
+ *
+ * Cheap to give up. A results page is per-query and low-volume, so caching it saves a fraction of
+ * the traffic a content page does; and a page of other pages' content, already `noindex`, is not
+ * one there is much reason to keep in a shared cache anyway.
  */
-Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
+Astro.response.headers.set('cache-control', 'private, no-store');
 ---
 
 <SiteLayout title={found.query ? `Search: ${found.query}` : 'Search'} nav={nav} noIndex={true}>

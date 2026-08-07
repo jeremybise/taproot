@@ -118,6 +118,19 @@ const sections = [
         },
       ]
     : []),
+  /**
+   * Outside the `canManageUsers` block above, deliberately.
+   *
+   * The audit log beside it is admin-only because it names people. This names nothing but words
+   * visitors typed, and the person who can act on "eleven people searched for transfer credit and
+   * found nothing" is whoever writes the pages — so gating it to admins would show the report to
+   * the one group that cannot fix it.
+   */
+  {
+    href: '/admin/settings/search',
+    title: 'Search',
+    description: 'What visitors searched for, and what the site failed to answer.',
+  },
   {
     href: '/admin/settings/system',
     title: 'System',

@@ -22,6 +22,7 @@ import {
   buildStorageKey,
   migrateToLatest,
   newId,
+  normalizeSearchQuery,
   now,
   setPassword,
   storageFromEnv,
@@ -1790,8 +1791,25 @@ const existingKey = await handle.db
   .where('id', '=', await hashSessionToken(DEV_API_KEY))
   .executeTakeFirst();
 
+/**
+ * The scopes the seeded key carries.
+ *
+ * `search:write` joined `content:read` when the search log arrived, and the *existing* branch below
+ * has to write them too rather than shrugging. A developer who seeded before this release already
+ * has the row, so "exists, leave it" would hand them a key that reads content and silently cannot
+ * report a search — which presents as an empty report screen with nothing anywhere explaining why.
+ * Re-stating the scopes is idempotent, which is what the seed promises anyway.
+ */
+const DEV_KEY_SCOPES = JSON.stringify(['content:read', 'search:write']);
+
 if (existingKey) {
-  console.log('  api key (existing)');
+  await handle.db
+    .updateTable('api_keys')
+    .set({ scopes: DEV_KEY_SCOPES, updated_at: now() })
+    .where('id', '=', existingKey.id)
+    .execute();
+
+  console.log('  api key (existing, scopes refreshed)');
 } else {
   const keyTimestamp = now();
   await handle.db
@@ -1802,7 +1820,7 @@ if (existingKey) {
       id: await hashSessionToken(DEV_API_KEY),
       label: 'Local development (seeded)',
       token_prefix: DEV_API_KEY.slice(0, 12),
-      scopes: JSON.stringify(['content:read']),
+      scopes: DEV_KEY_SCOPES,
       expires_at: null,
       revoked_at: null,
       last_used_at: null,
@@ -1813,6 +1831,64 @@ if (existingKey) {
     .execute();
 
   console.log('  api key (created, for apps/web)');
+}
+
+// --- Search history ---------------------------------------------------------
+//
+// Settings -> Search is a report, and a report over an empty table demonstrates nothing — you
+// cannot tell "this works and nobody has searched yet" from "this is broken". These rows are what
+// the screen is for: terms that found something, terms that found nothing, and one term that used
+// to fail and now succeeds, which is the case the "found nothing" list has to stop accusing.
+//
+// Dated relative to now so the 7- and 30-day windows both have content whenever the seed is run.
+
+const existingSearches = await handle.db
+  .selectFrom('search_queries')
+  .select((eb) => eb.fn.countAll<number>().as('n'))
+  .executeTakeFirst();
+
+if (Number(existingSearches?.n ?? 0) > 0) {
+  console.log('  search log (existing)');
+} else {
+  const daysAgo = (days: number, hour: number): string =>
+    new Date(Date.now() - days * 86_400_000 + hour * 3_600_000).toISOString();
+
+  /** `[query, resultCount, daysAgo, source]` — repeated entries are repeated searches. */
+  const history: [string, number, number, 'page' | 'suggest' | 'abandoned'][] = [
+    ['admissions', 4, 1, 'page'],
+    ['admissions', 4, 2, 'suggest'],
+    ['admissions', 4, 5, 'page'],
+    ['financial aid', 3, 1, 'page'],
+    ['financial aid', 3, 3, 'suggest'],
+    ['Financial Aid', 3, 6, 'page'],
+    ['apply', 3, 2, 'suggest'],
+    ['open house', 0, 1, 'page'],
+    ['open house', 0, 4, 'page'],
+    ['transcripts', 0, 2, 'page'],
+    ['parking permit', 0, 3, 'suggest'],
+    ['nursi', 0, 2, 'abandoned'],
+    // Failed for a week, then somebody wrote the page. The most recent search is what decides, so
+    // this must appear under "most searched" and *not* under "found nothing".
+    ['scholarships', 0, 9, 'page'],
+    ['scholarships', 0, 8, 'page'],
+    ['scholarships', 2, 1, 'page'],
+  ];
+
+  await handle.db
+    .insertInto('search_queries')
+    .values(
+      history.map(([query, resultCount, days, source], index) => ({
+        id: newId(),
+        query,
+        normalized: normalizeSearchQuery(query),
+        result_count: resultCount,
+        source,
+        created_at: daysAgo(days, index % 12),
+      })),
+    )
+    .execute();
+
+  console.log(`  search log (created, ${history.length} searches)`);
 }
 
 const counts = await handle.db

@@ -364,6 +364,38 @@ follow:
   fallback is a sort that looks implemented and never was. `sort` was read by nothing at all before
   this, which is how it stayed unnoticed.
 
+**A search log cannot be built by counting requests, because every layer of the read path is
+cached.** `/delivery/search` answers with a day-long `s-maxage` and a consumer's own results page
+usually does too, so the *second* person to search a term is served from an edge cache and no origin
+hears about it. A log fed by the read path therefore undercounts in proportion to how **popular** a
+term is — "top searches" would rank the terms nobody repeats, and would look entirely plausible
+doing it. `POST /api/taproot/search-log` exists for that reason and is deliberately not under
+`/delivery`, which is the read contract. Six things follow:
+- **`search:write` is the first scope that is not a read**, so `API_KEY_SCOPES` finally has a choice
+  in it. It admits appending one row and nothing else — it cannot read the log back and carries no
+  access to content. A site that does not report searches should not be given it, and a key made
+  before this existed does not have it: an empty report beside a working search box is nearly always
+  that, which is why the empty state on the screen says so.
+- **Only the consumer knows intent.** A type-ahead fires per settled keystroke, and `source` is how
+  a submit, a chosen suggestion and an abandoned query stay distinguishable. An `abandoned` row is
+  whatever prefix somebody had reached, so it may be half a word — mixed into a leaderboard it
+  produces advice like "write a page about nursi", which is why the screen excludes it by default.
+- **"Found nothing" judges the *latest* search for a term, never the worst or the mean.** A
+  `min(result_count) = 0` keeps accusing an editor of a gap for as long as the window is open, and
+  they have already fixed it. The same rule makes `resultCount` on the top-terms table the current
+  answer rather than an average, which is what makes it mean "does this work now".
+- **Grouping folds with `foldSearchText`, never SQL's `lower()`.** `lower()` folds ASCII and stops,
+  so the report would agree with the matcher for English and quietly split `Peña` from `pena` —
+  showing two terms where search sees one. That is why the fold is exported from `searchTerms.ts`
+  rather than reimplemented.
+- **Nothing identifying is stored**, and the reason is the content: a college's search log holds
+  "withdrawal deadline", "counseling", "financial aid appeal". No IP, no account, no session. The
+  session id that collapses prefixes lives in the browser and is never sent. The cost is that the
+  report counts searches rather than people, and that is the right trade.
+- **`purgeSearchLogBefore` is a capability nothing schedules**, exactly like `purgeAuditLogBefore`.
+  Adding a recurring delete of a deployment's data to a cron that already runs every five minutes is
+  not a decision a library makes on an operator's behalf.
+
 **A facet's counts have to describe the rows clicking it returns.** `deliverTaxonomyTerms` answers
 `/delivery/taxonomy/{apiId}/terms` — the question nothing else could, which is *what departments
 exist*, and without which a filter UI hard-codes the list and goes stale the moment an editor adds

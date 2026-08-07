@@ -448,6 +448,19 @@ every indexed row — with ranking as five `CASE` bands, because that is what a 
 Committing to one engine replaced both: the plan is now a list subquery over the full-text index
 feeding a primary-key seek, and `bm25` is a real score rather than arithmetic that looks principled.
 
+**Settings → Search reports what visitors looked for and what the site failed to answer**, which is
+the half a search feature is usually missing. It leads with zero-result terms rather than a
+leaderboard, because those are the only rows that name something to do — content that is missing, or
+titled something nobody would guess. A term leaves that list the moment one search for it succeeds,
+since the judgement is on the latest search rather than the worst.
+
+It is fed by the site rather than observed by the CMS, and that is forced rather than chosen: every
+layer of the read path is cached, so the second person to search a term never reaches an origin, and
+a log built by counting requests would rank the terms nobody repeats as the most popular. The site
+reports each search over `search:write` — the first API-key scope that is not a read — which also
+carries the thing the CMS could not work out, whether somebody submitted, picked a suggestion, or
+gave up. Nothing identifying is stored: no addresses, no accounts, no sessions.
+
 Two things follow for a site. Several words mean **all of them** and only the last is a prefix, so
 `schol` finds *scholarships* while somebody is still typing — and, with no stemming anywhere,
 `college aid` does not find a page that says "colleges offer aid". And highlighting the match is the
