@@ -266,9 +266,88 @@ results[0];
 //   excerpt: '…confirmed by the accreditation review of 2019, which…' }
 ```
 
-Render the excerpt **as text**, never with `set:html`. It carries no markup — deliberately, so that
-nothing here is a string your templates have to trust — and highlighting the term is something you
-can do yourself, since you know what was searched for.
+The excerpt carries **no markup**, deliberately, so that nothing here is a string your templates have
+to trust. To show the matched words, use `<TaprootExcerpt>` rather than building the markup yourself
+— see [Highlighting the match](#highlighting-the-match) below, which is a security section as much as
+a presentation one.
+
+### A whole search page: `searchPage(url, options?)`
+
+`search` is the low-level call. Most search pages want the same dozen lines around it — read `?q=`,
+read and clamp `?page=`, turn a page into an offset, divide a total into a page count, build the
+pager's links — so `searchPage` does that from the request URL:
+
+```astro
+---
+const found = await taproot.searchPage(Astro.url, { perPage: 10 });
+---
+<ol>
+  {found.results.map((result) => (
+    <li>
+      <a href={result.path}>{result.title}</a>
+      <p><TaprootExcerpt text={result.excerpt} query={found.query} /></p>
+    </li>
+  ))}
+</ol>
+
+{found.prevHref && <a href={found.prevHref} rel="prev">Previous</a>}
+{found.pageCount > 1 && <span>Page {found.page} of {found.pageCount}</span>}
+{found.nextHref && <a href={found.nextHref} rel="next">Next</a>}
+```
+
+It returns everything `search` does, plus `page`, `pageCount`, `perPage`, `prevHref`, `nextHref`, and
+`hrefFor(page)`.
+
+| Option | Meaning |
+| --- | --- |
+| `perPage` | Results per page. Ten by default |
+| `queryParam` | Where the term is read from. `q` by default |
+| `pageParam` | Where the page number is read from. `page` by default |
+| `type`, `sort` | Passed through to `search` |
+
+Four things it handles that are easy to get wrong by hand:
+
+- **`?page=` is whatever somebody typed.** `abc`, `-3`, `0` and an empty string all land on page one
+  rather than becoming `offset=NaN` on the wire.
+- **Links keep parameters it knows nothing about.** If you add a `type` facet or a campus filter to
+  your form, page two keeps it. Rebuilding the query string from the term alone is the usual
+  implementation and silently drops the rest — a bug that only appears once there is a second
+  control.
+- **Page one has no `page` parameter**, so a search has one canonical URL rather than two.
+- **`pageCount` is zero when nothing matched**, which makes `pageCount > 1` the honest test for
+  whether to draw a pager at all.
+
+Nothing is clamped to `pageCount`: `?page=900` on a two-page result comes back empty, with
+`page: 900`, which your template renders as "no results". Redirecting to the last page instead would
+rewrite a URL somebody typed or bookmarked.
+
+### Highlighting the match
+
+```astro
+---
+import { TaprootExcerpt } from '@taprootcms/astro/components';
+---
+<p><TaprootExcerpt text={result.excerpt} query={found.query} /></p>
+```
+
+It emits the excerpt as text with `<mark>` around the words that matched. No wrapper element and no
+styles — the `<p>` and the `mark { }` rule are yours.
+
+:::danger[Do not build this by hand]
+The obvious version is `excerpt.replace(query, '<mark>' + query + '</mark>')` rendered with
+`set:html`. The query came from `?q=`, so that is a **reflected cross-site scripting hole** on your
+search page, reachable by sending somebody a link. `<TaprootExcerpt>` works from *segments* rather
+than a string, so there is nothing for `set:html` to be given.
+:::
+
+It also marks the right words, which a hand-written highlighter usually does not. The search index
+folds accents (`pena` matches *Peña*) but transliterates nothing (`strasse` does not match *Straße*),
+matches whole words for every term except the last, and treats the last as a prefix. So searching
+`financial ai` marks **financial** and **aid**, and searching `college aid` does not mark *colleges*.
+
+For a result list rendered in the browser, import `highlightTerms` from `@taprootcms/astro` and build
+the same marks from its segments — it is the identical function, so a client-side list and a
+server-rendered one agree.
 
 ### What it searches
 
@@ -283,18 +362,35 @@ the pages a site like this holds.
 
 ### Ranking, and asking for a different order
 
-Results come back most-relevant first: an exact title match, then a title starting with the term,
-then a title containing it, then the path, then the body. Pass `sort` to override that with a named
-order — `path`, `title`, `newest`, `oldest` or `recently_updated`. Sorting a news archive's results
-by date is the usual reason:
+Results come back most-relevant first. A title match wins outright — an exact title, then a title
+starting with the term, then one containing it — and **within each band, and across everything that
+matched only in the body, results are scored with BM25** over a real full-text index. So a page that
+uses the term repeatedly, or uses it in a short field, ranks above one that mentions it once in
+passing.
+
+Pass `sort` to override that with a named order — `path`, `title`, `newest`, `oldest` or
+`recently_updated`. Sorting a news archive's results by date is the usual reason:
 
 ```ts
 await taproot.search(q, { sort: 'newest' });
 ```
 
-The ranking is intentionally coarse. It says where the term was found and nothing more, because that
-is what the underlying match knows — there is no term-frequency score behind it, and inventing one
-would be a number that looks meaningful and is not.
+### How terms combine
+
+Several words mean **all of them**, and only the last one is treated as a prefix — so a partially
+typed word still finds what it is becoming:
+
+| Query | Finds |
+| --- | --- |
+| `schol` | *scholarship*, *scholarships*, *scholarly* |
+| `financial ai` | Pages holding both *financial* and something starting *ai* |
+| `college aid` | Pages holding the exact word *college* **and** something starting *aid* |
+
+The last row is the one worth knowing about: there is no stemming anywhere, so `college aid` does not
+find a page that says "**colleges** offer aid" — the exact word `college` is not on it. `colleges aid`
+does, and so does `aid college`, because whichever term comes last gets the prefix. This is rarely a
+problem for a visitor typing a phrase and pressing enter, and it is worth knowing before you conclude
+that a page is missing from the index.
 
 ### Options
 
@@ -312,6 +408,49 @@ has swept it. Singletons are omitted for the reason `items` omits them.
 
 `apps/web/src/pages/search.astro` in the Taproot repository is a working page: a plain `GET` form, no
 JavaScript, the query in the URL so a result page can be linked and reloaded.
+
+### Searching from the browser
+
+Everything above runs in frontmatter, on the server, where your API key is safe. A suggestion list or
+a filter that updates without a reload cannot call the delivery API directly — that would mean
+putting a `content:read` key into a script bundle, where it is public and cannot be narrowed further
+than "read all published content".
+
+Mount a same-origin endpoint instead:
+
+```ts
+// src/pages/api/search.ts
+import { createTaprootSearchHandler } from '@taprootcms/astro';
+import { taproot } from '../../taproot.ts';
+
+export const prerender = false;
+
+export const GET = createTaprootSearchHandler({ client: taproot, limit: 5, minLength: 2 });
+```
+
+Your script then fetches `/api/search?q=…` and gets `{ results, total, query }` — the same shape
+`search` returns. The key stays on the server.
+
+| Option | Meaning |
+| --- | --- |
+| `client` | The client from `createTaprootClient`. Required |
+| `type` | Pin the endpoint to one content type, ignoring any `type` the caller sends |
+| `limit` | Results when the caller names none. Ten by default |
+| `maxLimit` | The most a caller may ask for. Twenty-five by default |
+| `minLength` | Shortest query answered at all. One by default |
+| `cacheControl` | Defaults to `public, max-age=0, s-maxage=60`. Set `no-store` to opt out |
+
+A query shorter than `minLength` returns an empty result, not an error — the caller is a keystroke,
+and a box on its way to a real query passes through every prefix of the first word. Raising it to two
+or three is worth doing: the last token is a prefix match, so a single letter matches most of the
+site.
+
+The endpoint is a proxy and nothing more. It does not highlight — import `highlightTerms` in your
+script and mark the results there, so the browser and the server agree on which words matched.
+
+`apps/web/src/pages/api/search.ts` mounts it, and the demo's own `/search` page deliberately does not
+use it: a no-JavaScript form gives a URL you can share, which is worth more than a list that updates
+as you type.
 
 :::caution[Upgrading an existing site]
 Search reads an index built when each item is saved, and the migration that adds it creates it empty.

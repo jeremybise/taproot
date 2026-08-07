@@ -57,6 +57,16 @@ export * from './content/cacheTags.js';
  * than the bytes, and a consumer that wants to explain a blocked embed has the same answer.
  */
 export * from './content/embeds.js';
+/**
+ * `searchTokens` and `highlightTerms` — how a search string is split, and how the excerpt it
+ * produced is marked up.
+ *
+ * Shared for the reason the four above are, with one addition: the server *matches* with these
+ * tokens and the consumer *highlights* with them, so a second copy does not fail loudly, it marks
+ * the wrong words on a page of correct results. `highlightTerms` returns segments rather than HTML
+ * precisely so the consumer never reaches for `set:html` on a string built from `?q=`.
+ */
+export * from './content/searchTerms.js';
 export type { ItemSort } from './content/itemSort.js';
 /**
  * The query parameter a preview link travels in.

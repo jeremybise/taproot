@@ -1,0 +1,59 @@
+---
+/**
+ * A search excerpt with the matched words marked.
+ *
+ * ```astro
+ * import { TaprootExcerpt } from '@taprootcms/astro/components';
+ *
+ * <p><TaprootExcerpt text={result.excerpt} query={found.query} /></p>
+ * ```
+ *
+ * **This exists because the safe version and the obvious version are different.** `buildExcerpt`
+ * returns plain text by design — it carries no `<mark>`, because a delivery field that had to be
+ * trusted as HTML is exactly what the sanitiser exists to prevent — so a site that wants a
+ * highlight has to add one. The way that gets written is
+ * `excerpt.replace(query, '<mark>' + query + '</mark>')` rendered with `set:html`, and the query
+ * came from `?q=`: that is a reflected XSS, on a search page, reachable by sending somebody a link.
+ *
+ * So the marking happens through `highlightTerms`, which returns *segments* rather than markup.
+ * This component turns them into text nodes and `<mark>` elements. There is no string being trusted
+ * anywhere in the path, and the dangerous version is not merely discouraged — there is nothing to
+ * pass to `set:html`.
+ *
+ * **No wrapper and no styles**, unlike `<TaprootImage>`, which owns its wrapper because the crop
+ * arithmetic is only correct inside a box of the ratio it resolved for. Nothing here needs an
+ * element, so the site keeps its own `<p>`, its own classes, and its own `mark { }` rule. Taproot
+ * ships no design; what it ships here is the guarantee that the highlight cannot become an
+ * injection.
+ *
+ * Which words get marked is decided by `highlightTerms` against the same tokenizer the server
+ * matched with — see `searchTerms.ts`, which is the only place that rule is written down.
+ */
+import { highlightTerms } from '@taprootcms/core/pure';
+
+interface Props {
+  /**
+   * The result's `excerpt`. Plain text — pass it exactly as delivery sent it, unescaped and
+   * untruncated, or the offsets the highlighter computes stop describing the string being rendered.
+   */
+  text?: string | null;
+  /**
+   * What was searched for.
+   *
+   * Use the `query` the response echoed rather than the raw `?q=`: the server trims before it
+   * searches, and the echo is what it actually matched on.
+   */
+  query?: string | null;
+}
+
+const { text, query } = Astro.props;
+
+/**
+ * A result with no excerpt renders nothing at all, which is an ordinary state rather than an error:
+ * an item indexed before its prose existed, or a database that has not been reindexed, both answer
+ * with an empty string. The surrounding markup belongs to the site, so there is nothing to collapse.
+ */
+const segments = highlightTerms(text ?? '', query ?? '');
+---
+
+{segments.map((segment) => (segment.match ? <mark>{segment.text}</mark> : segment.text))}

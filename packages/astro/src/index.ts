@@ -73,6 +73,14 @@ export interface SearchResult extends ItemSummary {
   excerpt: string;
 }
 
+/** What `taproot.search` answers: a page of results, and the total a pager needs. */
+export interface SearchResponse {
+  results: SearchResult[];
+  total: number;
+  /** The term the server actually searched for — trimmed, and what a highlighter must be given. */
+  query: string;
+}
+
 export interface SearchOptions {
   /** A content type's `api_id`, to search one type. Omit for everything addressable. */
   type?: string;
@@ -130,6 +138,51 @@ export interface ListOptions {
   data?: boolean;
   limit?: number;
   offset?: number;
+}
+
+/**
+ * A whole search page's worth of state, derived from the request URL.
+ *
+ * Everything a search route needs and nothing a site would want to override — see
+ * `TaprootClient.searchPage` for why the boilerplate is worth removing rather than documenting.
+ */
+export interface SearchPageOptions extends Omit<SearchOptions, 'limit' | 'offset'> {
+  /** Results per page. Ten by default; the delivery API caps a page at a hundred. */
+  perPage?: number;
+  /** The parameter the term is read from, if a site's form does not call it `q`. */
+  queryParam?: string;
+  /** The parameter the page number is read from. */
+  pageParam?: string;
+}
+
+export interface SearchPageResult extends SearchResponse {
+  /** The page being shown, one-based and never below one however `?page=` was spelled. */
+  page: number;
+  /**
+   * Pages of results in total — **zero when nothing matched**, not one.
+   *
+   * That makes `pageCount > 1` the honest test for "draw a pager", which is the only place most
+   * sites use it, and it avoids a results page announcing "Page 1 of 1" over an empty list.
+   */
+  pageCount: number;
+  perPage: number;
+  /**
+   * The previous and next pages, or null at each end.
+   *
+   * `hasNext` is derived from `total` rather than from the length of `results`, so it is still right
+   * on a final page that happens to be exactly full.
+   */
+  prevHref: string | null;
+  nextHref: string | null;
+  /**
+   * A link to any page of these results.
+   *
+   * Built from the request URL's own pathname and query, so it works wherever the route is mounted
+   * and **keeps parameters this helper knows nothing about** — a `type` facet, a filter, a campus.
+   * Losing those on page two is the classic version of this bug, and it only shows up once somebody
+   * adds the second control.
+   */
+  hrefFor: (page: number) => string;
 }
 
 export interface ListResult {
@@ -237,6 +290,23 @@ export function createTaprootClient(options: TaprootClientOptions) {
     return (await response.json()) as T;
   }
 
+  /**
+   * Hoisted rather than living only on the returned object, because `searchPage` calls it.
+   *
+   * Reaching it through `this` would work until somebody destructured the client —
+   * `const { searchPage } = taproot` is an ordinary thing to write and would break at runtime with
+   * a `this` of undefined. A plain function has no such edge.
+   */
+  function search(query: string, searchOptions: SearchOptions = {}): Promise<SearchResponse> {
+    const params = new URLSearchParams({ q: query });
+    if (searchOptions.type) params.set('type', searchOptions.type);
+    if (searchOptions.sort) params.set('sort', searchOptions.sort);
+    if (searchOptions.limit !== undefined) params.set('limit', String(searchOptions.limit));
+    if (searchOptions.offset !== undefined) params.set('offset', String(searchOptions.offset));
+
+    return request<SearchResponse>(`/search?${params}`);
+  }
+
   return {
     /**
      * Everything needed to render a path, in one round trip.
@@ -340,17 +410,78 @@ export function createTaprootClient(options: TaprootClientOptions) {
      * const { results, total } = await taproot.search(q);
      * ```
      */
-    search(
-      query: string,
-      searchOptions: SearchOptions = {},
-    ): Promise<{ results: SearchResult[]; total: number; query: string }> {
-      const params = new URLSearchParams({ q: query });
-      if (searchOptions.type) params.set('type', searchOptions.type);
-      if (searchOptions.sort) params.set('sort', searchOptions.sort);
-      if (searchOptions.limit !== undefined) params.set('limit', String(searchOptions.limit));
-      if (searchOptions.offset !== undefined) params.set('offset', String(searchOptions.offset));
+    search,
 
-      return request<{ results: SearchResult[]; total: number; query: string }>(`/search?${params}`);
+    /**
+     * A search page, resolved from the request URL in one call.
+     *
+     * ```astro
+     * ---
+     * const found = await taproot.searchPage(Astro.url, { perPage: 10 });
+     * ---
+     * <ol>{found.results.map((r) => <li><a href={r.path}>{r.title}</a></li>)}</ol>
+     * {found.prevHref && <a href={found.prevHref} rel="prev">Previous</a>}
+     * {found.nextHref && <a href={found.nextHref} rel="next">Next</a>}
+     * ```
+     *
+     * **This is boilerplate removal, and the boilerplate was load-bearing.** Reading `?q=`, floor
+     * and clamp `?page=`, turn a page into an offset, divide a total into a page count, and rebuild
+     * a query string per link is about a dozen lines that every search route writes identically —
+     * and it is arithmetic over strings, which is the category this repo has already been caught by
+     * twice (`scaleSizes` splitting a `calc()` on its last space, and a pager off by one is the same
+     * shape). Written here it has tests; written in a template it is reachable by no suite a site
+     * owns either.
+     *
+     * The parts that are genuinely a site's business are untouched: the form, the markup, the
+     * styling, the copy, and whether to render a pager at all.
+     *
+     * Nothing is clamped to `pageCount`, deliberately. `?page=900` on a two-page result comes back
+     * empty with `page: 900`, which a site renders as "no results" — silently redirecting to the
+     * last page would change a URL somebody typed or bookmarked, and quietly serving page two under
+     * a URL saying nine hundred is worse than an honest empty list.
+     */
+    async searchPage(url: URL, pageOptions: SearchPageOptions = {}): Promise<SearchPageResult> {
+      const { perPage: requestedPerPage, queryParam = 'q', pageParam = 'page' } = pageOptions;
+
+      const perPage = Math.max(1, Math.floor(requestedPerPage ?? 10) || 10);
+      const query = (url.searchParams.get(queryParam) ?? '').trim();
+
+      // `?page=` is whatever somebody put in a URL: `abc`, `-3`, `2.7` and an empty string all have
+      // to land on a real page rather than on `NaN`, which would become `offset=NaN` on the wire.
+      const requested = Number(url.searchParams.get(pageParam));
+      const page = Number.isFinite(requested) ? Math.max(1, Math.floor(requested)) : 1;
+
+      const found = await search(query, {
+        type: pageOptions.type,
+        sort: pageOptions.sort,
+        limit: perPage,
+        offset: (page - 1) * perPage,
+      });
+
+      const pageCount = Math.ceil(found.total / perPage);
+
+      const hrefFor = (target: number): string => {
+        const params = new URLSearchParams(url.searchParams);
+        params.set(queryParam, query);
+
+        // Page one carries no parameter, so the first page of a search has one canonical URL — the
+        // same one the form's own submission produces.
+        if (target > 1) params.set(pageParam, String(target));
+        else params.delete(pageParam);
+
+        const search = params.toString();
+        return search ? `${url.pathname}?${search}` : url.pathname;
+      };
+
+      return {
+        ...found,
+        page,
+        pageCount,
+        perPage,
+        prevHref: page > 1 ? hrefFor(page - 1) : null,
+        nextHref: page < pageCount ? hrefFor(page + 1) : null,
+        hrefFor,
+      };
     },
 
     /**
@@ -386,6 +517,12 @@ export type TaprootClient = ReturnType<typeof createTaprootClient>;
 export { createTaprootPurgeHandler, type TaprootPurgeHandlerOptions } from './purge.js';
 
 export {
+  createTaprootSearchHandler,
+  type TaprootSearchHandlerOptions,
+  type TaprootSearchHandlerResponse,
+} from './search.js';
+
+export {
   PURGE_PATH,
   PREVIEW_PARAM,
   PREVIEW_MESSAGE,
@@ -400,6 +537,17 @@ export {
    * with nothing anywhere reporting a problem.
    */
   queryKey,
+  /**
+   * How a search excerpt is marked up, and how a query is split into the tokens that marked it.
+   *
+   * `<TaprootExcerpt>` is the usual way to reach `highlightTerms` and a server-rendered page needs
+   * nothing else. These are exported for a *client-side* result list, which has to do its own
+   * marking and cannot import an Astro component to do it. Both are importless, so shipping them to
+   * a browser costs a few hundred bytes and buys a highlight that agrees with what the server
+   * matched — a second tokenizer written in an island is the drift this pair exists to prevent.
+   */
+  highlightTerms,
+  searchTokens,
 } from '@taprootcms/core/pure';
 
 export type {
@@ -421,6 +569,8 @@ export type {
   DeliveryTermRef,
   ItemSort,
   MenuLink,
+  /** One run of a search excerpt, and whether it is what the search matched. */
+  SearchSegment,
 } from '@taprootcms/core/pure';
 
 export type { DeliveryItemRef as TaprootItemRef };

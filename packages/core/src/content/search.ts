@@ -1,6 +1,7 @@
 import { sql, type Kysely } from 'kysely';
 
 import type { Database } from '../db/schema.js';
+import { searchTokens } from './searchTerms.js';
 
 /**
  * The reading half of search: the excerpt a result is shown with.
@@ -112,8 +113,10 @@ export async function loadSearchExcerpts(
  * re-quoted rather than escaped in place: the same allowlist-serialiser argument `sanitizeHtml`
  * makes, one layer down.
  *
- * Tokens are runs of letters and digits, Unicode-aware — `\p{L}` rather than `a-z`, or a search for
- * `Peña` splits in the middle of the name.
+ * Tokenising is `searchTokens`, in `searchTerms.js`, and it lives there rather than here because a
+ * *consumer* needs the identical split to highlight the excerpt it is handed — `pure.ts` re-exports
+ * it, which this module could never be. Two copies of the rule fail silently and in the direction
+ * nobody checks: results that are right with a `<mark>` around the wrong span.
  *
  * Terms are ANDed, because that is what a second word means to somebody narrowing a search. The
  * **last** token gets a `*`, so typing "schol" finds "scholarship" while the editor is still typing;
@@ -124,8 +127,8 @@ export async function loadSearchExcerpts(
  * finds a page called `?` rather than erroring.
  */
 export function toMatchQuery(input: string): string | null {
-  const tokens = input.match(/[\p{L}\p{N}]+/gu);
-  if (!tokens || tokens.length === 0) return null;
+  const tokens = searchTokens(input);
+  if (tokens.length === 0) return null;
 
   return tokens
     .map((token, index) => {

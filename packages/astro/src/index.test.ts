@@ -120,6 +120,155 @@ describe('search', () => {
 });
 
 /**
+ * `searchPage`, which is the boilerplate every search route would otherwise write for itself.
+ *
+ * It is tested harder than its size suggests because all of it is arithmetic over strings and
+ * numbers taken straight from a URL — the category this repo has been caught by twice already
+ * (`scaleSizes` splitting a `calc()` on its last space; a page/offset conversion is the same shape).
+ * Written in a template it would be reachable by no suite anybody owns.
+ */
+describe('searchPage', () => {
+  function pagingClient(total: number) {
+    let seen = '';
+    const client = createTaprootClient({
+      url: 'https://cms.example.edu',
+      fetch: async (input) => {
+        seen = String(input);
+        return new Response(JSON.stringify({ results: [], total, query: 'aid' }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    return { client, url: () => new URL(seen) };
+  }
+
+  it('turns a page number into an offset', async () => {
+    const { client, url } = pagingClient(0);
+
+    await client.searchPage(new URL('https://site.example/search?q=aid&page=3'), { perPage: 10 });
+
+    expect(url().searchParams.get('limit')).toBe('10');
+    expect(url().searchParams.get('offset')).toBe('20');
+  });
+
+  it('lands on page one for every way `?page=` can be nonsense', async () => {
+    // `offset=NaN` is what the naive version puts on the wire, and the delivery API answers 400 —
+    // a broken search page produced by a visitor editing their own URL.
+    for (const raw of ['abc', '-3', '0', '', '2.7']) {
+      const { client, url } = pagingClient(0);
+      const found = await client.searchPage(
+        new URL(`https://site.example/search?q=aid&page=${raw}`),
+      );
+
+      const offset = url().searchParams.get('offset');
+      expect(Number(offset)).not.toBeNaN();
+      // `2.7` floors to page two; everything else is below one and clamps up.
+      expect(found.page).toBe(raw === '2.7' ? 2 : 1);
+    }
+  });
+
+  it('counts pages from the total, and reports zero when nothing matched', async () => {
+    const empty = pagingClient(0);
+    await expect(
+      empty.client.searchPage(new URL('https://site.example/search?q=aid')),
+    ).resolves.toMatchObject({ pageCount: 0, prevHref: null, nextHref: null });
+
+    // 21 results at 10 a page is three, not two — the partial last page counts.
+    const many = pagingClient(21);
+    await expect(
+      many.client.searchPage(new URL('https://site.example/search?q=aid'), { perPage: 10 }),
+    ).resolves.toMatchObject({ pageCount: 3 });
+  });
+
+  it('offers next on a final page that is exactly full, and not past the end', async () => {
+    // Derived from `total`, not from `results.length` — twenty results at ten a page would otherwise
+    // offer a third page that does not exist.
+    const { client } = pagingClient(20);
+
+    const second = await client.searchPage(
+      new URL('https://site.example/search?q=aid&page=2'),
+      { perPage: 10 },
+    );
+
+    expect(second.nextHref).toBeNull();
+    expect(second.prevHref).toBe('/search?q=aid');
+  });
+
+  it('keeps parameters it knows nothing about when building a page link', async () => {
+    /**
+     * The bug that only appears once a site adds its second control: a `type` facet chosen on page
+     * one silently reverts on page two, because the pager rebuilt the query string from the term
+     * alone. Sites write that version because it is the obvious one.
+     */
+    const { client } = pagingClient(50);
+
+    const found = await client.searchPage(
+      new URL('https://site.example/search?q=aid&type=event&campus=abingdon'),
+      { perPage: 10 },
+    );
+
+    const next = new URL(found.nextHref!, 'https://site.example');
+    expect(next.searchParams.get('type')).toBe('event');
+    expect(next.searchParams.get('campus')).toBe('abingdon');
+    expect(next.searchParams.get('page')).toBe('2');
+  });
+
+  it('gives page one no page parameter, so it has one canonical URL', async () => {
+    // Otherwise `/search?q=aid` and `/search?q=aid&page=1` are two URLs for one result set — two
+    // cache entries, and two things for a visitor to bookmark.
+    const { client } = pagingClient(50);
+
+    const found = await client.searchPage(new URL('https://site.example/search?q=aid&page=2'));
+
+    expect(found.hrefFor(1)).toBe('/search?q=aid');
+  });
+
+  it('builds links against the route it was called from, not a hardcoded path', async () => {
+    const { client } = pagingClient(50);
+
+    const found = await client.searchPage(
+      new URL('https://site.example/about/find?q=aid'),
+      { perPage: 10 },
+    );
+
+    expect(found.nextHref).toBe('/about/find?q=aid&page=2');
+  });
+
+  it('reads a term from a differently named parameter when a site asks it to', async () => {
+    const { client, url } = pagingClient(0);
+
+    const found = await client.searchPage(new URL('https://site.example/search?query=aid&p=2'), {
+      queryParam: 'query',
+      pageParam: 'p',
+      perPage: 5,
+    });
+
+    expect(url().searchParams.get('q')).toBe('aid');
+    expect(url().searchParams.get('offset')).toBe('5');
+    expect(found.hrefFor(3)).toContain('p=3');
+  });
+
+  it('trims the term before searching, as the server would', async () => {
+    const { client, url } = pagingClient(0);
+
+    await client.searchPage(new URL('https://site.example/search?q=%20%20aid%20%20'));
+
+    expect(url().searchParams.get('q')).toBe('aid');
+  });
+
+  it('works when destructured off the client', async () => {
+    // `const { searchPage } = taproot` is an ordinary thing to write, and would break at runtime if
+    // this reached its sibling through `this`.
+    const { client } = pagingClient(0);
+    const { searchPage } = client;
+
+    await expect(searchPage(new URL('https://site.example/search?q=aid'))).resolves.toMatchObject({
+      page: 1,
+    });
+  });
+});
+
+/**
  * Listings, whose job on this side is turning options into a query string.
  *
  * The failure mode is silent in the direction that matters: a parameter the server does not read is

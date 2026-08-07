@@ -1,13 +1,14 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { applyTermHrefs } from '@taprootcms/astro';
+import { TaprootExcerpt } from '@taprootcms/astro/components';
 import { PAGE_CACHE_CONTROL } from '../cache.ts';
 import { taproot, termHref } from '../taproot.ts';
 
 export const prerender = false;
 
 /**
- * Site search — the worked example for `taproot.search`.
+ * Site search — the worked example for `taproot.searchPage` and `<TaprootExcerpt>`.
  *
  * A static route, so it wins over `[...path].astro` and this site keeps `/search` for itself. Worth
  * knowing that it *is* a claim on the URL: a content item at `/search` would be unreachable, which
@@ -16,40 +17,35 @@ export const prerender = false;
  *
  * **A plain form with no JavaScript.** `method="get"` means the query lives in the URL, which is
  * what makes a result page linkable, bookmarkable and reloadable, and what lets the back button
- * work. An as-you-type box would be a request per keystroke against an endpoint that scans text,
- * and would leave a visitor with no way to share what they found.
- */
-const query = (Astro.url.searchParams.get('q') ?? '').trim();
-const page = Math.max(Number(Astro.url.searchParams.get('page') ?? 1) || 1, 1);
-const PER_PAGE = 10;
-
-/**
- * Both requests together, for the reason `[...path].astro` spells out: a layout's frontmatter
- * cannot start until the page's has finished, so fetching the menu after the results would be a
- * serial round trip on every search.
+ * work. An as-you-type box would be a request per keystroke and would leave a visitor with no way to
+ * share what they found — `createTaprootSearchHandler` is there for a site that wants one anyway,
+ * and it exists because the alternative is putting an API key in a script bundle.
  *
- * A blank query is answered by the CMS with no results rather than with everything, so this needs no
- * guard of its own — the form simply renders empty, which is what a visitor who has typed nothing
- * should see.
+ * **`searchPage` reads the URL so this file does not.** It takes `?q=` and `?page=`, clamps a page
+ * number that a visitor may have typed, converts it to an offset, and builds the pager's links from
+ * this route's own path — keeping any parameter it does not recognise, so adding a facet later does
+ * not silently reset it on page two. That was a dozen lines of arithmetic here, untested, in every
+ * site that has a search page.
  */
 const [found, nav] = await Promise.all([
-  taproot.search(query, { limit: PER_PAGE, offset: (page - 1) * PER_PAGE }),
+  /**
+   * Both requests together, for the reason `[...path].astro` spells out: a layout's frontmatter
+   * cannot start until the page's has finished, so fetching the menu after the results would be a
+   * serial round trip on every search.
+   *
+   * A blank query is answered by the CMS with no results rather than with everything, so this needs
+   * no guard of its own — the form simply renders empty, which is what a visitor who has typed
+   * nothing should see.
+   */
+  taproot.searchPage(Astro.url, { perPage: 10 }),
   taproot.menu('main').then((entries) => applyTermHrefs(entries, termHref)),
 ]);
-
-const pageCount = Math.ceil(found.total / PER_PAGE);
-
-function pageHref(target: number): string {
-  const params = new URLSearchParams({ q: query });
-  if (target > 1) params.set('page', String(target));
-  return `/search?${params}`;
-}
 
 /**
  * Search results are never indexed.
  *
  * An infinite space of URLs holding other pages' content, which every search engine's guidance asks
- * sites not to publish — and a crawler following them is also a crawler running a text scan per
+ * sites not to publish — and a crawler following them is also a crawler running a text query per
  * request. Nothing about this is Taproot's rule; it is what a site does with a search page.
  */
 Astro.response.headers.set('x-robots-tag', 'noindex, follow');
@@ -60,7 +56,7 @@ Astro.response.headers.set('x-robots-tag', 'noindex, follow');
 Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
 ---
 
-<SiteLayout title={query ? `Search: ${query}` : 'Search'} nav={nav} noIndex={true}>
+<SiteLayout title={found.query ? `Search: ${found.query}` : 'Search'} nav={nav} noIndex={true}>
   <h1>Search</h1>
 
   <form method="get" action="/search" role="search">
@@ -75,12 +71,12 @@ Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
       */
     }
     <label for="q">Search this site</label>
-    <input id="q" type="search" name="q" value={query} autocomplete="off" />
+    <input id="q" type="search" name="q" value={found.query} autocomplete="off" />
     <button type="submit">Search</button>
   </form>
 
   {
-    query && (
+    found.query && (
       <p role="status">
         {found.total === 0
           ? `No results for “${found.query}”.`
@@ -98,11 +94,19 @@ Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
               <a href={result.path}>{result.title}</a>
             </h2>
             {/*
-              Rendered as text, deliberately. The excerpt is assembled from stored content and
-              carries no markup by design — putting it through `set:html` would be the one place
-              this site trusted a string it never had to.
+              `<TaprootExcerpt>` marks the matched words and renders the rest as text.
+
+              The excerpt is plain text by design, so highlighting it is the site's job — and the
+              way that gets written by hand is a `replace` into `set:html`, on a string built from
+              `?q=`, which is a reflected XSS. This emits text nodes and `<mark>` elements from
+              segments, so there is no string being trusted, and it marks exactly what FTS5 matched
+              rather than what a second tokenizer here would have guessed.
             */}
-            {result.excerpt && <p>{result.excerpt}</p>}
+            {result.excerpt && (
+              <p>
+                <TaprootExcerpt text={result.excerpt} query={found.query} />
+              </p>
+            )}
             <p class="result-path">{result.path}</p>
           </li>
         ))}
@@ -111,22 +115,22 @@ Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
   }
 
   {
-    pageCount > 1 && (
+    found.pageCount > 1 && (
       <nav aria-label="Search results pages">
         <ul class="pager">
-          {page > 1 && (
+          {found.prevHref && (
             <li>
-              <a href={pageHref(page - 1)} rel="prev">
+              <a href={found.prevHref} rel="prev">
                 Previous
               </a>
             </li>
           )}
           <li>
-            Page {page} of {pageCount}
+            Page {found.page} of {found.pageCount}
           </li>
-          {page < pageCount && (
+          {found.nextHref && (
             <li>
-              <a href={pageHref(page + 1)} rel="next">
+              <a href={found.nextHref} rel="next">
                 Next
               </a>
             </li>
@@ -162,6 +166,16 @@ Astro.response.headers.set('cache-control', PAGE_CACHE_CONTROL);
   .results h2 {
     margin-block-end: 0.25rem;
     font-size: 1.1rem;
+  }
+
+  /*
+    The site styles the highlight, because `<TaprootExcerpt>` ships no wrapper and no CSS — it
+    guarantees the markup is safe and has no opinion about what it looks like. The browser default
+    is a yellow background, which is legible here and would not be on a dark theme.
+  */
+  .results mark {
+    background: highlight;
+    color: highlighttext;
   }
 
   .result-path {

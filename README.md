@@ -442,11 +442,21 @@ What it searches is an item's *prose*: every text and rich-text value it holds, 
 inside blocks and repeater rows, flattened to plain words when the item is saved. Markup never
 matches — searching for "strong" does not find every page with bold text in it.
 
-Deliberately not FTS5 or `tsvector`. Either would buy sharper ranking and cost the thing this repo
-has protected since Phase 0: one migration set that runs unbranched on SQLite, D1 and Postgres.
-Ranking is five bands — an exact title, a title beginning with the term, a title containing it, the
-path, the body — because that is what a `LIKE` genuinely knows, and arithmetic on top of it would be
-a score that looks principled and is not.
+Search is FTS5, and it is what dropping Postgres bought. The original index settled for
+`lower(text) like '%needle%'` — a leading wildcard, so no index could serve it and every search read
+every indexed row — with ranking as five `CASE` bands, because that is what a `LIKE` genuinely knows.
+Committing to one engine replaced both: the plan is now a list subquery over the full-text index
+feeding a primary-key seek, and `bm25` is a real score rather than arithmetic that looks principled.
+
+Two things follow for a site. Several words mean **all of them** and only the last is a prefix, so
+`schol` finds *scholarships* while somebody is still typing — and, with no stemming anywhere,
+`college aid` does not find a page that says "colleges offer aid". And highlighting the match is the
+site's job, because the excerpt is plain text by design: `<TaprootExcerpt>` does it from segments
+rather than markup, since the search term arrives in `?q=` and the hand-written version is a
+reflected XSS. `taproot.searchPage(Astro.url)` takes the rest of the page — the query, the clamped
+page number, the offset, the page count and the pager's links, which keep any facet parameter the
+site added. A site that wants an interactive box mounts `createTaprootSearchHandler` rather than
+putting an API key in a script bundle.
 
 Two limits, both stated rather than papered over. Text that lives *only* in a reusable block is not
 found through the pages that show it: the page stores a reference and no copy, and pulling the

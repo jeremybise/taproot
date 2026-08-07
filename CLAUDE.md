@@ -505,14 +505,25 @@ source of truth, rebuilt from `data`, so a restored revision restores it. Six th
 
 **Search is a second derived table behind the same planner, and `planDerivedIndexes` is the only
 entry a call site names.** `content_item_text` holds one row per item carrying its prose flattened
-with `htmlToText`; `ItemFilters.search` matches it with the repo's lowercased `LIKE` beside title
-and path. Not FTS5 or `tsvector` — one migration set has to run unbranched on all three dialects,
-and a second index implementation is a search that answers differently depending on where it is
-deployed. Seven things hold it up:
-- **The table materialises the text; it does not make it indexed.** `like '%needle%'` is a scan on
-  every dialect, so an index on `text` would be paid for on every write and spent on nothing. What
-  it buys is that the scan reads one flattened column instead of parsing every item's JSON, and that
-  the walk happens once per save rather than once per query.
+with `htmlToText`; `content_item_fts` is an FTS5 index over it, and `ItemFilters.search` matches
+through that beside title and path. It read "Not FTS5 or `tsvector` — one migration set has to run
+unbranched on all three dialects" for a phase, and **both halves of that were revisited rather than
+inherited**: D1 documents FTS5, and Postgres was removed rather than promoted, so there is no second
+dialect for a second implementation to disagree with. `0025_item_text_fts` is where the reasoning
+lives, including why it carries no triggers and stores its own copy of the text. Eight things hold
+it up:
+- **The table materialises the text; the FTS index is what makes it searchable.** `content_item_text`
+  stays the durable half — excerpts and `searchIndexStatus` read it, and it is what an export
+  carries, since a virtual table cannot be exported at all. What the flattening buys either way is
+  that the walk happens once per save rather than once per query.
+- **`searchTokens` is shared with the consumer, and that is not tidiness.** The server builds the
+  `MATCH` expression from it and `@taprootcms/astro` highlights the excerpt from it, so a second copy
+  marks the wrong words on a page of correct results — silent, in the direction nobody checks. It
+  lives in `searchTerms.ts` because `pure.ts` has to re-export it, and `highlightTerms` returns
+  **segments rather than markup** because the term arrives in `?q=`: a highlighter emitting HTML is a
+  reflected XSS the first time a template reaches for `set:html`. Everything in that file was
+  measured against FTS5 rather than reasoned about — `unicode61` folds *Peña* to `pena` and folds
+  neither `ø` nor `ß`, and a highlighter guessing either way looks right on every page anybody tests.
 - **One predicate, not one per caller.** The clause lives in `applyItemFilters` — shared byte for
   byte with the status facets — so the admin's cross-type search, `delivery/items?q=`, and
   `delivery/search` narrow identically. A second query for the consumer is a search that finds a
