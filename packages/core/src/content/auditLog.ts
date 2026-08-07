@@ -136,11 +136,41 @@ export async function listAuditActions(db: Kysely<Database>): Promise<string[]> 
  * anything that can be aimed. "Delete entries about me" and "delete entries from last Tuesday" are
  * the two capabilities an audit log must not have.
  */
-export async function purgeAuditLogBefore(db: Kysely<Database>, before: Date): Promise<number> {
-  const result = await db
-    .deleteFrom('audit_log')
-    .where('created_at', '<', before.toISOString())
-    .executeTakeFirst();
+export async function purgeAuditLogBefore(
+  db: Kysely<Database>,
+  before: Date,
+  /**
+   * Most rows to remove in one call, or omitted for all of them.
+   *
+   * A bound rather than a throttle: the first sweep after retention is switched on may face a table
+   * that has grown since the deployment was built, and one unbounded delete over hundreds of
+   * thousands of rows is a statement long enough to hit a runtime limit on the one path that runs
+   * unattended. `purgeExpiredLogs` passes it; a caller doing this by hand need not.
+   */
+  limit?: number,
+): Promise<number> {
+  const cutoff = before.toISOString();
+
+  /**
+   * Two shapes, because `delete … limit` is not portable.
+   *
+   * SQLite only supports it when compiled with `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`, which is not
+   * something a deployment on D1 gets to check. Selecting the ids first and deleting by primary key
+   * works everywhere, and the subquery is served by `audit_log_created_idx`.
+   */
+  const result =
+    limit === undefined
+      ? await db.deleteFrom('audit_log').where('created_at', '<', cutoff).executeTakeFirst()
+      : await db
+          .deleteFrom('audit_log')
+          .where('id', 'in', (eb) =>
+            eb
+              .selectFrom('audit_log')
+              .select('id')
+              .where('created_at', '<', cutoff)
+              .limit(limit),
+          )
+          .executeTakeFirst();
 
   return Number(result.numDeletedRows ?? 0);
 }

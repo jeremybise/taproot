@@ -4,11 +4,13 @@ import {
   duePurges,
   publishDueItems,
   publishDueReleases,
+  purgeExpiredLogs,
   purgeExpiredAttempts,
   purgeExpiredPreviewTokens,
   purgeExpiredPurgeQueue,
   purgeExpiredSessions,
   purgeStaleResetTokens,
+  resolveLogRetention,
   resolvePurge,
 } from '@taprootcms/core';
 import type { Kysely } from 'kysely';
@@ -115,6 +117,13 @@ export interface ScheduledRunResult {
   purgedSessions: number;
   purgedResetTokens: number;
   purgedLoginAttempts: number;
+  /**
+   * Log rows aged out by retention, and whether a capped batch left more behind.
+   *
+   * Zero whenever retention is unconfigured, which is every deployment until an operator sets it —
+   * so a run reporting zero here is the normal state, not a failure.
+   */
+  purgedLogs: { searchQueries: number; auditEntries: number; moreToRemove: boolean };
 }
 
 /**
@@ -157,6 +166,21 @@ export async function runScheduledTasks(): Promise<ScheduledRunResult> {
   // sweep the table grows by one row per click on a preview link, forever.
   await purgeExpiredPreviewTokens(db);
 
+  /**
+   * Retention on the two logs, which is the only housekeeping here that an operator has to ask for.
+   *
+   * Everything above removes rows that are spent by definition — an expired session, a used reset
+   * token — so sweeping them is not a policy decision. A log entry is not spent; deleting one is
+   * throwing away history somebody may want, so it happens only when
+   * `TAPROOT_SEARCH_LOG_RETENTION_DAYS` or `TAPROOT_AUDIT_LOG_RETENTION_DAYS` says how long to keep
+   * it. Unset is keep-forever, so upgrading never silently starts deleting.
+   *
+   * Runs on every tick rather than on a schedule of its own. With retention set and nothing
+   * expired, each delete is an indexed seek matching no rows, which is cheaper than the state a
+   * once-a-day gate would need to remember when it last ran.
+   */
+  const purgedLogs = await purgeExpiredLogs(db, resolveLogRetention(env));
+
   return {
     db,
     published,
@@ -165,6 +189,7 @@ export async function runScheduledTasks(): Promise<ScheduledRunResult> {
     purgedSessions,
     purgedResetTokens,
     purgedLoginAttempts,
+    purgedLogs,
   };
 }
 

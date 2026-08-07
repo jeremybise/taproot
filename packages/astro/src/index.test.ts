@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createTaprootClient } from './index.js';
 
@@ -375,5 +375,71 @@ describe('request deduplication', () => {
     await client.menu('main');
 
     expect(calls()).toBe(2);
+  });
+});
+
+/**
+ * `logSearch`, whose only real failure mode is being refused.
+ *
+ * A key without `search:write` is the most likely misconfiguration there is — `content:read` is
+ * what every existing key has, and scopes are fixed when a key is created — and it produces a 401
+ * that resolves perfectly happily. Without a check the symptom is a report that stays empty
+ * forever with nothing anywhere explaining why.
+ */
+describe('logSearch', () => {
+  it('posts the entry to the log endpoint', async () => {
+    let seen: { url: string; init?: RequestInit } | undefined;
+    const client = createTaprootClient({
+      url: 'https://cms.example.edu',
+      apiKey: 'tpr_test',
+      fetch: async (input, init) => {
+        seen = { url: String(input), init };
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await client.logSearch({ query: 'nursing', resultCount: 4, source: 'page' });
+
+    expect(seen?.url).toBe('https://cms.example.edu/api/taproot/search-log');
+    expect(seen?.init?.method).toBe('POST');
+    expect(JSON.parse(String(seen?.init?.body))).toEqual({
+      query: 'nursing',
+      resultCount: 4,
+      source: 'page',
+    });
+  });
+
+  it('names the missing scope when the write is refused', async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      errors.push(args.join(' '));
+    });
+
+    const client = createTaprootClient({
+      url: 'https://cms.example.edu',
+      apiKey: 'tpr_test',
+      fetch: async () => new Response(null, { status: 401 }),
+    });
+
+    await client.logSearch({ query: 'nursing', resultCount: 1, source: 'page' });
+
+    expect(errors.join(' ')).toMatch(/search:write/);
+    spy.mockRestore();
+  });
+
+  it('never throws, whatever happens', async () => {
+    // A failed report must not fail a page render — the visitor already has their results.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const client = createTaprootClient({
+      url: 'https://cms.example.edu',
+      fetch: async () => {
+        throw new Error('network down');
+      },
+    });
+
+    await expect(
+      client.logSearch({ query: 'nursing', resultCount: 1, source: 'page' }),
+    ).resolves.toBeUndefined();
+    spy.mockRestore();
   });
 });

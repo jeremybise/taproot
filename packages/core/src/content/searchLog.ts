@@ -273,11 +273,29 @@ export async function searchLogStats(
  * `publishDueItems`' sweep, the interval and the age want stating on Settings → System, because a
  * report that silently stops going back further than ninety days is one people misread.
  */
-export async function purgeSearchLogBefore(db: Kysely<Database>, before: Date): Promise<number> {
-  const result = await db
-    .deleteFrom('search_queries')
-    .where('created_at', '<', before.toISOString())
-    .executeTakeFirst();
+export async function purgeSearchLogBefore(
+  db: Kysely<Database>,
+  before: Date,
+  /** Most rows to remove in one call. See `purgeAuditLogBefore`, which is bounded the same way. */
+  limit?: number,
+): Promise<number> {
+  const cutoff = before.toISOString();
+
+  // `delete … limit` needs a SQLite build flag a D1 deployment cannot check for, so the bounded
+  // form selects ids first — served by `search_queries_created_at_idx` — and deletes by key.
+  const result =
+    limit === undefined
+      ? await db.deleteFrom('search_queries').where('created_at', '<', cutoff).executeTakeFirst()
+      : await db
+          .deleteFrom('search_queries')
+          .where('id', 'in', (eb) =>
+            eb
+              .selectFrom('search_queries')
+              .select('id')
+              .where('created_at', '<', cutoff)
+              .limit(limit),
+          )
+          .executeTakeFirst();
 
   return Number(result.numDeletedRows ?? 0);
 }

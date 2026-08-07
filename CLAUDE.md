@@ -392,9 +392,21 @@ doing it. `POST /api/taproot/search-log` exists for that reason and is deliberat
   "withdrawal deadline", "counseling", "financial aid appeal". No IP, no account, no session. The
   session id that collapses prefixes lives in the browser and is never sent. The cost is that the
   report counts searches rather than people, and that is the right trade.
-- **`purgeSearchLogBefore` is a capability nothing schedules**, exactly like `purgeAuditLogBefore`.
-  Adding a recurring delete of a deployment's data to a cron that already runs every five minutes is
-  not a decision a library makes on an operator's behalf.
+- **Retention is opt-in per log, and unset means keep forever.** `resolveLogRetention` reads
+  `TAPROOT_SEARCH_LOG_RETENTION_DAYS` and `TAPROOT_AUDIT_LOG_RETENTION_DAYS`, and
+  `purgeExpiredLogs` runs in the same five-minute sweep as `publishDueItems`. Two periods rather
+  than one because they answer different questions — an audit log is kept so somebody can
+  reconstruct who changed what, a search log is a content report whose value decays in weeks. A
+  default period would have meant a version bump silently deleting a deployment's history.
+  An unusable value **disables that log's purge and is reported on Settings → System** rather than
+  throwing: `TAPROOT_DEV_AUTH` throws because silence there is *dangerous*, while this fails towards
+  keeping data — but ignoring it silently is the genuinely bad option, because the operator believes
+  purging is happening and the table grows anyway. Both purges are **batched**
+  (`LOG_PURGE_BATCH`), because the first sweep after switching retention on can face a table that
+  has grown since the deployment was built, and one unbounded delete over it is a statement long
+  enough to hit a runtime limit on the one path that runs unattended. `delete … limit` needs a
+  SQLite build flag D1 cannot be asked about, so the bounded form selects ids first and deletes by
+  key.
 
 **A facet's counts have to describe the rows clicking it returns.** `deliverTaxonomyTerms` answers
 `/delivery/taxonomy/{apiId}/terms` — the question nothing else could, which is *what departments

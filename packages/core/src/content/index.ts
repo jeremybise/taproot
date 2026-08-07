@@ -10,6 +10,7 @@ export * from './itemQueries.js';
 export * from './search.js';
 export * from './searchTerms.js';
 export * from './searchLog.js';
+export * from './logRetention.js';
 export * from './redirects.js';
 export * from './auditLog.js';
 export * from './workflow.js';

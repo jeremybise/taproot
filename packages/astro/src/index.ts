@@ -526,11 +526,33 @@ export function createTaprootClient(options: TaprootClientOptions) {
       source: 'page' | 'suggest' | 'abandoned';
     }): Promise<void> {
       try {
-        await doFetch(`${base}/api/taproot/search-log`, {
+        const response = await doFetch(`${base}/api/taproot/search-log`, {
           method: 'POST',
           headers: { ...headers, 'content-type': 'application/json' },
           body: JSON.stringify(entry),
         });
+
+        /**
+         * A refusal is reported, and it is the only thing here that ever needs to be.
+         *
+         * This originally awaited the request and inspected nothing, so a key without the
+         * `search:write` scope produced a 401 that resolved perfectly happily — no throw, no log,
+         * no symptom anywhere except a report that stayed empty forever. That is the single most
+         * likely way this is misconfigured, because `content:read` is what every existing key has
+         * and scopes cannot be added to a key after it is created.
+         *
+         * Named rather than repeated as a status, for the same reason the delivery 401 is: the
+         * person reading a build log is the person who can fix it, and "401" alone sends them to
+         * the CMS to look for a fault that is not there.
+         */
+        if (!response.ok) {
+          console.error(
+            response.status === 401 || response.status === 403
+              ? '[taproot] the search log was refused. The API key needs the `search:write` scope; ' +
+                  'scopes are fixed when a key is created, so this usually means issuing a new one.'
+              : `[taproot] the search log was refused (${response.status}).`,
+          );
+        }
       } catch (error) {
         console.error('[taproot] search log request failed', error);
       }

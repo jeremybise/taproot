@@ -1,5 +1,11 @@
 import type { APIContext } from 'astro';
-import { SITE_TAG, publishDueItems, publishDueReleases } from '@taprootcms/core';
+import {
+  SITE_TAG,
+  publishDueItems,
+  publishDueReleases,
+  purgeExpiredLogs,
+  resolveLogRetention,
+} from '@taprootcms/core';
 
 import { apiError, json } from '../_shared.js';
 import { getTaproot, hasRole } from '../../runtime/guards.js';
@@ -47,6 +53,25 @@ export async function POST(context: APIContext): Promise<Response> {
    * its own moment if the release ran first.
    */
   const releases = await publishDueReleases(taproot.db);
+
+  /**
+   * Log retention, here as well as in `worker.ts`.
+   *
+   * This endpoint exists for platforms with no cron of their own, and it is the *only* sweep such a
+   * deployment gets. Wiring retention into the Cloudflare path alone would ship a feature that
+   * silently does nothing everywhere else — an operator would set the variable, watch Settings →
+   * System keep reporting an entry from two years ago, and have nothing to go on.
+   *
+   * Note the other housekeeping in `runScheduledTasks` — expired sessions, spent reset tokens,
+   * aged-out login attempts — is *not* here and never has been, so those tables still only get
+   * swept on Cloudflare. That asymmetry predates this and is left alone deliberately: making a
+   * non-Cloudflare deployment start deleting sessions is a behaviour change worth making on
+   * purpose rather than as a side effect of adding retention.
+   */
+  await purgeExpiredLogs(
+    taproot.db.db,
+    resolveLogRetention(process.env as Record<string, string | undefined>),
+  );
 
   /**
    * Only when the sweep actually published something.

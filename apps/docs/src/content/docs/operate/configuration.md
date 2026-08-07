@@ -102,6 +102,35 @@ the CMS's own origin, and the reason it is checked rather than guessed.
 **Not needed on Cloudflare** — the sweep is a cron trigger on the Worker itself, so nothing crosses
 the network and there is nothing to authenticate. See [The scheduler](/operate/scheduler/).
 
+## Log retention
+
+| | |
+|---|---|
+| `TAPROOT_SEARCH_LOG_RETENTION_DAYS` | Days of search history kept |
+| `TAPROOT_AUDIT_LOG_RETENTION_DAYS` | Days of audit entries kept |
+
+Whole days, above zero. Applied by the same timer that publishes scheduled content, so on Cloudflare
+there is nothing else to set up.
+
+**Unset means kept forever.** That is what every deployment did before these existed, and upgrading
+Taproot must not silently begin deleting a deployment's history — so nothing is purged until you ask
+for it.
+
+Two settings rather than one, because they answer different questions. An audit log is often kept
+because somebody will eventually need to reconstruct who changed what, sometimes to satisfy a
+policy; a search log is a content report whose value decays in weeks. One shared number forces the
+answer that suits the audit log onto search terms nobody needs that long.
+
+A value that is not a whole number of days **disables that log's purge and is reported on Settings →
+System**. It is not guessed at and it does not stop the CMS: a typo in a housekeeping setting should
+not take a site down, and it must not quietly leave an operator believing purging is happening while
+the table grows. Settings → System also shows the oldest surviving entry in each log, which is the
+evidence that a sweep is actually reaching it.
+
+The first sweep after switching retention on may have a large backlog. It is removed in batches
+across successive runs rather than in one statement, so nothing needs doing by hand — Settings →
+System simply shows the oldest entry catching up.
+
 ## Remote D1 migrations
 
 | | |
