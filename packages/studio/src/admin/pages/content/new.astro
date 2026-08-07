@@ -8,7 +8,8 @@ import {
   reusableBlockOptionsForFields,
 } from '../../blockTypeOptions.js';
 import { findImage, mediaOptions } from '../../mediaOptions.js';
-import { getContentType, listContentTypes, listItemSummaries } from '@taprootcms/core';
+import { parentCandidates } from '../../parentOptions.js';
+import { getContentType, listContentTypes } from '@taprootcms/core';
 import {
   getTaproot,
   loginRedirect,
@@ -27,14 +28,7 @@ const selectedId = Astro.url.searchParams.get('type');
 // Pick a type first if one was not chosen; the editor cannot render fields without it.
 const contentType = selectedId ? await getContentType(taproot.db.db, selectedId) : undefined;
 
-let parents: { id: string; title: string; path: string }[] = [];
-if (contentType?.kind === 'page') {
-  const { items } = await listItemSummaries(taproot.db.db, {
-    contentTypeId: contentType.id,
-    limit: 200,
-  });
-  parents = items.map((item) => ({ id: item.id, title: item.title, path: item.path }));
-}
+const parents = contentType ? await parentCandidates(taproot.db.db, contentType) : [];
 
 // Before the two resolvers below, which read them: a relation or taxonomy field can live inside a
 // block type, and neither can see one without knowing which block types exist.

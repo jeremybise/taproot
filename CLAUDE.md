@@ -79,6 +79,33 @@ The status filter is faceted: `countItemsByStatus` applies every filter **except
 count answers "what would I get if I switched to this?" rather than restating the rows already on
 screen. `status` is excluded from its parameter type rather than by convention.
 
+**A `page`'s parent need not share its content type, and the picker is the only thing that ever
+said otherwise.** Core has always allowed it — `createItem` looks the parent up by id and checks
+that it exists, and `resolveItemPath`, the breadcrumb walk and the cascading path rewrite are all
+indifferent to which type a parent belongs to. Both editor screens nonetheless asked
+`listItemSummaries` for `{ contentTypeId: contentType.id }`, so a tree spanning several types —
+Program under Program Group under Program Category, which is one hierarchy and three schemas —
+could be written and then not expressed by the admin at all. Four things worth keeping:
+- **It was a display bug, not a save bug, which is why it survived.** `ItemEditor` holds the real
+  `parentId` in state, so an untouched save still wrote the right value and nothing ever errored. A
+  controlled `<select>` whose `value` matches no `<option>` simply renders blank — so a correctly
+  nested item looked parentless, and every option on offer would have moved it somewhere wrong,
+  rewriting every descendant's URL and writing redirects on the way.
+- **The query lives in [parentOptions.ts](packages/studio/src/admin/parentOptions.ts), not in the
+  `.astro` files.** The ambient shim in `astro-modules.d.ts` makes an `.astro` import resolve and
+  does **not** check the file's contents, so logic left inline in one is logic no suite can reach —
+  which is exactly how this drifted from what `createItem` allows. Same extraction as `fieldTree.ts`
+  and `status.ts`.
+- **`<optgroup>` by content type, in sidebar order.** Once the candidate set is every page-kind item,
+  a flat list of paths stops being readable — and the plain `page` type's picker, the one most
+  people use, would silently become a list of everything. Grouping needs contiguity, which is why
+  `parentCandidates` sorts by type **stably**: `listItemSummaries` defaults to ordering by `path`,
+  and that ordering inside each group is what still makes a group read as a tree.
+- **The cap is 500 and truncation is the failure to fear.** A silently missing parent is the same
+  bug one size along — it exists, it cannot be chosen, and nothing on screen says why. A `<select>`
+  is past pleasant well before 500; the answer beyond that is a searchable control on
+  `RelationField`'s pattern, not a smaller number.
+
 **Nothing in the CMS assumes a particular kind of site.** The demo is a college; the CMS must work
 for anyone. Content types, taxonomies, and menus are all user-defined, and a site with none of them
 must still render every admin screen without erroring.

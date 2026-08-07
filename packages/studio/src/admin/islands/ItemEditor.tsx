@@ -17,6 +17,7 @@ import AccessibilityPanel from './AccessibilityPanel.js';
 import PreviewPane from './PreviewPane.js';
 import SeoPanel from './SeoPanel.js';
 import type { MediaOption } from '../mediaOptions.js';
+import type { ParentOption } from '../parentOptions.js';
 import type { RelationTarget } from '../relationOptions.js';
 import { STATUS_META } from '../status.js';
 import { useDismissable } from './useDismissable.js';
@@ -47,8 +48,14 @@ interface Props {
     data: Record<string, unknown>;
     seo: SeoData;
   };
-  /** Candidate parents for hierarchical types. Empty for collections and singletons. */
-  parents: { id: string; title: string; path: string }[];
+  /**
+   * Candidate parents for hierarchical types. Empty for collections and singletons.
+   *
+   * Grouped by `typeName` in sidebar order — a parent need not share this item's content type, so
+   * on a nested site this is every page-kind item and a flat list stops being readable. See
+   * `parentOptions.ts` for why the picker used to be narrowed to one type and what that broke.
+   */
+  parents: ParentOption[];
   /** Selectable terms for any taxonomy fields, keyed by taxonomy id. Resolved server-side. */
   termsByTaxonomy?: Record<string, TermOption[]>;
   relationTargets?: Record<string, RelationTarget>;
@@ -123,6 +130,26 @@ interface Props {
    * no revisions, nothing linking to it and nothing to delete.
    */
   actions?: { previewable: boolean; showReferences: boolean; showDelete: boolean } | null;
+}
+
+/**
+ * Contiguous runs of one content type, for the parent picker's `<optgroup>`s.
+ *
+ * A walk rather than a bucketing, because `parentCandidates` has already sorted the list so each
+ * type's options sit together — and bucketing would throw away the path ordering *within* a type
+ * that its stable sort exists to preserve. `<optgroup>` requires contiguity anyway, so trusting the
+ * incoming order and asserting it here are the same thing.
+ */
+function groupByType(parents: ParentOption[]): { typeName: string; parents: ParentOption[] }[] {
+  const groups: { typeName: string; parents: ParentOption[] }[] = [];
+
+  for (const parent of parents) {
+    const current = groups.at(-1);
+    if (current && current.typeName === parent.typeName) current.parents.push(parent);
+    else groups.push({ typeName: parent.typeName, parents: [parent] });
+  }
+
+  return groups;
 }
 
 export default function ItemEditor({
@@ -779,10 +806,14 @@ export default function ItemEditor({
                 className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
               >
                 <option value="">— Top level —</option>
-                {parents.map((parent) => (
-                  <option key={parent.id} value={parent.id}>
-                    {parent.path}
-                  </option>
+                {groupByType(parents).map((group) => (
+                  <optgroup key={group.parents[0]!.id} label={group.typeName}>
+                    {group.parents.map((parent) => (
+                      <option key={parent.id} value={parent.id}>
+                        {parent.path}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <p className="mt-1.5 text-xs text-content-subtle">

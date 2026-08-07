@@ -12,6 +12,7 @@ import {
   reusableBlockOptionsForFields,
 } from '../../blockTypeOptions.js';
 import { findImage, mediaOptions, referencedMediaOptions } from '../../mediaOptions.js';
+import { parentCandidates } from '../../parentOptions.js';
 import ReleaseBadge from '../../components/ReleaseBadge.astro';
 import {
   getContentType,
@@ -19,7 +20,6 @@ import {
   getRelease,
   getStagedItem,
   itemDeleteImpact,
-  listItemSummaries,
   openReleasesForItem,
   previewPathFor,
   typeHasItemPages,
@@ -46,15 +46,7 @@ if (!item) return new Response('Content item not found', { status: 404 });
 const contentType = await getContentType(taproot.db.db, item.content_type_id);
 if (!contentType) return new Response('Content type not found', { status: 404 });
 
-let parents: { id: string; title: string; path: string }[] = [];
-if (contentType.kind === 'page') {
-  const { items } = await listItemSummaries(taproot.db.db, { contentTypeId: contentType.id, limit: 200 });
-  // An item cannot be its own parent, and cannot be moved under its own descendants — the server
-  // rejects that too, but filtering here keeps the invalid option out of the menu entirely.
-  parents = items
-    .filter((candidate) => candidate.id !== item.id && !candidate.path.startsWith(`${item.path}/`))
-    .map((candidate) => ({ id: candidate.id, title: candidate.title, path: candidate.path }));
-}
+const parents = await parentCandidates(taproot.db.db, contentType, item);
 
 /**
  * Release mode: `?release=` swaps which version of this item the editor is editing.
