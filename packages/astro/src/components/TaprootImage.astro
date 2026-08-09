@@ -35,8 +35,27 @@ interface Props {
    * by the id sitting in the field's value, so a gallery costs one lookup per image and no requests.
    */
   asset: DeliveryMedia;
-  /** Width ÷ height. `16 / 9`, `1`, `1200 / 630`. */
-  ratio: number;
+  /**
+   * Width ÷ height. `16 / 9`, `1`, `1200 / 630`. **Omit it when the box has no ratio to give.**
+   *
+   * With a ratio this component owns its wrapper, resolves the crop rectangle against it, and
+   * guarantees the box and the rectangle agree — which is the precondition the whole crop
+   * calculation rests on.
+   *
+   * Without one it renders a **bare `<img>` for the caller to place**, and the only thing that
+   * survives is the focal point, applied as `object-position`. That is not a lesser mode, it is the
+   * honest answer for a container whose shape is decided at runtime: a page-title band is `min-h`
+   * plus however tall the heading and breadcrumbs turn out to be, and a call-to-action is padding
+   * plus its copy, so both change shape with the viewport *and* with the content. Forcing a ratio
+   * on either would letterbox the photograph or push the text out of its own section.
+   *
+   * The reason this mode has to exist here rather than in each site's own helper is that the three
+   * call sites which reached for a plain `<img>` to escape the ratio gave up every *other* thing
+   * this component does on the way out — measured on production as a 170 KB original arriving as
+   * the LCP element where a WebP candidate was 76 KB. Skipping the crop is a good reason to skip
+   * the crop; it was never a reason to skip the resize.
+   */
+  ratio?: number;
   /**
    * Overrides the asset's own alt text.
    *
@@ -62,15 +81,16 @@ interface Props {
   /**
    * How wide this image's **container** is at each breakpoint — an ordinary `sizes` list.
    *
-   * Describe the box you placed, not the `<img>` inside it. The element is deliberately larger than
-   * its container (it is scaled up so the crop rectangle fills the frame), and this component knows
-   * that factor while the caller should not have to: `sizes` is rescaled on the way out. Getting it
-   * the other way round is how responsive images end up one breakpoint too soft on exactly the
-   * layouts that needed them.
+   * Describe the box you placed, not the `<img>` inside it. Under a `'css'` crop the element is
+   * deliberately larger than its container (it is scaled up so the crop rectangle fills the frame),
+   * and this component knows that factor while the caller should not have to: `sizes` is rescaled on
+   * the way out. Getting it the other way round is how responsive images end up one breakpoint too
+   * soft on exactly the layouts that needed them.
    *
-   * The default assumes full width, which is right for a hero and too generous for a half-width
-   * card — passing something like `"(min-width: 1024px) 50vw, 100vw"` is the single highest-value
-   * thing a caller can do here.
+   * The default assumes full width, which is right for a hero and **wrong for anything small** —
+   * a 96px icon left on `100vw` will fetch the largest candidate on the ladder. Passing something
+   * like `"(min-width: 1024px) 50vw, 100vw"`, or a flat `"96px"`, is the single highest-value thing
+   * a caller can do here.
    */
   sizes?: string;
   /**
@@ -80,16 +100,25 @@ interface Props {
    */
   widths?: number[];
   /**
-   * Re-encode to this format. `'original'` keeps whatever was uploaded.
+   * Which encodings to offer.
    *
-   * WebP by default because it is universally supported and typically halves a photograph, and
-   * because the alternative — `'original'` — means a PNG screenshot an editor dragged in is served
-   * to every visitor as a PNG. A deployment that cannot transform ignores the parameter and serves
-   * the original, so this is never a correctness risk, only a size one.
+   * `'auto'` is the default and emits **AVIF with a WebP fallback**, through a `<picture>` whose
+   * sources each name exactly one format. AVIF measured 22–25% under WebP on every asset tested
+   * here, and WebP behind it means nothing is lost on a browser that cannot decode it — which is
+   * the whole reason this is not simply a changed default. Naming a single format explicitly
+   * (`'webp'`, `'avif'`, …) emits one `<img>` and no `<picture>`; `'original'` keeps whatever was
+   * uploaded, and still resizes.
+   *
+   * **This is not the `f=auto` URL parameter that `imageVariants.ts` rejects, and the difference is
+   * the whole point.** That would have meant one URL whose bytes depend on a request header, stored
+   * in a shared cache that honours `Vary` for `Accept-Encoding` alone — the first visitor's format
+   * served to everyone behind them. Here every candidate URL carries its own `f=`, so every one is
+   * its own cache key and nothing varies by header; the *browser* picks from `type` attributes it
+   * can see, before it makes a request at all.
    */
-  format?: MediaVariantFormat | 'original';
+  format?: MediaVariantFormat | 'original' | 'auto';
   /**
-   * Where the crop happens.
+   * Where the crop happens. Meaningless without a `ratio`, since there is no rectangle to resolve.
    *
    * `'css'` is the default and ships the whole frame, scaling the `<img>` up so the resolved
    * rectangle fills the box. It is correct on any deployment, including one that cannot transform
@@ -105,6 +134,14 @@ interface Props {
    * approximately-right framing rather than the wrong picture — but the crop stops being exact.
    */
   crop?: 'css' | 'server';
+  /**
+   * Classes for the element this renders.
+   *
+   * With a `ratio` that is the **wrapper**, because the wrapper is the box and the `<img>` inside it
+   * is positioned by arithmetic this component owns. Without one there is no wrapper and these land
+   * on the `<img>` itself, which is what lets a caller supply `object-cover` or `object-contain` —
+   * a decision this component deliberately does not make in that mode.
+   */
   class?: string;
 }
 
@@ -116,7 +153,7 @@ const {
   fetchpriority,
   sizes = '100vw',
   widths,
-  format = 'webp',
+  format = 'auto',
   crop = 'css',
   class: className,
 } = Astro.props;
@@ -138,42 +175,61 @@ const source = {
   crop_left: asset.crop?.left ?? null,
 };
 
-const rect = resolveCrop(source, ratio);
-const serverCropped = crop === 'server';
+/** A ratio is what lets this component own a box; without one the caller already owns it. */
+const framed = typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0;
+
+const rect = framed ? resolveCrop(source, ratio as number) : undefined;
+const serverCropped = framed && crop === 'server';
 
 /**
  * Responsive candidates, and the one piece of arithmetic that makes them correct.
  *
  * A `w` descriptor is the candidate's real width, and the browser compares it against the width the
- * `<img>` **element** will occupy — which here is not the container. The element is blown up by
- * `1 / rect.width` so the crop rectangle fills the frame, so a box laid out at 640 CSS px holds an
- * `<img>` laid out at `640 × scale`. Handing the browser the container's `sizes` unmodified would
- * have it shop for a 640px image and paint it across an element wider than that: every cropped
- * image on the site one rung too soft, on exactly the layouts where the crop was doing the most
- * work. So the caller describes the container, which is what they can see, and the factor is
- * applied here, where it is known.
+ * `<img>` **element** will occupy — which under a `'css'` crop is not the container. The element is
+ * blown up by `1 / rect.width` so the crop rectangle fills the frame, so a box laid out at 640 CSS
+ * px holds an `<img>` laid out at `640 × scale`. Handing the browser the container's `sizes`
+ * unmodified would have it shop for a 640px image and paint it across an element wider than that:
+ * every cropped image on the site one rung too soft, on exactly the layouts where the crop was doing
+ * the most work. So the caller describes the container, which is what they can see, and the factor
+ * is applied here, where it is known.
  *
- * `src` is the largest candidate rather than `asset.url`: any browser old enough to ignore `srcset`
- * would otherwise be the only one still downloading the full-size original.
+ * Unframed and server-cropped both land on 1 — in the first case because the element *is* the
+ * container, in the second because the delivered file already is the rectangle.
  */
-const scale = serverCropped || rect.width <= 0 ? 1 : 1 / rect.width;
+const scale = !framed || serverCropped || (rect as { width: number }).width <= 0
+  ? 1
+  : 1 / (rect as { width: number }).width;
 
 /**
  * The ladder is capped by what the delivered file actually contains.
  *
- * Under `'css'` a candidate is a width of the whole source, so the source's width is the ceiling.
- * Under `'server'` it is a width of the **crop**, which is narrower — asking for 1536 of a
- * rectangle only 800 source pixels wide is an upscale the resizer will decline, leaving candidates
- * the browser can pick and gain nothing from.
+ * Under `'css'`, and with no ratio at all, a candidate is a width of the whole source, so the
+ * source's width is the ceiling. Under `'server'` it is a width of the **crop**, which is narrower —
+ * asking for 1536 of a rectangle only 800 source pixels wide is an upscale the resizer will decline,
+ * leaving candidates the browser can pick and gain nothing from.
  */
 const ladderCeiling =
-  serverCropped && asset.width !== null ? Math.round(asset.width * rect.width) : asset.width;
+  serverCropped && asset.width !== null
+    ? Math.round(asset.width * (rect as { width: number }).width)
+    : asset.width;
 
 const candidateWidths = widths ?? variantWidthsFor(ladderCeiling);
-const variantFormat = format === 'original' ? undefined : format;
 const variantRatio = serverCropped ? ratio : undefined;
 
-const srcset =
+/**
+ * The format actually written into each URL, and the optional upgrade offered above it.
+ *
+ * `'original'` sends no `f=` at all, which is a request to resize and re-encode in the source's own
+ * type. That reads as the conservative choice and was for a long time the *least* optimised one:
+ * the media route's binding rejects an output naming no format, and `resizeImage` catches every
+ * failure and serves the stored bytes — so `'original'` quietly opted out of the resize as well.
+ * Fixed in core rather than worked around here, because a hand-built `?w=` URL had the same hole.
+ */
+const upgradeFormat: MediaVariantFormat | undefined = format === 'auto' ? 'avif' : undefined;
+const baseFormat: MediaVariantFormat | undefined =
+  format === 'auto' ? 'webp' : format === 'original' ? undefined : format;
+
+const srcsetFor = (variantFormat: MediaVariantFormat | undefined) =>
   candidateWidths.length > 0
     ? candidateWidths
         .map(
@@ -183,11 +239,18 @@ const srcset =
         .join(', ')
     : undefined;
 
+const srcset = srcsetFor(baseFormat);
+const upgradeSrcset = upgradeFormat ? srcsetFor(upgradeFormat) : undefined;
+
+/**
+ * `src` is the largest candidate rather than `asset.url`: any browser old enough to ignore `srcset`
+ * would otherwise be the only one still downloading the full-size original.
+ */
 const src = srcset
   ? mediaVariantUrl(asset.url, {
       width: candidateWidths[candidateWidths.length - 1],
       ratio: variantRatio,
-      format: variantFormat,
+      format: baseFormat,
     })
   : asset.url;
 
@@ -198,10 +261,11 @@ const src = srcset
  * space, scaling only its final term into valid CSS computing the wrong number. Untestable inside
  * an `.astro` file; pinned by six cases beside it.
  *
- * Under `'server'` the element *is* the container, so there is nothing to bridge and the caller's
- * `sizes` is emitted exactly as written. That is the quiet second win of cropping server-side.
+ * Under `'server'`, and with no ratio, the element *is* the container, so there is nothing to bridge
+ * and the caller's `sizes` is emitted exactly as written.
  */
 const elementSizes = scaleSizes(sizes, scale);
+const emittedSizes = srcset ? elementSizes : undefined;
 
 /**
  * `cover` plus the focal point, which is the fallback rather than the mechanism.
@@ -211,10 +275,16 @@ const elementSizes = scaleSizes(sizes, scale);
  * reasons `resizeImage` swallows, the original arrives instead and this frames it on its hotspot.
  * So a deployment that cannot transform gets an approximate crop rather than a wrong one, which is
  * what makes this mode safe to offer at all.
+ *
+ * Unframed, it is the only spatial statement available and core's `coverPosition` says why: a crop
+ * cannot be expressed by `object-position`, so the region the editor kept is centred and a hotspot
+ * outranks that centre. **No `object-fit` is set in that mode** — `cover` and `contain` are both
+ * right for different callers, and a component that cannot see the box must not choose.
  */
-const frame = serverCropped
-  ? `object-position:${coverPosition(source)}`
-  : cropFrame(rect);
+const frame =
+  framed && !serverCropped
+    ? cropFrame(rect as Parameters<typeof cropFrame>[0])
+    : `object-position:${coverPosition(source)}`;
 
 /**
  * Alt text comes from the library, where it is authored once and reused everywhere the asset
@@ -225,22 +295,61 @@ const frame = serverCropped
 const altText = alt ?? asset.alt ?? '';
 ---
 
-<div
-  class:list={['taproot-image', className]}
-  data-crop={serverCropped ? 'server' : undefined}
-  style={`--taproot-image-ratio:${ratio}`}
->
-  <img
-    src={src}
-    srcset={srcset}
-    sizes={srcset ? elementSizes : undefined}
-    alt={altText}
-    loading={loading}
-    fetchpriority={fetchpriority}
-    decoding="async"
-    style={frame}
-  />
-</div>
+{
+  /*
+   * Two shapes, and the split is which side owns the box.
+   *
+   * Framed: the wrapper carries the ratio and the `<img>` is positioned inside it by the resolved
+   * rectangle, so the caller's classes belong on the wrapper. Unframed: there is no box to own, so
+   * this is a bare `<img>` the caller places, and the classes belong on it.
+   *
+   * `<picture>` is `display: contents` in both, so adding it changed no layout anywhere. It exists
+   * only to let the browser choose an encoding from `type`, and an inline box left in flow around
+   * an absolutely-positioned `<img>` would still contribute a line box to whatever contains it.
+   */
+  framed ? (
+    <div
+      class:list={['taproot-image', className]}
+      data-crop={serverCropped ? 'server' : undefined}
+      style={`--taproot-image-ratio:${ratio}`}
+    >
+      <picture style="display:contents">
+        {upgradeSrcset && <source type="image/avif" srcset={upgradeSrcset} sizes={emittedSizes} />}
+        <img
+          src={src}
+          srcset={srcset}
+          sizes={emittedSizes}
+          alt={altText}
+          loading={loading}
+          fetchpriority={fetchpriority}
+          decoding="async"
+          style={frame}
+        />
+      </picture>
+    </div>
+  ) : (
+    <picture style="display:contents">
+      {upgradeSrcset && <source type="image/avif" srcset={upgradeSrcset} sizes={emittedSizes} />}
+      <img
+        class={className}
+        src={src}
+        srcset={srcset}
+        sizes={emittedSizes}
+        alt={altText}
+        /*
+         * Intrinsic dimensions, so the row does not reflow when the image lands. The framed branch
+         * needs none: its wrapper carries `aspect-ratio`, which reserves the space already.
+         */
+        width={asset.width ?? undefined}
+        height={asset.height ?? undefined}
+        loading={loading}
+        fetchpriority={fetchpriority}
+        decoding="async"
+        style={frame}
+      />
+    </picture>
+  )
+}
 
 <style>
   .taproot-image {

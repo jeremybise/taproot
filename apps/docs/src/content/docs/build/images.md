@@ -43,15 +43,15 @@ const asset = media[item.data.hero_image];
 | Prop | |
 |---|---|
 | `asset` | An entry from the media map |
-| `ratio` | Width ÷ height — `16 / 9`, `1`, `1200 / 630` |
+| `ratio` | Width ÷ height — `16 / 9`, `1`, `1200 / 630`. **Omit it** when the box has no fixed shape — see [when there is no ratio](#when-there-is-no-ratio) |
 | `alt` | Overrides the asset's own alt text. `""` marks it decorative |
 | `sizes` | How wide the **container** is at each breakpoint. Default `'100vw'` |
 | `crop` | `'css'` (default) or `'server'` — see [where the crop happens](#where-the-crop-happens) |
-| `format` | `'webp'` (default), `'avif'`, `'jpeg'`, `'png'`, or `'original'` |
+| `format` | `'auto'` (default — AVIF with a WebP fallback), or one of `'webp'`, `'avif'`, `'jpeg'`, `'png'`, `'original'` |
 | `widths` | Override the offered widths. `[]` emits no `srcset` |
 | `loading` | `'lazy'` (default) or `'eager'` |
 | `fetchpriority` | `'high'` for the one image worth raising — usually the hero |
-| `class` | Applied to the wrapper |
+| `class` | Applied to the wrapper — or to the `<img>` itself when you omit `ratio` |
 
 ### Why this matters
 
@@ -73,6 +73,48 @@ avoids distorting the image if the box carries the same ratio the rectangle was 
 caller imposing its own shape gets the image letterboxed inside a frame it was not cropped for.
 
 Set `width`, `border-radius`, and margins freely — just not the ratio.
+
+If your container genuinely has no fixed shape, **omit `ratio`** rather than inventing one — see
+[when there is no ratio](#when-there-is-no-ratio).
+:::
+
+## When there is no ratio
+
+Some containers are as tall as whatever is laid over them. A page-title band is a minimum height
+plus however tall the heading and breadcrumbs turn out to be; a call-to-action is padding plus its
+copy. Both change shape with the viewport *and* with the content, so there is no ratio to resolve a
+crop rectangle against — and forcing one would either letterbox the photograph or push the text out
+of its own section.
+
+**Omit `ratio`.** You get a bare `<img>` you place yourself, still with the full `srcset`, the format
+handling, and the editor's focal point applied as `object-position`.
+
+```astro
+<div class="relative min-h-64">
+  <TaprootImage
+    asset={asset}
+    alt=""
+    class="absolute inset-0 h-full w-full object-cover"
+    sizes="100vw"
+  />
+  <h1 class="relative">Admissions</h1>
+</div>
+```
+
+Three differences from the framed mode:
+
+- **`class` lands on the `<img>`**, because there is no wrapper — that is the element you are placing.
+- **You choose the `object-fit`.** `cover` for a band, `contain` for a logo. The component will not
+  choose for you, because both are right for different callers.
+- **The crop is approximated, not resolved.** `object-position` can slide the whole image within its
+  container, so it expresses the focal point but not a sub-rectangle — the cropped-away edges are
+  still on screen. It is much closer to what the editor asked for than the browser's default centre.
+
+:::caution
+Reaching for a plain `<img>` to escape the ratio costs you the resize as well. That is worth stating
+plainly because it was measured on a real site: a page-title band shipped a 170 KB original as its
+largest-contentful element where the WebP candidate was 76 KB. Skipping the crop is a good reason to
+skip the crop — it was never a reason to skip everything else.
 :::
 
 ## Sizing images for the visitor
@@ -102,8 +144,13 @@ plus the source's own width when the ladder stops short of it. The ladder is clo
 URL accepting any width is a URL where one crawler mints unbounded transformations against your
 monthly allowance.
 
-**Format defaults to WebP**, which is universally supported and typically halves a photograph. Pass
-`format="original"` to keep what was uploaded. SVG and GIF are never re-encoded — rasterising an SVG
+**Format defaults to `'auto'`, which offers AVIF with a WebP fallback.** The component emits a
+`<picture>` whose sources each name one format, so the browser takes AVIF where it can decode it —
+typically another 20–25% off an already-WebP-sized file — and WebP everywhere else. Nothing is
+negotiated from a request header, so every URL stays its own cache entry.
+
+Name a single format (`format="webp"`) to emit one plain `<img>` instead, or `format="original"` to
+keep whatever was uploaded — that still resizes. SVG and GIF are never re-encoded: rasterising an SVG
 throws away the thing it is good at, and resizing a GIF flattens the animation to its first frame.
 
 ## Where the crop happens

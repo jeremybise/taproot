@@ -13,11 +13,22 @@ function fakeBinding(): ImagesBindingLike & { calls: { transform: unknown[]; out
       calls.transform.push(options);
       return transformer;
     },
-    async output(options: unknown) {
+    async output(options: { format?: string; quality?: number }) {
       calls.output.push(options);
+      /**
+       * The real binding **rejects an output carrying no format**, and a fake that accepted one is
+       * exactly how a width-only variant shipped serving full-size originals while this suite
+       * stayed green — `?w=320` answered 170 KB of untouched JPEG in production against 8.7 KB for
+       * the same URL with `f=jpeg` on it.
+       *
+       * Same move as `d1.test.ts` refusing PRAGMA the way D1 does and a real SQLite never will: a
+       * fake earns its keep by modelling the part of the contract that actually bites, not the
+       * happy path the caller already believes in.
+       */
+      if (!options.format) throw new Error('output(): format is required');
       return {
         image: () => new ReadableStream(),
-        contentType: () => 'image/webp',
+        contentType: () => options.format as string,
       };
     },
   };
@@ -45,6 +56,37 @@ describe('resizeImage', () => {
     await resizeImage(images, BYTES, 'image/jpeg', { width: 1920 });
 
     expect(images.calls.transform).toEqual([{ width: 1920, fit: 'scale-down' }]);
+  });
+
+  /**
+   * A resize-only request re-encodes in the source's own format, and the format has to be *named*
+   * for that to happen at all.
+   *
+   * This is the regression, and its shape is the reason it survived: the fallback for a rejected
+   * transform is a correct picture, so the site looked right, every test passed, and the only
+   * symptom was weight. `TaprootImage`'s `format="original"` is the call site that reads most
+   * naturally as "resize but keep the type" and was in fact opting out of the resize too.
+   */
+  it('names the source format when the variant asked only to be made smaller', async () => {
+    const images = fakeBinding();
+    const result = await resizeImage(images, BYTES, 'image/jpeg', { width: 640 });
+
+    expect(result?.contentType).toBe('image/jpeg');
+    expect(images.calls.output).toEqual([{ quality: 82, format: 'image/jpeg' }]);
+  });
+
+  /** The same hole one axis along: a crop with no width and no format is still a transform. */
+  it('names the source format for a crop-only variant', async () => {
+    const images = fakeBinding();
+    const result = await resizeImage(images, BYTES, 'image/png', { ratio: 1.78 }, {
+      width: 1600,
+      height: 852,
+      hotspot_x: 0.5,
+      hotspot_y: 0.5,
+    });
+
+    expect(result?.contentType).toBe('image/png');
+    expect(images.calls.output).toEqual([{ quality: 82, format: 'image/png' }]);
   });
 
   /**

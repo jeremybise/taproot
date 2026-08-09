@@ -1380,11 +1380,23 @@ many), *Block*, *Reusable Block*, *Content Type*.
     wrapper on purpose**: the maths only avoids distorting the image if the box carries the same
     ratio the rectangle was resolved for, so a caller setting its own `aspect-ratio` would
     letterboxed the image inside a frame it was not cropped for.
+  - **`ratio` is optional, and without one the component renders a bare `<img>` it does not own.**
+    The wrapper exists to guarantee the box and the rectangle agree; where there is no ratio there is
+    no rectangle, so there is nothing to guarantee and a wrapper would only fight the caller's
+    layout. What survives is the focal point as `object-position`, which is what core's
+    `coverPosition` was already written for — its docstring names this exact case, "a band as tall as
+    the text over it". The mode exists because the alternative was observed: a page-title band and a
+    call-to-action are `min-h` plus however tall their copy turns out, so both reached for a plain
+    `<img>` to escape the ratio and gave up the **resize** on the way out, shipping a 170 KB original
+    as the LCP element where a candidate was 76 KB. Skipping the crop was never a reason to skip the
+    resize. Two consequences: `class` lands on the `<img>` rather than the wrapper, since that is the
+    only element there is; and **no `object-fit` is set**, because `cover` and `contain` are both
+    right for different callers and a component that cannot see the box must not choose.
 - **The media route resizes, and `imageVariants.ts` is the vocabulary both sides spell.** It lives
   where `pure.ts` re-exports it for the reason `cacheTags.ts` does: the consumer builds `?w=`/`?ar=`
   /`?f=` and the route parses them, and a disagreement is **silent** — every visitor served the
-  full-size original while the page looks right and every test passes. Seven things hold it up, and
-  four of them were bugs first:
+  full-size original while the page looks right and every test passes. Nine things hold it up, and
+  six of them were bugs first:
   - **The width ladder is closed and the ratio is quantised, as cost control rather than taste.**
     Cloudflare bills a unique transformation per image per parameter set against 5,000 free a month,
     so a URL taking any integer or any float is a URL where one crawler burns the allowance and
@@ -1405,6 +1417,29 @@ many), *Block*, *Reusable Block*, *Content Type*.
     wide, about one byte per pixel against the source's 0.23. Nothing errors and the picture looks
     right, so it is invisible without weighing bytes — it shipped in three releases. Set whether or
     not a format was named, because a resize alone re-encodes in the source's own format.
+  - **The output must always *name* a format, and letting it mean "the source's own" was a bug.**
+    The binding **rejects** an `output()` carrying no `format`, and `resizeImage` catches every
+    failure and serves the stored bytes — so every variant that asked only to be resized answered
+    the full-size original. Measured on production: `?w=320` returned 170 KB of untouched JPEG where
+    `?w=320&f=jpeg` returned 8.7 KB, and `?ar=1.78` the same against 60 KB. This is the
+    `OUTPUT_QUALITY` trap one step along, and it is worth seeing they are the same shape — correct
+    picture, wrong weight, nothing thrown, nothing logged where a page view could show it, and only
+    weighing bytes finds either. `isResizable` has already narrowed the source to the four the
+    binding encodes, so `sourceMimeType` is always a valid answer. `TaprootImage`'s
+    `format="original"` was the call site that suffered, and it reads as "resize but keep the type"
+    rather than "opt out of the feature". The fake in `images.test.ts` now **rejects a format-less
+    output the way the real binding does**; it accepted one before, which is exactly why a suite
+    already containing a width-only test stayed green through the whole thing. Same lesson as
+    `d1.test.ts` refusing PRAGMA the way D1 does and a real SQLite never will.
+  - **AVIF ships through `<picture>`, and that is not the `f=auto` this file rejects.** AVIF measured
+    22–25% under WebP on every asset tested, but a format *negotiated from `Accept`* is the
+    admin-HTML cache leak one level down. A `<picture>` has neither problem: each `<source>` names
+    one format in its own URL, so each is its own cache key and nothing varies by request header —
+    the **browser** chooses from `type` attributes before it makes a request at all. WebP stays on
+    the `<img>` behind it, which is what makes this an upgrade rather than a bet on decoder support.
+    The element is `display: contents` in both of the component's modes, or an inline box left in
+    flow around an absolutely-positioned `<img>` would contribute a line box to whatever contains
+    it.
   - **`resizeImage` fails open, always.** No binding, an unresizable type, an allowance reached, a
     throw — every one serves the stored original. That is what makes the whole feature safe on Node
     and on any Worker without the binding: heavier pages, never broken ones. SVG and GIF stay on the

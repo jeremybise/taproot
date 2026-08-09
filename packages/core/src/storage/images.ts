@@ -116,13 +116,28 @@ export async function resizeImage(
     }
 
     /**
-     * Quality is set whether or not a format was named. A resize alone re-encodes in the source's
-     * own format, so leaving it off there would inflate exactly the requests that asked only to be
-     * made smaller.
+     * Both keys are always sent, and `format` being unconditional is the load-bearing half.
+     *
+     * **The binding rejects an `output()` carrying no `format`, and the `catch` below turns that
+     * into "serve the original".** So every variant that named a width but no format — `?w=320`,
+     * `?ar=1.78` — answered the full-size source, and did it silently: measured in production at
+     * 170 KB of untouched JPEG against 8.7 KB for the same request with `f=jpeg` on the end. There
+     * is no failure to see from the outside, because the fallback is a correct picture; only
+     * weighing the bytes shows it. `TaprootImage`'s `format="original"` is the call site that
+     * suffered, and it is documented as "keeps whatever was uploaded" — which is what a caller
+     * reasonably reads as "resize but do not re-encode", not "opt out of the feature entirely".
+     *
+     * Naming the source's own type is what such a request meant all along, and it is always a type
+     * the binding can encode: `isResizable` has already narrowed `sourceMimeType` to the four in
+     * `RESIZABLE`, so there is no branch where this passes something unsupported.
+     *
+     * Quality is set for the reason it always was: a resize alone re-encodes in the source's own
+     * format, so leaving it off would inflate exactly the requests that asked only to be made
+     * smaller.
      */
     const result = await pipeline.output({
       quality: OUTPUT_QUALITY,
-      ...(variant.format ? { format: OUTPUT_MIME[variant.format] } : {}),
+      format: variant.format ? OUTPUT_MIME[variant.format] : sourceMimeType,
     });
 
     return { bytes: result.image(), contentType: result.contentType() };
