@@ -29,6 +29,19 @@ export const MEDIA_VARIANT_FORMAT = 'f';
 export const MEDIA_VARIANT_RATIO = 'ar';
 
 /**
+ * A stamp of the hotspot and crop the variant was cropped against. Only meaningful beside `ar`.
+ *
+ * **Purely a cache key — `parseMediaVariant` deliberately does not read it.** The route resolves the
+ * rectangle from the `media` row it is already loading, so the stamp changes nothing about the bytes
+ * it produces; what it changes is the *address* those bytes live at. Without it, `?ar=` responses
+ * carried `immutable` for a year while their content depended on columns an editor edits, so a moved
+ * focal point left the old crop cached with nothing able to clear it: the route emits no `cache-tag`
+ * to purge by, and no purge reaches a browser cache regardless. `cropStamp` in `imageCrop.ts`
+ * computes it and says more about why.
+ */
+export const MEDIA_VARIANT_STAMP = 'c';
+
+/**
  * The width ladder, and the only widths the route will ever produce.
  *
  * **A fixed ladder is a cost control, not a style preference.** Cloudflare bills a *unique
@@ -60,6 +73,14 @@ export interface MediaVariant {
   format?: MediaVariantFormat;
   /** Width ÷ height. Quantised by `parseMediaVariant`; see `RATIO_STEPS`. */
   ratio?: number;
+  /**
+   * Cache-busting stamp of the crop this was resolved against — `cropStamp(asset)`.
+   *
+   * Set it only alongside `ratio`: a plain `?w=` variant depends on the stored bytes alone, which a
+   * storage key already identifies, so stamping one would re-mint every uncropped image on the site
+   * to fix a staleness it cannot have.
+   */
+  stamp?: string;
 }
 
 /**
@@ -105,6 +126,14 @@ export function mediaVariantUrl(url: string, variant: MediaVariant): string {
     if (ratio !== undefined) params.push(`${MEDIA_VARIANT_RATIO}=${ratio}`);
   }
   if (variant.format !== undefined) params.push(`${MEDIA_VARIANT_FORMAT}=${variant.format}`);
+  /*
+   * Last, and only when a ratio came with it. Alone it would change an address without changing the
+   * bytes at it, which is a cache entry bought for nothing; `MediaVariant.stamp` says why an
+   * uncropped variant has no staleness to fix.
+   */
+  if (variant.stamp !== undefined && variant.ratio !== undefined) {
+    params.push(`${MEDIA_VARIANT_STAMP}=${variant.stamp}`);
+  }
   if (params.length === 0) return url;
 
   return `${url}${url.includes('?') ? '&' : '?'}${params.join('&')}`;

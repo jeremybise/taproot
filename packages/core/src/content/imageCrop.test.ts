@@ -6,6 +6,7 @@ import {
   cropBackground,
   cropOf,
   cropRect,
+  cropStamp,
   hotspotOf,
   cropFrame,
   resolveCrop,
@@ -17,6 +18,52 @@ const landscape = { width: 1600, height: 900 };
 const portrait = { width: 900, height: 1600 };
 
 const round = (value: number, places = 4) => Number(value.toFixed(places));
+
+/**
+ * The stamp is a cache key for a server-cropped variant, and the whole point is that it moves when
+ * the picture does. The media route sends `immutable` for a year on those responses, so a hotspot
+ * change with a stable URL left the old crop cached with nothing able to clear it — the route emits
+ * no `cache-tag`, and no purge reaches a browser regardless.
+ */
+describe('cropStamp', () => {
+  it('is stable for the same stored values', () => {
+    const media = { hotspot_x: 0.25, hotspot_y: 0.75, crop_left: 0.1 };
+    expect(cropStamp(media)).toBe(cropStamp({ ...media }));
+  });
+
+  it('moves when the hotspot moves, which is the entire purpose', () => {
+    expect(cropStamp({ hotspot_x: 0.5, hotspot_y: 0.5 })).not.toBe(
+      cropStamp({ hotspot_x: 0.975, hotspot_y: 0.524 }),
+    );
+  });
+
+  it('moves when the crop moves', () => {
+    expect(cropStamp({ crop_left: 0 })).not.toBe(cropStamp({ crop_left: 0.2 }));
+  });
+
+  /**
+   * Quantised for the reason `RATIO_STEPS` is: a stamp taken from raw floats mints a distinct URL —
+   * a distinct cache entry and a distinct billable transformation — for every pixel an editor
+   * dragged the handle through on the way to where they meant. A thousandth of a 2000px source is
+   * two pixels.
+   */
+  it('ignores a change too small to see', () => {
+    expect(cropStamp({ hotspot_x: 0.5 })).toBe(cropStamp({ hotspot_x: 0.50004 }));
+  });
+
+  /**
+   * Read through the same accessors the rectangle is, so a stored crop the sanity rules discard —
+   * opposite insets summing past 1 — stamps identically to the no-crop it actually resolves to,
+   * rather than minting an address for a rectangle nobody is ever served.
+   */
+  it('stamps a discarded crop as the no-crop it resolves to', () => {
+    expect(cropStamp({ crop_left: 0.7, crop_right: 0.7 })).toBe(cropStamp({}));
+  });
+
+  it('is short enough to sit in a URL without comment', () => {
+    expect(cropStamp({ hotspot_x: 1, hotspot_y: 1, crop_top: 1 }).length).toBeLessThanOrEqual(16);
+  });
+});
 
 describe('reading stored values', () => {
   it('defaults the hotspot to the centre', () => {

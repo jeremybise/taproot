@@ -1,4 +1,4 @@
-import { now } from '@taprootcms/core';
+import { now, SITE_TAG } from '@taprootcms/core';
 import { z } from 'zod';
 
 import { apiError, handle, json, noContent, readJson } from '../_shared.js';
@@ -29,6 +29,23 @@ export const PATCH = handle(
     if (Number(updated.numUpdatedRows ?? 0) === 0) {
       return apiError(404, 'Media asset not found.');
     }
+
+    /**
+     * Media was the only entity whose writes purged nothing at all.
+     *
+     * Every other write route here invalidates — items, content types, fields, menus, reusable
+     * blocks, terms, taxonomies, snippets — and this one did not, so moving a focal point updated
+     * D1 and cleared no cache: the delivery JSON carrying the old hotspot survived its full
+     * `s-maxage` of a day, and the consumer's HTML was never flushed because the purge callback
+     * that flushes it never fired. Observed as an edited hotspot that simply did not appear.
+     *
+     * `SITE_TAG` because there is no reverse index from an asset to the items placing it — a
+     * `media` id sits inside `content_items.data`, reachable only by scanning. Same reason a
+     * taxonomy edit takes the site-wide tag. Note this cannot reach the *variant* responses: they
+     * carry no `cache-tag` and are `immutable` for a year, which is what `cropStamp` addresses by
+     * moving the URL instead.
+     */
+    taproot.invalidate([SITE_TAG]);
 
     return json({ ok: true });
   },
@@ -68,6 +85,9 @@ export const POST = handle(
     await taproot.db.db.deleteFrom('media').where('id', '=', id).execute();
     await taproot.storage.delete(asset.storage_key);
 
+    // A page still placing it now renders without it, which is a visible change to cached HTML.
+    taproot.invalidate([SITE_TAG]);
+
     return context.redirect(
       `/admin/media?${new URLSearchParams({ deleted: asset.filename })}`,
       303,
@@ -90,6 +110,8 @@ export const DELETE = handle(
     // pointing at a deleted object renders as a broken image on the live site.
     await taproot.db.db.deleteFrom('media').where('id', '=', context.params.id!).execute();
     await taproot.storage.delete(asset.storage_key);
+
+    taproot.invalidate([SITE_TAG]);
 
     return noContent();
   },

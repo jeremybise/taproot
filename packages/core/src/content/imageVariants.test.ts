@@ -41,6 +41,31 @@ describe('mediaVariantUrl and parseMediaVariant', () => {
       '/api/taproot/media/file/a.png?w=320',
     );
   });
+
+  /**
+   * The stamp exists to move the *address* when the crop moves, because the route serves `?ar=`
+   * variants `immutable` for a year while their content comes from columns an editor edits. It is
+   * therefore meaningless without a ratio: a plain `?w=` variant depends on the stored bytes alone,
+   * and stamping one would re-mint every uncropped image on a site to fix a staleness it cannot
+   * have.
+   */
+  it('carries the crop stamp only alongside a ratio', () => {
+    expect(mediaVariantUrl('/a.png', { width: 640, ratio: 1.78, stamp: 'abc' })).toBe(
+      '/a.png?w=640&ar=1.78&c=abc',
+    );
+    expect(mediaVariantUrl('/a.png', { width: 640, stamp: 'abc' })).toBe('/a.png?w=640');
+    expect(mediaVariantUrl('/a.png', { stamp: 'abc' })).toBe('/a.png');
+  });
+
+  /**
+   * The route resolves the rectangle from the row it is already loading, so the stamp changes the
+   * cache key and nothing else. Reading it back would be the beginning of a second authority on
+   * what the picture is.
+   */
+  it('is ignored by the route, so a stamp alone is still an identity variant', () => {
+    expect(parse('/a.png?c=abc')).toEqual({});
+    expect(parse('/a.png?w=640&ar=1.78&c=abc')).toEqual({ width: 640, ratio: 1.78 });
+  });
 });
 
 describe('parseMediaVariant', () => {

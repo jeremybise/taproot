@@ -6,6 +6,7 @@ import {
   createTaxonomy,
   createTerm,
   updateItem,
+  SITE_TAG,
   type ContentTypeRow,
   type FieldRow,
   type User,
@@ -23,7 +24,7 @@ import { POST as restorePost } from './items/[id]/revisions/[revisionId]/restore
 import { POST as typeFormPost } from './content-types/[id].js';
 import { POST as redirectPost, GET as redirectsGet } from './redirects/index.js';
 import { POST as redirectItemPost } from './redirects/[id].js';
-import { DELETE as mediaDelete } from './media/[id].js';
+import { DELETE as mediaDelete, PATCH as mediaPatch } from './media/[id].js';
 import { POST as termPost } from './taxonomies/[id]/terms.js';
 
 /**
@@ -545,6 +546,86 @@ describe('media', () => {
     h.as(contributor);
     expect((await mediaDelete(h.context({ params: { id: 'nope' } }))).status).toBe(403);
   });
+
+  /**
+   * Media was the only entity in the admin whose writes purged nothing at all.
+   *
+   * Every other write route declares its tags — items, content types, fields, menus, reusable
+   * blocks, terms, taxonomies, snippets — and this one did not, so an editor moving a focal point
+   * updated the row and cleared no cache: the delivery JSON carrying the old hotspot survived its
+   * full day of `s-maxage`, and the consumer's HTML was never flushed because the callback that
+   * flushes it never fired. Observed on a live site as an edit that simply did not appear.
+   *
+   * `SITE_TAG` because nothing indexes which items place which asset — a media id lives inside
+   * `content_items.data`, reachable only by scanning — which is the same reason a taxonomy edit
+   * takes the site-wide tag.
+   */
+  it('declares a site-wide purge when a hotspot moves', async () => {
+    await seedAsset('m2', '2026/07/x/hotspot.png');
+
+    h.as(contributor);
+    const context = h.context({
+      method: 'PATCH',
+      params: { id: 'm2' },
+      json: { hotspot_x: 0.975, hotspot_y: 0.524 },
+    });
+
+    expect((await mediaPatch(context)).status).toBe(200);
+
+    const invalidated = (context.locals as { taproot: { invalidated: Set<string> } }).taproot
+      .invalidated;
+    expect([...invalidated]).toContain(SITE_TAG);
+  });
+
+  /** Alt text is rendered into every page placing the asset, and read aloud on each of them. */
+  it('declares a site-wide purge when alt text changes', async () => {
+    await seedAsset('m3', '2026/07/x/alt.png');
+
+    h.as(contributor);
+    const context = h.context({
+      method: 'PATCH',
+      params: { id: 'm3' },
+      json: { alt_text: 'A newly described photograph' },
+    });
+
+    expect((await mediaPatch(context)).status).toBe(200);
+
+    const invalidated = (context.locals as { taproot: { invalidated: Set<string> } }).taproot
+      .invalidated;
+    expect([...invalidated]).toContain(SITE_TAG);
+  });
+
+  async function seedAsset(id: string, path: string): Promise<string> {
+    const { key } = await h.storage.put(path, new Uint8Array([1, 2, 3]), {
+      contentType: 'image/png',
+    });
+
+    await h.db.db
+      .insertInto('media')
+      .values({
+        id,
+        storage_key: key,
+        filename: 'photo.png',
+        mime_type: 'image/png',
+        size_bytes: 3,
+        width: null,
+        height: null,
+        alt_text: null,
+        title: null,
+        hotspot_x: null,
+        hotspot_y: null,
+        crop_top: null,
+        crop_right: null,
+        crop_bottom: null,
+        crop_left: null,
+        uploaded_by: admin.id,
+        created_at: '2026-01-01',
+        updated_at: '2026-01-01',
+      })
+      .execute();
+
+    return key;
+  }
 });
 
 describe('list filters reach the query', () => {

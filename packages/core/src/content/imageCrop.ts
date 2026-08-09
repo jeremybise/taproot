@@ -257,6 +257,56 @@ export function coverPosition(media: MediaCropSource): string {
 }
 
 /**
+ * How finely a stamp distinguishes two crops. See `cropStamp`.
+ *
+ * A thousandth of a 2000px source is two pixels, which is finer than anybody drags a focal point
+ * deliberately. Quantising is the same cost control `RATIO_STEPS` is: a stamp taken from raw floats
+ * would mint a distinct URL — a distinct edge-cache entry and a distinct billable transformation —
+ * for every pixel an editor nudged the handle through on the way to where they meant.
+ */
+const STAMP_STEPS = 1000;
+
+/**
+ * A short, deterministic stamp of exactly the values `resolveCrop` reads.
+ *
+ * **This exists because `immutable` was a lie on server-cropped variants.** The media route sends
+ * `public, max-age=31536000, immutable`, justified by the storage key containing the asset's id —
+ * replacing an image writes a new key, so the bytes behind a key never change. That is true of the
+ * *original* and false of a `?ar=` variant, whose rectangle is resolved from `hotspot_*` and
+ * `crop_*`: columns an editor changes from a screen built for changing them. Measured on a live
+ * site, an edited focal point left the page serving a year-cached crop of the old one, and there
+ * was no remediation at all — the route emits no `cache-tag`, so no purge could target it, and no
+ * purge reaches a browser cache anyway.
+ *
+ * Putting the stamp in the URL makes the header honest instead of shortening the lie: a changed
+ * focal point is a different picture, so it gets a different address and the old entry is simply
+ * abandoned. The consumer already holds `hotspot` and `crop` on `DeliveryMedia`, so it can compute
+ * this without a round trip and without a new field on the wire.
+ *
+ * **The route never parses it.** It resolves the rectangle from the row it is already reading, so
+ * the stamp is a cache key and nothing else — `parseMediaVariant` ignoring it is the design, not an
+ * omission. A stamp on its own therefore still answers the untouched original, which is what an
+ * identity variant should do.
+ */
+export function cropStamp(media: MediaCropSource): string {
+  const hotspot = hotspotOf(media);
+  const crop = cropOf(media);
+
+  /*
+   * Both are read through the same accessors the rectangle is, so a stored value the sanity rules
+   * discard — opposite insets summing past 1 — stamps identically to the no-crop it resolves to,
+   * rather than minting a URL for a rectangle nobody will ever be served.
+   */
+  return [hotspot.x, hotspot.y, crop.top, crop.right, crop.bottom, crop.left]
+    .map((value) =>
+      Math.round(value * STAMP_STEPS)
+        .toString(36)
+        .padStart(2, '0'),
+    )
+    .join('');
+}
+
+/**
  * The resolved rectangle in source pixels, for a resizer that crops by pixel offsets.
  *
  * `undefined` when the source's dimensions were never read, because a normalised rectangle cannot

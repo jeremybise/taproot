@@ -1,4 +1,4 @@
-import { now } from '@taprootcms/core';
+import { now, SITE_TAG } from '@taprootcms/core';
 
 import { apiError, formValue, handle } from '../../_shared.js';
 
@@ -37,6 +37,14 @@ export const POST = handle(
     if (Number(updated.numUpdatedRows ?? 0) === 0) {
       return apiError(404, 'Media asset not found.');
     }
+
+    /**
+     * Alt text travels in the delivery payload and is rendered into every page placing the asset,
+     * so a cached page keeps announcing the old description — and this is the field a screen reader
+     * actually reads out. `SITE_TAG` for the reason `PATCH /media/:id` uses it: nothing indexes
+     * which items place which asset.
+     */
+    taproot.invalidate([SITE_TAG]);
 
     return context.redirect(`/admin/media/${id}?saved=1`, 303);
   },

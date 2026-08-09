@@ -635,6 +635,16 @@ export type {
   DeliveryTermRef,
   ItemSort,
   MenuLink,
+  /**
+   * One entry of `DeliveryResult.snippets`.
+   *
+   * It was the one `Delivery*`-adjacent type this barrel did not re-export, even though
+   * `DeliveryResult.snippets` is typed with it — so the shape arrived here and only its *name* did
+   * not, and a site wanting to hold the map had to reach past this package into
+   * `@taprootcms/core/pure` for a type it was already being handed. Reported from a real consumer
+   * doing exactly that.
+   */
+  ResolvedSnippet,
   /** One run of a search excerpt, and whether it is what the search matched. */
   SearchSegment,
 } from '@taprootcms/core/pure';

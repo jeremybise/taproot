@@ -275,6 +275,15 @@ path purges `site` passes throughout. Four rules follow:
 - **The taxonomy terms endpoint needs both axes.** Vocabulary edits purge `SITE_TAG`; the `itemCount`
   beside each term moves on an ordinary content write, which purges `type:`. Tagged for only the
   first, a facet keeps showing numbers the grid disagrees with.
+- **Media was the one entity whose writes purged nothing, and it took a phase to notice.** Every
+  other write route declares its tags; `api/media/**` declared none, so editing a hotspot, a crop or
+  alt text updated the row and cleared no cache — the delivery JSON kept the old value for its full
+  day of `s-maxage`, and the consumer's HTML was never flushed because the callback that flushes it
+  never fired. It presents as "my edit did not save", which sends you to the write path, which is
+  the one part that was working. `SITE_TAG` is the right tag and not laziness: a media id lives
+  inside `content_items.data`, so there is no reverse index from an asset to the items placing it
+  without a scan — the same reason a taxonomy edit takes it. An **upload** still purges nothing,
+  correctly, because nothing can reference an asset that did not exist yet.
 - **Where a purge would clear nothing, do not add one** — redirects only change `resolve`'s
   `not_found` and `redirect` branches, which carry no tag and are capped at `s-maxage=30` on purpose.
   Branding and `theme.ts` are admin-only. A purge added "for symmetry" is the same bug again.
@@ -1395,8 +1404,8 @@ many), *Block*, *Reusable Block*, *Content Type*.
 - **The media route resizes, and `imageVariants.ts` is the vocabulary both sides spell.** It lives
   where `pure.ts` re-exports it for the reason `cacheTags.ts` does: the consumer builds `?w=`/`?ar=`
   /`?f=` and the route parses them, and a disagreement is **silent** — every visitor served the
-  full-size original while the page looks right and every test passes. Nine things hold it up, and
-  six of them were bugs first:
+  full-size original while the page looks right and every test passes. Ten things hold it up, and
+  seven of them were bugs first:
   - **The width ladder is closed and the ratio is quantised, as cost control rather than taste.**
     Cloudflare bills a unique transformation per image per parameter set against 5,000 free a month,
     so a URL taking any integer or any float is a URL where one crawler burns the allowance and
@@ -1464,6 +1473,24 @@ many), *Block*, *Reusable Block*, *Content Type*.
     space takes `57px)` out of `calc(50vw - 57px)` and scales one term, which is valid CSS computing
     the wrong number. String arithmetic inside a component is reachable by no suite in this repo —
     the same blind spot as auditing a closed `<dialog>`.
+  - **`immutable` was a lie on a `?ar=` variant, and `cropStamp` is what makes it true again.** The
+    route sends `public, max-age=31536000, immutable`, justified by the storage key containing the
+    asset's id — replacing an image writes a new key, so the bytes behind a key never change. True
+    of the original; **false of a server-cropped variant**, whose rectangle is resolved from
+    `hotspot_*` and `crop_*`, columns an editor changes from a screen built for changing them.
+    `crop="server"` broke that invariant when it shipped and nobody revisited the header. Measured:
+    an edited focal point left the page serving a year-old crop of the *previous* one, and identical
+    transform parameters at a fresh cache key answered 42,154 bytes against the cached 57,312. There
+    was **no remediation at all** — the route emits no `cache-tag`, so no purge could target it, and
+    no purge reaches a browser cache anyway. The stamp moves the *address* instead of shortening the
+    lie: a changed focal point is a different picture, so it gets a different URL and the old entry
+    is abandoned. Three things follow. It is **only emitted beside `ar`**, because a plain `?w=`
+    depends on the stored bytes alone and stamping one would re-mint every uncropped image on a site
+    to fix a staleness it cannot have. It is **quantised to thousandths**, for the reason
+    `RATIO_STEPS` is — raw floats mint an address per pixel an editor drags through on the way to
+    where they meant. And **`parseMediaVariant` deliberately never reads it**: the route resolves the
+    rectangle from the row it is already loading, so the stamp is a cache key and nothing else, and
+    a stamp on its own is still an identity variant answering the untouched original.
   - **`crop="server"` is opt-in and `object-fit: cover` is its safety net, not its mechanism.** A
     cropped file already carries the box's ratio so cover is a no-op; when the transform did not
     happen the original arrives and `object-position` frames it on the hotspot. So the failure mode

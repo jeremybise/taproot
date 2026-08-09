@@ -2,6 +2,7 @@
 import {
   coverPosition,
   cropFrame,
+  cropStamp,
   mediaVariantUrl,
   resolveCrop,
   scaleSizes,
@@ -217,6 +218,17 @@ const candidateWidths = widths ?? variantWidthsFor(ladderCeiling);
 const variantRatio = serverCropped ? ratio : undefined;
 
 /**
+ * The crop the URL was built against, so a moved focal point moves the address.
+ *
+ * Only under `'server'`, where the delivered bytes *are* the rectangle. Under `'css'` the whole
+ * frame is shipped and the crop is applied here, so the same URL stays correct however the hotspot
+ * moves — stamping it would re-mint every uncropped image on the site to fix nothing. `cropStamp`
+ * carries the full argument; the short version is that the media route sends `immutable` for a year
+ * on a response whose content depends on columns an editor edits.
+ */
+const variantStamp = serverCropped ? cropStamp(source) : undefined;
+
+/**
  * The format actually written into each URL, and the optional upgrade offered above it.
  *
  * `'original'` sends no `f=` at all, which is a request to resize and re-encode in the source's own
@@ -234,7 +246,7 @@ const srcsetFor = (variantFormat: MediaVariantFormat | undefined) =>
     ? candidateWidths
         .map(
           (width) =>
-            `${mediaVariantUrl(asset.url, { width, ratio: variantRatio, format: variantFormat })} ${width}w`,
+            `${mediaVariantUrl(asset.url, { width, ratio: variantRatio, format: variantFormat, stamp: variantStamp })} ${width}w`,
         )
         .join(', ')
     : undefined;
@@ -251,6 +263,7 @@ const src = srcset
       width: candidateWidths[candidateWidths.length - 1],
       ratio: variantRatio,
       format: baseFormat,
+      stamp: variantStamp,
     })
   : asset.url;
 
