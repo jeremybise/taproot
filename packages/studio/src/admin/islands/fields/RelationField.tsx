@@ -1,8 +1,9 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 
 import type { RelationOption, RelationTarget } from '../../relationOptions.js';
 import { statusMeta } from '../../status.js';
+import { useItemSearch } from './useItemSearch.js';
 
 /**
  * The editor for a `relation` field.
@@ -56,8 +57,12 @@ export function RelationField({
   const reactId = useId();
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<RelationOption[]>([]);
-  const [searching, setSearching] = useState(false);
   const [status, setStatus] = useState('');
+
+  const { results, searching } = useItemSearch(query, {
+    params: { contentTypeId: target?.contentTypeId },
+    enabled: Boolean(target),
+  });
 
   /**
    * Everything this control has ever seen, by id.
@@ -72,42 +77,18 @@ export function RelationField({
     return map;
   }, [target, found]);
 
-  /** The latest search, so a slow earlier response cannot overwrite a newer one. */
-  const latest = useRef(0);
-
+  /**
+   * Search results **accumulate** here rather than replacing what is on screen, which is why this
+   * keeps its own state on top of `useItemSearch`.
+   *
+   * `known` above is built from it, and `known` is what resolves a chosen item's title. Clearing on
+   * every new search would drop the title of something already selected the moment a later search
+   * stopped returning it — the footer-counting-an-invisible-asset bug the media picker hit.
+   */
   useEffect(() => {
-    if (!target) return;
-    const term = query.trim();
-    if (term === '') {
-      setSearching(false);
-      return;
-    }
-
-    const ticket = ++latest.current;
-    setSearching(true);
-
-    // Debounced: the items query is a LIKE over two columns, and firing one per keystroke would
-    // queue requests the editor has already typed past.
-    const timer = setTimeout(async () => {
-      try {
-        const response = await fetch(
-          `/api/taproot/items?contentTypeId=${encodeURIComponent(target.contentTypeId)}` +
-            `&search=${encodeURIComponent(term)}&limit=50`,
-          { headers: { accept: 'application/json' } },
-        );
-        if (!response.ok) return;
-        const body = (await response.json()) as { items: RelationOption[] };
-        if (ticket !== latest.current) return;
-        setFound((current) => merge(current, body.items));
-      } catch {
-        // A search that fails leaves the first page on screen rather than emptying the control.
-      } finally {
-        if (ticket === latest.current) setSearching(false);
-      }
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [query, target]);
+    if (results.length === 0) return;
+    setFound((current) => merge(current, results as RelationOption[]));
+  }, [results]);
 
   if (!target) {
     return (

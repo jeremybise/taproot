@@ -46,7 +46,11 @@ if (!item) return new Response('Content item not found', { status: 404 });
 const contentType = await getContentType(taproot.db.db, item.content_type_id);
 if (!contentType) return new Response('Content type not found', { status: 404 });
 
-const parents = await parentCandidates(taproot.db.db, contentType, item);
+const { options: parents, total: parentTotal } = await parentCandidates(
+  taproot.db.db,
+  contentType,
+  item,
+);
 
 /**
  * Release mode: `?release=` swaps which version of this item the editor is editing.
@@ -309,6 +313,8 @@ const flash = error
       seo: staged?.seo ?? item.seo,
     }}
     parents={parents}
+    parentTotal={parentTotal}
+    itemPath={item.path}
     termsByTaxonomy={termsByTaxonomy}
     relationTargets={relationTargets}
     blockTypes={blockTypes}

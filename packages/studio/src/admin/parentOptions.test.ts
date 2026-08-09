@@ -62,7 +62,7 @@ describe('parentCandidates', () => {
     const healthcare = await item(category, 'Healthcare');
     const nursing = await item(group, 'Nursing', healthcare.id);
 
-    const candidates = await parentCandidates(handle.db, program);
+    const { options: candidates } = await parentCandidates(handle.db, program);
 
     expect(candidates.map((c) => c.path)).toEqual(['/healthcare', '/healthcare/nursing']);
     expect(candidates.map((c) => c.typeName)).toEqual(['Program Category', 'Program Group']);
@@ -78,7 +78,7 @@ describe('parentCandidates', () => {
     await item(group, 'Nursing', healthcare.id);
     await item(group, 'Accounting', business.id);
 
-    const candidates = await parentCandidates(handle.db, category);
+    const { options: candidates } = await parentCandidates(handle.db, category);
 
     // Both categories first because their type sorts first, then both groups — and within each,
     // the `path` ordering `listItemSummaries` defaults to.
@@ -98,7 +98,7 @@ describe('parentCandidates', () => {
     await item(page, 'Benefits', careers.id);
     const academics = await item(page, 'Academics');
 
-    const candidates = await parentCandidates(handle.db, page, about);
+    const { options: candidates } = await parentCandidates(handle.db, page, about);
 
     // Only the unrelated branch survives: `about` would be its own parent, and the other two would
     // put a node inside its own subtree.
@@ -111,12 +111,28 @@ describe('parentCandidates', () => {
     const apply = await item(page, 'Apply');
     const applyNow = await item(page, 'Apply Now');
 
-    const candidates = await parentCandidates(handle.db, page, apply);
+    const { options: candidates } = await parentCandidates(handle.db, page, apply);
 
     // `/apply-now` starts with `/apply` but is not under it — the check appends the separator for
     // exactly this reason.
     expect(applyNow.path).toBe('/apply-now');
     expect(candidates.map((c) => c.path)).toEqual(['/apply-now']);
+  });
+
+  it('reports the total separately from the page, so the picker can say what it is hiding', async () => {
+    const page = await pageType('page', 'Page', 1);
+
+    const about = await item(page, 'About');
+    await item(page, 'Careers', about.id);
+    await item(page, 'Academics');
+
+    const { options, total } = await parentCandidates(handle.db, page, about);
+
+    // `total` counts page-kind items *before* self and its subtree are removed. It only ever feeds
+    // "showing N of M, search to reach the rest", so it must not be derived from `options.length` —
+    // that would always read "showing 1 of 1" and the control would never invite a search.
+    expect(options).toHaveLength(1);
+    expect(total).toBe(3);
   });
 
   it('answers nothing for a kind that cannot nest', async () => {
@@ -138,8 +154,8 @@ describe('parentCandidates', () => {
 
     // `createItem` force-nulls `parentId` for both, so offering a choice would be offering one that
     // is discarded on save.
-    expect(await parentCandidates(handle.db, collection)).toEqual([]);
-    expect(await parentCandidates(handle.db, singleton)).toEqual([]);
+    expect(await parentCandidates(handle.db, collection)).toEqual({ options: [], total: 0 });
+    expect(await parentCandidates(handle.db, singleton)).toEqual({ options: [], total: 0 });
   });
 
   it('leaves out items of non-page kinds, which have no place in a tree', async () => {
@@ -158,7 +174,7 @@ describe('parentCandidates', () => {
       status: 'published',
     });
 
-    const candidates = await parentCandidates(handle.db, page);
+    const { options: candidates } = await parentCandidates(handle.db, page);
 
     // A collection item's path is `/events/open-house`, which is owned by its `url_prefix` — a page
     // nested under one would claim a path the collection believes it controls.

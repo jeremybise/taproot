@@ -10,6 +10,7 @@ import { htmlToText, safeUrl, sanitizeHtml } from '../content/sanitizeHtml.js';
 import type { FieldRow, FieldType } from '../db/schema.js';
 import { parseJson, stringifyJson } from '../db/values.js';
 import { ITEM_SORTS } from '../content/itemSort.js';
+import { CONTENT_TYPE_KINDS } from '../content/contentTypeKind.js';
 import { isFieldVisible, visibilityCondition } from './visibility.js';
 
 /**
@@ -1162,7 +1163,7 @@ export const contentTypeInputSchema = z.object({
   name: z.string().min(1).max(120),
   name_plural: z.string().min(1).max(120),
   description: z.string().max(500).nullish(),
-  kind: z.enum(['page', 'collection', 'singleton', 'block']),
+  kind: z.enum(CONTENT_TYPE_KINDS),
   icon: z.string().max(64).nullish(),
   url_prefix: z
     .string()

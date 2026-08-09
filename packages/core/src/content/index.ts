@@ -1,6 +1,7 @@
 export * from './paths.js';
 export * from './types.js';
 export * from './itemSort.js';
+export * from './contentTypeKind.js';
 export * from './cacheTags.js';
 export * from './pendingPurges.js';
 export * from './embeds.js';

@@ -259,8 +259,13 @@ export interface SessionsTable {
  * The cost is that every read of `content_types` meant for *content* has to exclude blocks, so
  * `listContentTypes` excludes them by default and callers opt in — the safe behaviour is the one
  * you get by not thinking about it.
+ *
+ * Re-exported from `content/contentTypeKind.ts` rather than declared here, so the list of kinds is
+ * written once and a Zod enum, a runtime guard and this type cannot drift apart. Imported as well as
+ * re-exported, because `ContentTypesTable` below needs the name in local scope.
  */
-export type ContentTypeKind = 'page' | 'collection' | 'singleton' | 'block';
+import type { ContentTypeKind } from '../content/contentTypeKind.js';
+export type { ContentTypeKind };
 
 export interface ContentTypesTable {
   id: string;

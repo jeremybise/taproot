@@ -1,10 +1,12 @@
 import {
   createItem,
   getContentType,
+  isContentTypeKind,
   isItemSort,
   itemWriteTags,
   listItems,
   termIdsForBranch,
+  type ContentTypeKind,
 } from '@taprootcms/core';
 import { z } from 'zod';
 
@@ -33,6 +35,29 @@ export const GET = handle(async ({ context, taproot }) => {
   const sort = params.get('sort');
   const visibleOnly = params.get('visibleOnly') === '1';
   const contentTypeId = params.get('contentTypeId') ?? undefined;
+
+  /**
+   * Narrow to content types of a given kind — what the parent picker searches by.
+   *
+   * A parent need not share the item's content type (see `parentOptions.ts`), so the picker's
+   * candidate set is "every `page`-kind item" rather than one type's. Its first page comes from
+   * `parentCandidates` server-side; this is how it searches past that page with the same narrowing,
+   * which is the whole reason the two must agree.
+   *
+   * **An unrecognised kind is refused rather than dropped.** A silently ignored `contentTypeKinds`
+   * would widen the search to every item — the picker would start offering collection items as
+   * parents, `createItem` would take them, and the mistake would look like a working feature. That
+   * is the same rule `sort` follows one field along: a request parameter is a developer's typo, and
+   * the fallbacks elsewhere in Taproot are for *stored* rules that outlive what they name.
+   */
+  const requestedKinds = (params.get('contentTypeKinds') ?? '').split(',').filter(Boolean);
+  const unknownKind = requestedKinds.find((kind) => !isContentTypeKind(kind));
+  if (unknownKind) {
+    return apiError(400, `Unknown content type kind "${unknownKind}".`);
+  }
+  const contentTypeKinds = requestedKinds.length
+    ? (requestedKinds as ContentTypeKind[])
+    : undefined;
 
   /**
    * The date dimension, resolved exactly as `resolveItemQueries` resolves it — looked up on the
@@ -69,6 +94,7 @@ export const GET = handle(async ({ context, taproot }) => {
 
   const result = await listItems(taproot.db.db, {
     contentTypeId,
+    contentTypeKinds,
     status: (params.get('status') as never) ?? undefined,
     search: params.get('search') ?? undefined,
     termIds,

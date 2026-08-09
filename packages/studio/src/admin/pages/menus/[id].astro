@@ -1,6 +1,8 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import MenuItemList from '../../islands/MenuItemList.tsx';
+import ItemPicker from '../../islands/fields/ItemPicker.tsx';
+import { PICKER_FIRST_PAGE, toPickerOption } from '../../itemPicker.js';
 import {
   getMenu,
   listItemSummaries,
@@ -33,9 +35,19 @@ function flattenResolved(nodes: ResolvedMenuItem[]): ResolvedMenuItem[] {
 }
 const resolvedById = new Map(flattenResolved(resolved).map((node) => [node.id, node]));
 
-// Candidate link targets. Capped: a picker listing thousands of pages is unusable anyway, and the
-// menus that matter are built from a site's top-level structure.
-const { items: pages } = await listItemSummaries(taproot.db.db, { limit: 200 });
+/**
+ * The picker's first page of candidates. It searches past this through the items API.
+ *
+ * This used to be the whole candidate set, capped at 200 on the reasoning that "a picker listing
+ * thousands of pages is unusable anyway, and the menus that matter are built from a site's top-level
+ * structure". The first half was true and the second was not: past 200 items a page could not be
+ * linked into a menu **at all**, with nothing on screen saying why — and which 200 you got was
+ * whatever `path` ordered first, so it was not even the top-level structure the comment appealed to.
+ * Truncation is the failure to fear here, exactly as `parentOptions.ts` says of the parent picker.
+ */
+const { items: pages, total: pageTotal } = await listItemSummaries(taproot.db.db, {
+  limit: PICKER_FIRST_PAGE,
+});
 const taxonomies = await listTaxonomies(taproot.db.db);
 const termChoices = (
   await Promise.all(
@@ -174,19 +186,22 @@ const inputClass =
                   <label for="add-item-page" class="block text-xs font-medium">
                     Page
                   </label>
-                  <select
+                  {/*
+                    `client:load`, and the island server-renders a plain `<select>` before it
+                    hydrates — so this form still works with no JavaScript, which is a property of
+                    this screen rather than an accident (see the comment above the three forms).
+                  */}
+                  <ItemPicker
+                    client:load
                     id="add-item-page"
                     name="contentItemId"
+                    value={null}
+                    options={pages.map((page) => toPickerOption(page))}
+                    total={pageTotal}
                     required
-                    aria-describedby="item-hint"
-                    class={inputClass}
-                  >
-                    {pages.map((page) => (
-                      <option value={page.id}>
-                        {page.title} ({page.path})
-                      </option>
-                    ))}
-                  </select>
+                    describedBy="item-hint"
+                    noun="page"
+                  />
                 </div>
               )}
 

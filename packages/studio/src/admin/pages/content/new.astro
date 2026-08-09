@@ -28,7 +28,9 @@ const selectedId = Astro.url.searchParams.get('type');
 // Pick a type first if one was not chosen; the editor cannot render fields without it.
 const contentType = selectedId ? await getContentType(taproot.db.db, selectedId) : undefined;
 
-const parents = contentType ? await parentCandidates(taproot.db.db, contentType) : [];
+const { options: parents, total: parentTotal } = contentType
+  ? await parentCandidates(taproot.db.db, contentType)
+  : { options: [], total: 0 };
 
 // Before the two resolvers below, which read them: a relation or taxonomy field can live inside a
 // block type, and neither can see one without knowing which block types exist.
@@ -111,6 +113,7 @@ const defaultOgImage = findImage(media, contentType?.default_og_image_id ?? null
             seo: {},
           }}
           parents={parents}
+          parentTotal={parentTotal}
           termsByTaxonomy={termsByTaxonomy}
           relationTargets={relationTargets}
           blockTypes={blockTypes}

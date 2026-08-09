@@ -12,6 +12,7 @@ import {
 } from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
+import { ItemPicker } from './fields/ItemPicker.js';
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
 import AccessibilityPanel from './AccessibilityPanel.js';
 import PreviewPane from './PreviewPane.js';
@@ -49,13 +50,29 @@ interface Props {
     seo: SeoData;
   };
   /**
-   * Candidate parents for hierarchical types. Empty for collections and singletons.
+   * The first page of candidate parents. Empty for collections and singletons.
    *
    * Grouped by `typeName` in sidebar order — a parent need not share this item's content type, so
    * on a nested site this is every page-kind item and a flat list stops being readable. See
    * `parentOptions.ts` for why the picker used to be narrowed to one type and what that broke.
    */
   parents: ParentOption[];
+  /** How many page-kind items exist, so the picker can say what its first page is not showing. */
+  parentTotal?: number;
+  /**
+   * This item's own path, so the picker can keep its subtree out of *search results*.
+   *
+   * `parentCandidates` already excludes self and descendants from the first page. Once searching
+   * reaches past that page the same exclusion has to happen client-side, or an editor can find their
+   * own child by typing its title and choose a move the server will refuse. Absent on the create
+   * screen, where the item does not exist and has nothing beneath it.
+   *
+   * **This is the row's `path`, and `path` below is not** — that one is `previewPathFor`, the
+   * address a visitor sees. They differ for a singleton, and a singleton never reaches this control
+   * anyway; the two are kept apart because conflating them is what sent the preview pane at
+   * `/__singleton/{api_id}` once already.
+   */
+  itemPath?: string;
   /** Selectable terms for any taxonomy fields, keyed by taxonomy id. Resolved server-side. */
   termsByTaxonomy?: Record<string, TermOption[]>;
   relationTargets?: Record<string, RelationTarget>;
@@ -159,6 +176,8 @@ export default function ItemEditor({
   fields,
   initial,
   parents,
+  parentTotal,
+  itemPath,
   termsByTaxonomy,
   relationTargets,
   blockTypes,
@@ -799,24 +818,37 @@ export default function ItemEditor({
               <label htmlFor={`${formId}-parent`} className="block text-sm font-medium">
                 Parent page
               </label>
-              <select
+              {/*
+                A searchable picker rather than a `<select>` of every page-kind item.
+
+                The old control listed `parent.path` and nothing else — so on a site with a real
+                tree it was a column of URLs with the titles, which is what an editor actually knows
+                a page by, absent entirely. `ItemPicker` puts the title first and the path under it,
+                and searches past the first page so a deep item is reachable at all.
+              */}
+              <ItemPicker
                 id={`${formId}-parent`}
-                value={parentId ?? ''}
-                onChange={(e) => setParentId(e.target.value || null)}
-                className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
-              >
-                <option value="">— Top level —</option>
-                {groupByType(parents).map((group) => (
-                  <optgroup key={group.parents[0]!.id} label={group.typeName}>
-                    {group.parents.map((parent) => (
-                      <option key={parent.id} value={parent.id}>
-                        {parent.path}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <p className="mt-1.5 text-xs text-content-subtle">
+                value={parentId}
+                onChange={setParentId}
+                options={groupByType(parents).flatMap((group) =>
+                  group.parents.map((parent) => ({
+                    id: parent.id,
+                    title: parent.title,
+                    path: parent.path,
+                    groupLabel: group.typeName,
+                  })),
+                )}
+                total={parentTotal}
+                // The same narrowing `parentCandidates` applies server-side, so the first page and
+                // everything found past it are drawn from one set.
+                searchParams={{ contentTypeKinds: 'page' }}
+                excludeIds={itemId ? [itemId] : []}
+                excludeSubtreeOf={itemPath ?? null}
+                emptyLabel="Top level"
+                noun="page"
+                describedBy={`${formId}-parent-hint`}
+              />
+              <p id={`${formId}-parent-hint`} className="mt-1.5 text-xs text-content-subtle">
                 Moving a page rewrites the URLs of everything beneath it and leaves redirects.
               </p>
             </div>

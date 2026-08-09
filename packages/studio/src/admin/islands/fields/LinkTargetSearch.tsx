@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Check, FileText } from 'lucide-react';
+
+import { useItemSearch } from './useItemSearch.js';
 
 /**
  * Find a page by title, and hand back a reference to it.
@@ -9,8 +11,12 @@ import { Check, FileText } from 'lucide-react';
  * `taproot:item:{id}`, and the delivery layer resolves it to wherever the page is *now* — the same
  * rule menu items already follow, for the same reason.
  *
- * Debounced, like `RelationField`'s search: the items query is a `LIKE` over two columns and firing
- * one per keystroke queues requests the author has already typed past.
+ * The debounce, the ordering of overlapping responses and the "a failed search leaves the last
+ * results alone" rule all live in `useItemSearch` now. They were written here and in `RelationField`
+ * separately and identically, which is two chances for one of them to lose the stale-response guard.
+ *
+ * `minLength: 2`, unlike the pickers that narrow to one content type: this searches every type at
+ * once, where a single letter matches most of a site and the list is noise before it is useful.
  */
 export interface LinkTarget {
   id: string;
@@ -29,40 +35,7 @@ interface Props {
 
 export function LinkTargetSearch({ id, chosen, onPick, onClear }: Props) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<LinkTarget[]>([]);
-  const [searching, setSearching] = useState(false);
-  const latest = useRef(0);
-
-  useEffect(() => {
-    const term = query.trim();
-    if (term.length < 2) {
-      setResults([]);
-      return;
-    }
-
-    const ticket = ++latest.current;
-    setSearching(true);
-
-    const timer = setTimeout(async () => {
-      try {
-        const response = await fetch(
-          `/api/taproot/items?search=${encodeURIComponent(term)}&limit=20`,
-          { headers: { accept: 'application/json' } },
-        );
-        if (!response.ok) return;
-        const body = (await response.json()) as { items: LinkTarget[] };
-        // A stale response must not overwrite a newer one; the ticket is what orders them.
-        if (ticket !== latest.current) return;
-        setResults(body.items);
-      } catch {
-        // A failed search leaves the last results rather than emptying the list under the cursor.
-      } finally {
-        if (ticket === latest.current) setSearching(false);
-      }
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [query]);
+  const { results, searching } = useItemSearch(query, { minLength: 2, limit: 20 });
 
   return (
     <div>

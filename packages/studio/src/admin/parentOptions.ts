@@ -6,6 +6,8 @@ import {
 } from '@taprootcms/core';
 import type { Kysely } from 'kysely';
 
+import { PICKER_FIRST_PAGE } from './itemPicker.js';
+
 /**
  * Candidate parents for a `page`-kind item, resolved server-side.
  *
@@ -49,14 +51,29 @@ export interface ParentOption {
 }
 
 /**
- * How many candidates the picker will hold.
+ * How many candidates travel to the picker before it has to search for more.
  *
- * Deliberately far above what a `<select>` is pleasant at. Truncation is the worse failure and is
- * the same one this module exists to fix: a parent that exists and cannot be chosen, with nothing
- * on screen saying why. The real answer past this size is a searchable control on `RelationField`'s
- * pattern, which is a different piece of work.
+ * This was 500, and the comment here said so because the control was a `<select>`: the whole
+ * candidate set had to fit in the prop, truncation was the failure to fear, and the note ended
+ * *"the real answer past this size is a searchable control on `RelationField`'s pattern, which is a
+ * different piece of work"*. That work is done — `ItemPicker` searches through the items API with
+ * the same `contentTypeKinds: ['page']` narrowing this applies — so the number now sizes a **first
+ * page** rather than a ceiling, and small enough that a large site is not shipping five hundred rows
+ * of JSON into every editor load. `total` is what lets the control say what it is not showing.
  */
-const PARENT_LIMIT = 500;
+const PARENT_LIMIT = PICKER_FIRST_PAGE;
+
+export interface ParentCandidates {
+  options: ParentOption[];
+  /**
+   * How many page-kind items exist in total, **before** self and descendants are removed.
+   *
+   * Only ever used to say "showing N of M, search to reach the rest", so an off-by-a-few against the
+   * genuinely selectable set is not worth a second query to correct — and correcting it would mean
+   * counting a subtree the picker is about to exclude anyway.
+   */
+  total: number;
+}
 
 export async function parentCandidates(
   db: Kysely<any>,
@@ -67,13 +84,13 @@ export async function parentCandidates(
    * Absent on the create screen, where nothing needs excluding because the item does not exist yet.
    */
   item?: Pick<ContentItemSummary, 'id' | 'path'>,
-): Promise<ParentOption[]> {
+): Promise<ParentCandidates> {
   // Only a `page` nests. A collection is flat under its `url_prefix` and a singleton has one
   // synthetic path, so `createItem` force-nulls `parentId` for both and a picker would be offering
   // a choice that is discarded.
-  if (contentType.kind !== 'page') return [];
+  if (contentType.kind !== 'page') return { options: [], total: 0 };
 
-  const [{ items }, types] = await Promise.all([
+  const [{ items, total }, types] = await Promise.all([
     listItemSummaries(db, { contentTypeKinds: ['page'], limit: PARENT_LIMIT }),
     listContentTypes(db),
   ]);
@@ -81,7 +98,7 @@ export async function parentCandidates(
   /** Type ids to their name and sidebar position, for the group label and the group order. */
   const byTypeId = new Map(types.map((type, index) => [type.id, { name: type.name, index }]));
 
-  return (
+  const options = (
     items
       .filter((candidate) => {
         if (!item) return true;
@@ -113,4 +130,6 @@ export async function parentCandidates(
       .sort((a, b) => a.order - b.order)
       .map((entry) => entry.option)
   );
+
+  return { options, total };
 }
