@@ -12,7 +12,15 @@ import type { StorageAdapter } from '../storage/types.js';
 import { parseJson } from '../db/values.js';
 import { repeaterRowFields } from '../validation/fields.js';
 import { parseVisibility, type VisibilityCondition } from '../validation/visibility.js';
-import { SITE_TAG, blockTag, itemTag, menuTag, normalizeCacheTags, typeTag } from './cacheTags.js';
+import {
+  SITE_TAG,
+  blockTag,
+  itemTag,
+  menuTag,
+  normalizeCacheTags,
+  snippetTag,
+  typeTag,
+} from './cacheTags.js';
 import {
   resolveItemQueries,
   resultData,
@@ -31,6 +39,8 @@ import {
   type ContentItem,
 } from './items.js';
 import { resolveMenu, type ResolvedMenuItem } from './menus.js';
+import { snippetsByApiId, type ResolvedSnippet } from './snippets.js';
+import { replaceSnippetTokens, snippetTokensIn } from './snippetTokens.js';
 import {
   buildTermTree,
   getTaxonomy,
@@ -181,6 +191,24 @@ export type DeliveryResult =
        * already holds when it comes to render one.
        */
       queries: Record<string, DeliveryQueryResult>;
+      /**
+       * The reusable text snippets this page's content refers to, keyed by `api_id`.
+       *
+       * A fifth top-level map, and — unlike `queries` — the values have **already been substituted
+       * into `data`**. That is the rich-text exception rather than a new one: a `{{ tuition }}` left
+       * in place ships braces to a visitor the moment a site forgets a helper, and delivery is
+       * read-only so nothing round-trips it back. The same reasoning, and the same trade, as
+       * `taproot:item:` markers.
+       *
+       * The map is here anyway because prose gets `display` and some consumers need `value`: a chart
+       * block plots `snippets.tuition.value` as a real number, where the substituted text would hand
+       * it "$4,500" to parse back. Block components live in git and are written by a developer,
+       * which is the escape hatch the `embed` field already documents.
+       *
+       * Only snippets the page actually refers to travel, collected on the same walk as everything
+       * else.
+       */
+      snippets: Record<string, ResolvedSnippet>;
       /**
        * Everything this page's content depends on, as cache tags.
        *
@@ -388,10 +416,25 @@ export async function buildItemPayload(
    * The ids are still in `references` and `media` for anyone who wants them, and a target this
    * cannot resolve leaves its text behind without a link.
    */
-  const resolvedData = resolveRichTextData(contentType.fields, data, {
+  const linkedData = resolveRichTextData(contentType.fields, data, {
     items: linkTargets,
     media: new Map(Object.entries(media).map(([id, asset]) => [id, asset.url])),
   });
+
+  /**
+   * Reusable text snippets, substituted after link resolution.
+   *
+   * **After, not before**, and the order matters in one direction only: a snippet's value is
+   * ordinary text and can never introduce a `taproot:` marker, while a resolved link's title could
+   * in principle contain braces. Substituting last means a snippet is expanded exactly once, and a
+   * value that happens to look like a token cannot be expanded again — which is the recursion this
+   * would otherwise need a depth bound for.
+   *
+   * Collected from the already-linked data so the walk sees the same strings that will be shipped.
+   */
+  const snippetNames = collectSnippetNames(contentType.fields, linkedData);
+  const snippets = await snippetsByApiId(db, snippetNames);
+  const resolvedData = applySnippets(contentType.fields, linkedData, snippets);
 
   return {
     kind: 'item',
@@ -440,6 +483,7 @@ export async function buildItemPayload(
     },
     terms,
     queries: resolvedQueries.queries,
+    snippets,
     cacheTags: normalizeCacheTags([
       /**
        * Every cacheable response carries it, which is what makes `SITE_TAG` mean anything.
@@ -473,6 +517,11 @@ export async function buildItemPayload(
       // The gap the ETag cannot see: a library entry edited in place changes what every referencing
       // page renders without touching a single one of their rows.
       ...collectReusableIds(resolvedData).map(blockTag),
+
+      // The same gap for a text snippet. Taken from the map rather than re-walking the payload:
+      // substitution has already replaced the tokens, so by this point the resolved data no longer
+      // says which snippets it used — the map is the only remaining record.
+      ...Object.keys(snippets).map(snippetTag),
     ]),
   };
 }
@@ -1426,6 +1475,87 @@ function resolveRichTextData(
     if (field.type === 'block' || field.type === 'repeater') {
       out[field.api_id] = resolveLoose(value, targets);
     }
+  }
+
+  return out;
+}
+
+/**
+ * Which snippets a page's values refer to.
+ *
+ * Mirrors `resolveRichTextData`'s walk deliberately — the same field types at the top level, the
+ * same structural descent into blocks and repeaters. A value one walk reaches and the other does not
+ * is a token collected and never substituted, or substituted from a map that never loaded it, and
+ * both show up as literal braces on one page rather than as an error anywhere.
+ *
+ * `text` and `richtext` at the top level: those are where prose lives, and where an editor would
+ * think to type one. Inside a block or a repeater row the walk is structural rather than
+ * definition-driven — a block's field definitions are not in scope here — so it reaches every
+ * string, exactly as `collectLoose` and `resolveLoose` already do on their own passes.
+ */
+function collectSnippetNames(fields: FieldRow[], data: Record<string, unknown>): string[] {
+  const found = new Set<string>();
+
+  const walkLoose = (value: unknown): void => {
+    if (typeof value === 'string') {
+      for (const name of snippetTokensIn(value)) found.add(name);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) walkLoose(entry);
+      return;
+    }
+    if (typeof value === 'object' && value !== null) {
+      for (const entry of Object.values(value)) walkLoose(entry);
+    }
+  };
+
+  for (const field of fields) {
+    const value = data[field.api_id];
+    if (value === undefined || value === null) continue;
+
+    if (field.type === 'text' || field.type === 'richtext') {
+      if (typeof value === 'string') for (const name of snippetTokensIn(value)) found.add(name);
+      continue;
+    }
+
+    if (field.type === 'block' || field.type === 'repeater') walkLoose(value);
+  }
+
+  return [...found];
+}
+
+/** Substitute every known token, on the same walk `collectSnippetNames` used. */
+function applySnippets(
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  snippets: Record<string, ResolvedSnippet>,
+): Record<string, unknown> {
+  // An unknown name resolves to `undefined`, which `replaceSnippetTokens` leaves written as-is —
+  // never to `''`, which would delete the token and the fact that anything was wrong with it.
+  const resolve = (apiId: string) => snippets[apiId]?.display;
+
+  const applyLoose = (value: unknown): unknown => {
+    if (typeof value === 'string') return replaceSnippetTokens(value, resolve);
+    if (Array.isArray(value)) return value.map(applyLoose);
+    if (typeof value === 'object' && value !== null) {
+      return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, applyLoose(entry)]));
+    }
+    return value;
+  };
+
+  const out: Record<string, unknown> = { ...data };
+
+  for (const field of fields) {
+    const value = out[field.api_id];
+    if (value === undefined || value === null) continue;
+
+    if (field.type === 'text' || field.type === 'richtext') {
+      if (typeof value === 'string') out[field.api_id] = replaceSnippetTokens(value, resolve);
+      continue;
+    }
+
+    if (field.type === 'block' || field.type === 'repeater') out[field.api_id] = applyLoose(value);
   }
 
   return out;

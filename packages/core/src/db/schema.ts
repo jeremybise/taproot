@@ -469,6 +469,56 @@ export interface ReusableBlocksTable {
   updated_at: Timestamp;
 }
 
+/**
+ * A value defined once and used in prose across the site — current tuition, a deadline, a phone
+ * number.
+ *
+ * The same argument as `reusable_blocks` one size down: a reusable block owns a *region* of a page,
+ * and this owns a *value inside a sentence*. Content stores `{{ api_id }}` and no copy, so changing
+ * the row changes every page at once, and there is never a stale second copy to disagree with it.
+ */
+export interface SnippetsTable {
+  id: string;
+  /**
+   * The machine name content refers to, as `{{ api_id }}`. **Immutable after creation.**
+   *
+   * Unlike `reusable_blocks.name`, which is a label and safe to rename, this *is* the reference.
+   * Renaming it would break every stored token, and rewriting them across `content_items.data` is a
+   * second implementation of the problem snippets exist to remove.
+   */
+  api_id: string;
+  /** How an editor finds it in a list. Renaming is safe — nothing refers to it. */
+  name: string;
+  description: string | null;
+  kind: SnippetKind;
+  /**
+   * The canonical value: the string, the bare number, or an ISO date.
+   *
+   * Kept apart from `display` so one row serves both a sentence and a chart — prose substitutes the
+   * display form while a block component plots this.
+   */
+  value: string;
+  /**
+   * How it reads in prose, when the derived form is not what the editor wants.
+   *
+   * Null means "derive it" — `renderSnippet` formats a number or a date, and uses `value` verbatim
+   * for text. An editor who wants `$4,500` rather than `4,500`, or `Fall 2026` rather than a date,
+   * sets it here.
+   */
+  display: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
+ * What kind of value a snippet holds.
+ *
+ * `text` is the common case. `number` and `date` exist because the canonical value has a *use*
+ * beyond reading — a chart plots a number, and a date can be compared — so storing them as free text
+ * would mean every consumer parsing prose back into data.
+ */
+export type SnippetKind = 'text' | 'number' | 'date';
+
 export interface MediaTable {
   id: string;
   /** Key within the storage adapter's namespace, not a public URL. */
@@ -803,6 +853,7 @@ export interface Database {
   fields: FieldsTable;
   content_items: ContentItemsTable;
   reusable_blocks: ReusableBlocksTable;
+  snippets: SnippetsTable;
   media: MediaTable;
   redirects: RedirectsTable;
   revisions: RevisionsTable;

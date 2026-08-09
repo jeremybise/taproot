@@ -1,0 +1,159 @@
+---
+import type { Snippet } from '@taprootcms/core';
+
+/**
+ * The inputs a snippet is edited through, shared by the create and edit screens.
+ *
+ * One component rather than two copies, for the reason `status.ts` and `StatusBadge.astro` exist: the
+ * two screens ask for the same six things, and two copies drift the moment one gains a hint the
+ * other does not.
+ *
+ * `api_id` is the one field that differs between them, and it differs by being **absent** on edit —
+ * see below.
+ */
+interface Props {
+  /** Null on the create screen. */
+  snippet: Snippet | null;
+}
+
+const { snippet } = Astro.props;
+
+const inputClass =
+  'mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm';
+---
+
+<div>
+  <label for="snippet-name" class="block text-sm font-medium">Name</label>
+  <p id="snippet-name-hint" class="mt-0.5 text-xs text-content-subtle">
+    How you find it in this list. Safe to rename — nothing refers to it.
+  </p>
+  <input
+    id="snippet-name"
+    name="name"
+    required
+    maxlength="200"
+    value={snippet?.name ?? ''}
+    aria-describedby="snippet-name-hint"
+    class={inputClass}
+  />
+</div>
+
+{
+  snippet ? (
+    /*
+      Shown, not editable.
+
+      `api_id` is what every stored `{{ token }}` names, so changing it would break content on pages
+      this screen does not touch and nothing would show as broken. The API refuses it at the type
+      level; this is the same refusal made visible, rather than an input that silently does nothing.
+      Same treatment a content type's `api_id` and `kind` already get.
+    */
+    <div>
+      <span id="snippet-api-id-label" class="block text-sm font-medium">
+        Token
+      </span>
+      <p id="snippet-api-id-hint" class="mt-0.5 text-xs text-content-subtle">
+        Fixed after creation — every page using it refers to this exact name. Paste it into any text
+        or rich text field.
+      </p>
+      <p
+        aria-labelledby="snippet-api-id-label"
+        aria-describedby="snippet-api-id-hint"
+        class="mt-1.5 rounded-md border border-border bg-surface-sunken px-3 py-2 font-mono text-sm text-content-muted"
+      >
+        {`{{ ${snippet.api_id} }}`}
+      </p>
+    </div>
+  ) : (
+    <div>
+      <label for="snippet-api-id" class="block text-sm font-medium">
+        Token id
+      </label>
+      <p id="snippet-api-id-hint" class="mt-0.5 text-xs text-content-subtle">
+        What you will type in content, as <code class="font-mono">{'{{ id }}'}</code>. Lowercase
+        letters, numbers and underscores. <strong class="font-semibold">Fixed after creation</strong>
+        — every page that uses it refers to this name.
+      </p>
+      <input
+        id="snippet-api-id"
+        name="api_id"
+        required
+        maxlength="64"
+        pattern="[a-z][a-z0-9_]*"
+        placeholder="tuition"
+        value=""
+        aria-describedby="snippet-api-id-hint"
+        class={`${inputClass} font-mono`}
+      />
+    </div>
+  )
+}
+
+<div>
+  <label for="snippet-kind" class="block text-sm font-medium">Kind</label>
+  <p id="snippet-kind-hint" class="mt-0.5 text-xs text-content-subtle">
+    Text is the usual answer. Number and date mean the value stays usable as data — a chart can plot
+    a number rather than parsing it back out of a sentence.
+  </p>
+  <select
+    id="snippet-kind"
+    name="kind"
+    aria-describedby="snippet-kind-hint"
+    class={inputClass}
+  >
+    <option value="text" selected={(snippet?.kind ?? 'text') === 'text'}>Text</option>
+    <option value="number" selected={snippet?.kind === 'number'}>Number</option>
+    <option value="date" selected={snippet?.kind === 'date'}>Date</option>
+  </select>
+</div>
+
+<div>
+  <label for="snippet-value" class="block text-sm font-medium">Value</label>
+  <p id="snippet-value-hint" class="mt-0.5 text-xs text-content-subtle">
+    The value itself. For a number, digits only (<code class="font-mono">4500</code>); for a date, a
+    calendar date (<code class="font-mono">2026-08-15</code>).
+  </p>
+  <input
+    id="snippet-value"
+    name="value"
+    required
+    maxlength="2000"
+    value={snippet?.value ?? ''}
+    aria-describedby="snippet-value-hint"
+    class={inputClass}
+  />
+</div>
+
+<div>
+  <label for="snippet-display" class="block text-sm font-medium">
+    How it reads <span class="font-normal text-content-subtle">(optional)</span>
+  </label>
+  <p id="snippet-display-hint" class="mt-0.5 text-xs text-content-subtle">
+    What appears in a sentence, when the value alone is not it — <code class="font-mono">$4,500</code>
+    rather than <code class="font-mono">4500</code>. Leave empty to format it automatically.
+  </p>
+  <input
+    id="snippet-display"
+    name="display"
+    maxlength="200"
+    value={snippet?.display ?? ''}
+    aria-describedby="snippet-display-hint"
+    class={inputClass}
+  />
+</div>
+
+<div>
+  <label for="snippet-description" class="block text-sm font-medium">
+    Note <span class="font-normal text-content-subtle">(optional)</span>
+  </label>
+  <p id="snippet-description-hint" class="mt-0.5 text-xs text-content-subtle">
+    For whoever changes this next — where the figure comes from, or when it is reviewed.
+  </p>
+  <textarea
+    id="snippet-description"
+    name="description"
+    rows="2"
+    maxlength="500"
+    aria-describedby="snippet-description-hint"
+    class={inputClass}>{snippet?.description ?? ''}</textarea>
+</div>

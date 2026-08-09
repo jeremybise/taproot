@@ -117,7 +117,8 @@ export function deliveryCache(
   id: string,
   tags?: string[],
   /**
-   * `reusableBlockLibraryVersion`, and **the same value on both paths or nothing works**.
+   * `contentLibraryVersion` — reusable blocks and text snippets together — and **the same value on
+   * both paths or nothing works**.
    *
    * `resolve.ts` answers a conditional request from a cheap indexed lookup before resolving the
    * page, and builds the full response afterwards. Those two build a validator independently, so a

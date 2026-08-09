@@ -5,7 +5,7 @@ import {
   normalizePath,
   resolveDelivery,
   resolvePreviewToken,
-  reusableBlockLibraryVersion,
+  contentLibraryVersion,
 } from '@taprootcms/core';
 
 import { apiError, handleScoped, json } from '../_shared.js';
@@ -84,7 +84,11 @@ export const GET = handleScoped(
     const noStore = Boolean(preview);
 
     /**
-     * The library stamp, resolved once for both validator sites.
+     * The shared-content stamp, resolved once for both validator sites.
+     *
+     * Covers reusable blocks **and** text snippets in one query — both are edited somewhere other
+     * than the page they appear on, so neither moves the page's own `updated_at`. See
+     * `contentLibraryVersion` for why that is unbounded staleness rather than a TTL's worth.
      *
      * The cheap lookup below and the full response at the bottom each build an ETag, and they must
      * agree exactly or every conditional request misses and answers 200. `deliveryCache` is
@@ -93,7 +97,7 @@ export const GET = handleScoped(
      * Skipped under `no-store` along with the rest of the validator path: a preview is never
      * revalidated, so there is nothing for a stamp to bound.
      */
-    const libraryVersion = noStore ? 0 : await reusableBlockLibraryVersion(taproot.db.db);
+    const libraryVersion = noStore ? 0 : await contentLibraryVersion(taproot.db.db);
 
     /**
      * Answer a conditional request **before** resolving anything.

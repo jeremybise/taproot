@@ -96,6 +96,8 @@ const ROUTES = [
   '/admin/settings/system',
   '/admin/media',
   '/admin/blocks',
+  '/admin/snippets',
+  '/admin/snippets/new',
   '/admin/taxonomies',
   '/admin/menus',
   '/admin/settings/redirects',
@@ -283,6 +285,19 @@ if (media?.[0]) ROUTES.push(`/admin/media/${media[0].id}`);
 const reusableResponse = await fetch(`${base}/api/taproot/reusable-blocks`, { headers: { cookie } });
 const { reusableBlocks } = await reusableResponse.json();
 if (reusableBlocks?.[0]) ROUTES.push(`/admin/blocks/${reusableBlocks[0].id}`);
+
+/*
+ * One snippet's editor.
+ *
+ * Worth auditing separately from the create screen rather than assuming they match: the two share
+ * `SnippetFields.astro`, but the edit screen renders `api_id` as a **read-only `<p>`** where the
+ * create screen renders an `<input>`. A `<label for>` pointing at that `<p>` would be silently inert
+ * — announced correctly, and broken only for click-to-focus — which is exactly the class of defect
+ * the audit's inert-label check exists for and inspection does not catch.
+ */
+const snippetsResponse = await fetch(`${base}/api/taproot/snippets`, { headers: { cookie } });
+const { snippets } = await snippetsResponse.json();
+if (snippets?.[0]) ROUTES.push(`/admin/snippets/${snippets[0].id}`);
 
 // The term editor is the densest screen in the admin — a repeated form per row — so it is the one
 // most worth auditing, and it only exists once a taxonomy does.

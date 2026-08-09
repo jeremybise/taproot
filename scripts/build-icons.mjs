@@ -62,6 +62,7 @@ const ICONS = [
   'rocket',
   'accessibility',
   'list',
+  'braces',
 
   // Settings hub groups and cards.
   'database',

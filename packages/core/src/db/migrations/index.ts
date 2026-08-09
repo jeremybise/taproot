@@ -30,6 +30,7 @@ import * as m0024 from './0024_root_slug_scope.js';
 import * as m0025 from './0025_item_text_fts.js';
 import * as m0026 from './0026_search_log.js';
 import * as m0027 from './0027_summary_template.js';
+import * as m0028 from './0028_snippets.js';
 
 /**
  * The migration registry.
@@ -70,6 +71,7 @@ export const migrations: Record<string, Migration> = {
   '0025_item_text_fts': m0025,
   '0026_search_log': m0026,
   '0027_summary_template': m0027,
+  '0028_snippets': m0028,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

@@ -1,0 +1,137 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import { countSnippetUsage, listSnippets, renderSnippet } from '@taprootcms/core';
+import { getTaproot, loginRedirect, canPublishContent } from '../../../runtime/guards.js';
+
+/**
+ * Reusable text snippets — a value written once and used in prose everywhere.
+ *
+ * Beside Reusable blocks under Library rather than under Settings, and for the same reason that one
+ * is: current tuition is *content* an editor changes, not configuration that shapes the site. A
+ * settings singleton was the other place this could have lived, and it is the arrangement this
+ * feature exists to replace.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const snippets = await listSnippets(taproot.db.db);
+
+/*
+ * Usage per row, which is two `LIKE`s each and therefore worth justifying.
+ *
+ * It only runs on this screen, the table holds tens of rows, and the number is the whole reason an
+ * editor can act: "used on 14 pages" is what makes changing a value feel safe, and "used nowhere" is
+ * what makes deleting one feel safe. Reusable blocks pay exactly the same cost on their own list.
+ */
+const usage = new Map<string, number>();
+for (const snippet of snippets) {
+  usage.set(snippet.id, await countSnippetUsage(taproot.db.db, snippet.api_id));
+}
+
+const canCreate = canPublishContent(user);
+
+const deleted = Astro.url.searchParams.get('deleted');
+const created = Astro.url.searchParams.get('created');
+const updated = Astro.url.searchParams.get('updated');
+const error = Astro.url.searchParams.get('error');
+
+const flash = created
+  ? `Created ${created}.`
+  : updated
+    ? `Saved ${updated}.`
+    : deleted
+      ? `Deleted ${deleted}.`
+      : null;
+---
+
+<AdminLayout
+  title="Text snippets"
+  user={user}
+  breadcrumbs={[{ label: 'Text snippets' }]}
+  flash={flash}
+>
+  <PageHeader title="Text snippets" meta={`${snippets.length} ${snippets.length === 1 ? 'snippet' : 'snippets'}`}>
+    {
+      canCreate && (
+        <a
+          slot="actions"
+          href="/admin/snippets/new"
+          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+        >
+          New snippet
+        </a>
+      )
+    }
+  </PageHeader>
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  <p class="mb-6 max-w-prose text-sm text-content-muted">
+    A value you write once and use anywhere. Type <code class="font-mono">{'{{ api_id }}'}</code> into
+    any text or rich text field and it is replaced wherever that page appears — change it here and
+    every page follows.
+  </p>
+
+  {
+    snippets.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        No snippets yet. Create one for a value that appears in more than one place — tuition, a
+        deadline, a phone number.
+      </p>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only-focusable">Text snippets, by name</caption>
+          <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 font-medium">Name</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Token</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Reads as</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Used by</th>
+              <th scope="col" class="px-4 py-2.5 font-medium">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {snippets.map((snippet) => (
+              <tr class="border-t border-border">
+                <th scope="row" class="px-4 py-2.5 font-medium">
+                  <a href={`/admin/snippets/${snippet.id}`} class="hover:underline">
+                    {snippet.name}
+                  </a>
+                </th>
+                <td class="px-4 py-2.5 font-mono text-xs text-content-muted">
+                  {`{{ ${snippet.api_id} }}`}
+                </td>
+                {/*
+                  What it will look like in a sentence, not the raw value — that is the question an
+                  editor has when they land here, and a column showing "4500" beside a token would
+                  answer a different one.
+                */}
+                <td class="px-4 py-2.5">{renderSnippet(snippet)}</td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  {usage.get(snippet.id) === 0
+                    ? 'Nothing yet'
+                    : `${usage.get(snippet.id)} ${usage.get(snippet.id) === 1 ? 'item' : 'items'}`}
+                </td>
+                <td class="px-4 py-2.5 text-content-muted">
+                  <Timestamp value={snippet.updated_at} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</AdminLayout>

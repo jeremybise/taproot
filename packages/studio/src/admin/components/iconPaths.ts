@@ -93,6 +93,10 @@ export const ICON_PATHS = {
     { tag: 'path', attrs: { 'd': 'M8 12h13' } },
     { tag: 'path', attrs: { 'd': 'M8 19h13' } },
   ],
+  'braces': [
+    { tag: 'path', attrs: { 'd': 'M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1' } },
+    { tag: 'path', attrs: { 'd': 'M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1' } },
+  ],
   'database': [
     { tag: 'ellipse', attrs: { 'cx': '12', 'cy': '5', 'rx': '9', 'ry': '3' } },
     { tag: 'path', attrs: { 'd': 'M3 5V19A9 3 0 0 0 21 19V5' } },

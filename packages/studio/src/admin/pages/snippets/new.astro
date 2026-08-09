@@ -1,0 +1,58 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import SnippetFields from '../../components/SnippetFields.astro';
+import { getTaproot, loginRedirect, canPublishContent } from '../../../runtime/guards.js';
+
+/**
+ * Create a snippet.
+ *
+ * A real `<form>` posting to the API route, not an island — this screen is five inputs and a submit,
+ * which is exactly the case `packages/studio/CLAUDE.md` says not to reach for React on.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canPublishContent(user)) return Astro.redirect('/admin/snippets');
+
+const error = Astro.url.searchParams.get('error');
+---
+
+<AdminLayout
+  title="New snippet"
+  user={user}
+  breadcrumbs={[{ label: 'Text snippets', href: '/admin/snippets' }, { label: 'New' }]}
+>
+  <PageHeader title="New snippet" />
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  <form method="post" action="/api/taproot/snippets" class="max-w-2xl">
+    <div class="space-y-5 rounded-lg border border-border bg-surface-raised p-5">
+      <SnippetFields snippet={null} />
+    </div>
+
+    <div class="mt-4 flex gap-3">
+      <button
+        type="submit"
+        class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+      >
+        Create snippet
+      </button>
+      <a
+        href="/admin/snippets"
+        class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+      >
+        Cancel
+      </a>
+    </div>
+  </form>
+</AdminLayout>

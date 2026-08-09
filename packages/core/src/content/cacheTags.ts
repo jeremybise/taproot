@@ -62,6 +62,21 @@ export function menuTag(apiId: string): string {
 }
 
 /**
+ * A reusable text snippet, keyed by the `api_id` its tokens name.
+ *
+ * The same gap `blockTag` closes, one size down: editing a snippet changes what every page using it
+ * renders without touching any of their rows, so no validator built from `updated_at` can notice.
+ * A tag can, because the pages say they used it.
+ *
+ * Precise rather than `SITE_TAG`, and the precision is affordable *because* the pages say so — a
+ * page collects the snippets it refers to while resolving them, so tagging costs nothing extra. The
+ * coarse alternative would give every tuition edit a cold cache for the whole site.
+ */
+export function snippetTag(apiId: string): string {
+  return `snippet:${apiId}`;
+}
+
+/**
  * Everything under one deployment, for the rare change that invalidates the lot.
  *
  * Renaming a content type's `api_id`, editing site branding, changing a global setting. Coarse by

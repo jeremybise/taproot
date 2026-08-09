@@ -67,7 +67,22 @@ export * from './content/embeds.js';
  * precisely so the consumer never reaches for `set:html` on a string built from `?q=`.
  */
 export * from './content/searchTerms.js';
+
+/**
+ * The `{{ tuition }}` token grammar.
+ *
+ * Shared for the same reason again, and the failure mode is the quiet one: delivery substitutes
+ * these before a consumer ever sees them, so a site that wants to *find* a token — to highlight one
+ * in an editor preview, or to warn about an unresolved one — has to match exactly what the server
+ * matched. A second regex that is nearly right marks nothing, or marks a stray brace, and neither
+ * shows up as an error anywhere.
+ *
+ * Importless, so it costs a consumer nothing but the function.
+ */
+export * from './content/snippetTokens.js';
 export type { ItemSort } from './content/itemSort.js';
+export type { SnippetKind } from './db/schema.js';
+export type { ResolvedSnippet } from './content/snippets.js';
 /**
  * The query parameter a preview link travels in.
  *

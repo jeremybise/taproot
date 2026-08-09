@@ -1,0 +1,114 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import SnippetFields from '../../components/SnippetFields.astro';
+import { countSnippetUsage, getSnippet, renderSnippet } from '@taprootcms/core';
+import { getTaproot, loginRedirect, canPublishContent } from '../../../runtime/guards.js';
+
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const snippet = await getSnippet(taproot.db.db, Astro.params.id!);
+if (!snippet) return new Response('Snippet not found', { status: 404 });
+
+const canEdit = canPublishContent(user);
+const uses = await countSnippetUsage(taproot.db.db, snippet.api_id);
+const error = Astro.url.searchParams.get('error');
+---
+
+<AdminLayout
+  title={snippet.name}
+  user={user}
+  breadcrumbs={[{ label: 'Text snippets', href: '/admin/snippets' }, { label: snippet.name }]}
+>
+  <PageHeader title={snippet.name} meta={`{{ ${snippet.api_id} }}`} />
+
+  <div role="alert" aria-live="assertive">
+    {
+      error && (
+        <p class="mb-6 rounded-md border border-danger bg-danger-subtle px-4 py-3 text-sm">
+          {error}
+        </p>
+      )
+    }
+  </div>
+
+  {/*
+    What it currently reads as, before the form.
+
+    The question an editor arrives with is "what does this look like on a page", and the value and
+    display columns separately do not answer it — `renderSnippet` is what does, and it is the same
+    function delivery substitutes with, so this cannot show something the site would not.
+  */}
+  <p class="mb-6 max-w-prose rounded-md border border-border bg-surface-sunken px-4 py-3 text-sm">
+    Reads as <strong class="font-semibold">{renderSnippet(snippet)}</strong> in a sentence, and is
+    used by {uses === 0 ? 'nothing yet' : `${uses} ${uses === 1 ? 'item' : 'items'}`}.
+  </p>
+
+  {
+    canEdit ? (
+      <form method="post" action={`/api/taproot/snippets/${snippet.id}`} class="max-w-2xl">
+        <div class="space-y-5 rounded-lg border border-border bg-surface-raised p-5">
+          <SnippetFields snippet={snippet} />
+        </div>
+
+        <div class="mt-4 flex gap-3">
+          <button
+            type="submit"
+            class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+          >
+            Save
+          </button>
+          <a
+            href="/admin/snippets"
+            class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+          >
+            Cancel
+          </a>
+        </div>
+      </form>
+    ) : (
+      <p class="max-w-prose text-sm text-content-muted">
+        Changing shared content needs the editor role, because it changes every page that uses it.
+      </p>
+    )
+  }
+
+  {
+    canEdit && (
+      <section aria-labelledby="danger-heading" class="mt-10 max-w-2xl border-t border-border pt-6">
+        <h2 id="danger-heading" class="text-base font-semibold">
+          Delete this snippet
+        </h2>
+
+        {/*
+          The blocker is rendered here rather than discovered on submit, which is the rule
+          `DangerZone.astro` states: a screen that works out for itself whether a delete would
+          succeed drifts, so it reads the same count the server enforces with. `deleteSnippet`
+          refuses regardless — this is about not offering a button that is then refused.
+        */}
+        {uses > 0 ? (
+          <p class="mt-2 max-w-prose text-sm text-content-muted">
+            {uses} {uses === 1 ? 'item still uses' : 'items still use'} this snippet. Remove every{' '}
+            <code class="font-mono">{`{{ ${snippet.api_id} }}`}</code> before deleting it — an
+            unresolved token shows the braces to a visitor.
+          </p>
+        ) : (
+          <form method="post" action={`/api/taproot/snippets/${snippet.id}`} class="mt-2">
+            <input type="hidden" name="_method" value="delete" />
+            <p class="mb-3 max-w-prose text-sm text-content-muted">
+              Nothing uses this snippet, so deleting it changes no page.
+            </p>
+            <button
+              type="submit"
+              class="rounded-md border border-danger px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-subtle"
+            >
+              Delete snippet
+            </button>
+          </form>
+        )}
+      </section>
+    )
+  }
+</AdminLayout>

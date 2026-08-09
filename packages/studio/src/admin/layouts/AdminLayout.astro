@@ -148,6 +148,10 @@ const groups: NavGroup[] = [
       // Content, not configuration — an office's contact details rather than a setting — so it
       // lives beside Media rather than under Settings with the block *types*.
       { href: '/admin/blocks', label: 'Reusable blocks', icon: 'blocks' },
+      // Beside reusable blocks because it is the same idea one size down: that shares a region of a
+      // page, this shares a value inside a sentence. Both are content, which is why neither is
+      // under Settings.
+      { href: '/admin/snippets', label: 'Text snippets', icon: 'braces' },
       { href: '/admin/taxonomies', label: 'Taxonomies', icon: 'tags' },
       ...(canManageSchema(user)
         ? [{ href: '/admin/menus', label: 'Menus', icon: 'menu' }]
