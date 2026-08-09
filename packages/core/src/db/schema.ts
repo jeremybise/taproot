@@ -346,6 +346,20 @@ export type FieldType =
   | 'relation'
   | 'link'
   /**
+   * A reference to a reusable text snippet, by its `api_id`.
+   *
+   * The structured half of the same feature `{{ tuition }}` tokens provide. A token is right when
+   * the value goes *inside a sentence*; this is right when the value **is** the field — a chart's
+   * data point, a figure in a stat block — where the consumer wants `4500` rather than the sentence
+   * "$4,500" it would have to parse back.
+   *
+   * Stores the `api_id` rather than the row's uuid, which is the one place this deviates from
+   * `relation` and `media`. The token syntax already makes `api_id` the public name of a snippet and
+   * the delivery map has to be keyed by it regardless, so storing a uuid here would be a second
+   * spelling of one fact. It is safe because `api_id` is immutable.
+   */
+  | 'snippet'
+  /**
    * A third-party page framed in an `<iframe>` — a video, a map, a form.
    *
    * **The alternative was a raw HTML field, and it was rejected rather than deferred.** Richtext is

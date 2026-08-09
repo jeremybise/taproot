@@ -9,7 +9,12 @@ import {
 } from '../../blockTypeOptions.js';
 import { findImage, mediaOptions } from '../../mediaOptions.js';
 import { parentCandidates } from '../../parentOptions.js';
-import { getContentType, listContentTypes } from '@taprootcms/core';
+import {
+  getContentType,
+  listContentTypes,
+  listSnippets,
+  renderSnippet,
+} from '@taprootcms/core';
 import {
   getTaproot,
   loginRedirect,
@@ -52,6 +57,21 @@ const termsByTaxonomy = contentType
 
 const media = contentType ? await mediaOptions(taproot.db.db, taproot.storage) : [];
 const defaultOgImage = findImage(media, contentType?.default_og_image_id ?? null);
+/**
+ * Every reusable text snippet, for any `snippet` field on this type or inside its blocks.
+ *
+ * One small global list resolved here rather than fetched per control, the same trade the terms
+ * and media lists already make: this page reads the content type anyway, and a fetch per field
+ * would be a request per control on every load.
+ */
+const snippetOptions = (await listSnippets(taproot.db.db)).map((snippet) => ({
+  apiId: snippet.api_id,
+  name: snippet.name,
+  kind: snippet.kind,
+  value: snippet.value,
+  display: renderSnippet(snippet),
+}));
+
 ---
 
 <AdminLayout
@@ -121,6 +141,7 @@ const defaultOgImage = findImage(media, contentType?.default_og_image_id ?? null
           canPublish={canPublishContent(user)}
           isHierarchical={contentType.kind === 'page'}
           media={media}
+          snippets={snippetOptions}
           defaultOgImage={defaultOgImage}
           origin={Astro.url.origin}
         />

@@ -64,6 +64,9 @@ export const REPEATER_SUB_FIELD_TYPES = [
   // Same argument: a gallery of videos is one field holding several embeds, and each row can then
   // carry its own caption.
   'embed',
+  // A chart's data points are a repeater, and pointing each one at a snippet is the case the field
+  // type exists for — so excluding it here would leave the feature unable to do its own example.
+  'snippet',
 ] as const satisfies readonly FieldType[];
 
 export type RepeaterSubFieldType = (typeof REPEATER_SUB_FIELD_TYPES)[number];
@@ -373,6 +376,18 @@ export const fieldConfigSchemas = {
     /** Label shown on the reverse side of the relation in the target type's editor. */
     reverseLabel: z.string().optional(),
   }),
+  snippet: z.object({
+    /**
+     * Which snippet kinds this field will accept. Empty means any.
+     *
+     * "Empty means anything" here rather than `embed`'s "empty admits nothing", and the difference
+     * is what the list bounds. `embed.allowedHosts` is a security boundary against framing an
+     * arbitrary origin, so its tempting fallthrough is the dangerous one. This narrows a picker over
+     * rows the CMS already holds — the same shape as `media.accept` and `link.allowedKinds`, which
+     * both read empty as "all".
+     */
+    allowedKinds: z.array(z.enum(['text', 'number', 'date'])).default([]),
+  }),
   link: z.object({
     /**
      * Which of page, file and address the dialog offers. Empty means all three, matching `media`'s
@@ -515,6 +530,11 @@ export const FIELD_TYPE_META: Record<FieldType, FieldTypeMeta> = {
   taxonomy: { type: 'taxonomy', label: 'Taxonomy', description: 'Terms from a taxonomy tree.' },
   relation: { type: 'relation', label: 'Relation', description: 'A reference to other content items.' },
   link: { type: 'link', label: 'Link', description: 'A page, a file, or a web address — with optional label.' },
+  snippet: {
+    type: 'snippet',
+    label: 'Snippet',
+    description: 'A shared value from Text snippets, kept in step everywhere it is used.',
+  },
   embed: {
     type: 'embed',
     label: 'Embed',
@@ -675,6 +695,22 @@ export function buildValueSchema(
 
     case 'relation':
       schema = config.multiple === true ? z.array(z.string()) : z.string();
+      break;
+
+    case 'snippet':
+      /**
+       * The stored value is an `api_id`, so it is validated to the token grammar's character set.
+       *
+       * Not checked against the snippets that currently exist, deliberately. `validateItemData` is
+       * synchronous and has no database handle — the same reason a `relation` field's target id is
+       * not verified to exist here — and the failure is benign either way: a field naming a snippet
+       * that has been removed resolves to nothing, exactly as a dangling token does, rather than
+       * making the item unsavable. Deleting a snippet in use is refused anyway.
+       */
+      schema = z
+        .string()
+        .regex(/^[a-z][a-z0-9_]*$/, 'Must name a snippet by its token id.')
+        .or(z.literal(''));
       break;
 
     case 'link':

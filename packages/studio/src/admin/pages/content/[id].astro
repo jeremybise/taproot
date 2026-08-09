@@ -25,6 +25,8 @@ import {
   typeHasItemPages,
   previewSiteUrl,
   releasesAvailableFor,
+  listSnippets,
+  renderSnippet,
 } from '@taprootcms/core';
 import { resolvePreviewPane, PREVIEW_PANE_COOKIE_NAME } from '../../previewPane.js';
 import {
@@ -194,6 +196,21 @@ const flash = error
       : restored
         ? `Restored revision ${restored}. The restore was recorded as a new revision.`
         : null;
+/**
+ * Every reusable text snippet, for any `snippet` field on this type or inside its blocks.
+ *
+ * One small global list resolved here rather than fetched per control, the same trade the terms
+ * and media lists already make: this page reads the content type anyway, and a fetch per field
+ * would be a request per control on every load.
+ */
+const snippetOptions = (await listSnippets(taproot.db.db)).map((snippet) => ({
+  apiId: snippet.api_id,
+  name: snippet.name,
+  kind: snippet.kind,
+  value: snippet.value,
+  display: renderSnippet(snippet),
+}));
+
 ---
 
 <AdminLayout
@@ -331,6 +348,7 @@ const flash = error
     }}
     isHierarchical={contentType.kind === 'page'}
     media={media}
+    snippets={snippetOptions}
     referencedMedia={referencedMedia}
     defaultOgImage={defaultOgImage}
     {/*

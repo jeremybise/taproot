@@ -8,6 +8,7 @@ import {
   type RepeaterRow,
 } from '@taprootcms/core';
 
+import type { SnippetOption } from './SnippetField.js';
 import { FieldControl, type TermOption } from './FieldControl.js';
 import { CollapseAll } from './CollapseAll.js';
 import { useCollapsible } from './useCollapsible.js';
@@ -40,6 +41,7 @@ interface Props {
   termsByTaxonomy?: Record<string, TermOption[]>;
   relationTargets?: Record<string, RelationTarget>;
   media?: MediaOption[];
+  snippets?: SnippetOption[];
   minItems?: number;
   maxItems?: number;
   disabled?: boolean;
@@ -56,6 +58,7 @@ export function RepeaterField({
   termsByTaxonomy,
   relationTargets,
   media,
+  snippets,
   minItems = 0,
   maxItems,
   disabled = false,
@@ -237,6 +240,7 @@ export function RepeaterField({
                     termsByTaxonomy={termsByTaxonomy}
                     relationTargets={relationTargets}
                     media={media}
+                    snippets={snippets}
                     preview={disabled}
                     /*
                       Every row renders the same sub-field definitions, so without this each row's

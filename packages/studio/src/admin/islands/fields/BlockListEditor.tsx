@@ -39,6 +39,7 @@ import {
 } from '@taprootcms/core';
 
 import { FieldControl, type TermOption } from './FieldControl.js';
+import type { SnippetOption } from './SnippetField.js';
 import { CollapseAll } from './CollapseAll.js';
 import { OverflowMenu } from '../OverflowMenu.js';
 import { AddBlockPanel } from './AddBlockPanel.js';
@@ -89,6 +90,8 @@ interface Props {
   termsByTaxonomy?: Record<string, TermOption[]>;
   /** Passed through so a block's own media field works exactly as a page's does. */
   media?: MediaOption[];
+  /** Likewise for a snippet field inside a block, which is where a chart lives. */
+  snippets?: SnippetOption[];
   /** Likewise for a block's own relation field. */
   relationTargets?: Record<string, RelationTarget>;
   /** Library entries placeable in this field, already filtered to allowed block types. */
@@ -118,6 +121,7 @@ export function BlockListEditor({
   maxBlocks,
   termsByTaxonomy,
   media,
+  snippets,
   relationTargets,
   reusableBlocks = [],
   canPromote = false,
@@ -319,6 +323,7 @@ export function BlockListEditor({
           disabled={disabled}
           termsByTaxonomy={termsByTaxonomy}
           media={media}
+          snippets={snippets}
           relationTargets={relationTargets}
           reusable={block.ref ? reusableBlocks.find((e) => e.id === block.ref) : undefined}
           canPromote={canPromote && !disabled}
@@ -416,6 +421,7 @@ interface RowProps {
   disabled: boolean;
   termsByTaxonomy?: Record<string, TermOption[]>;
   media?: MediaOption[];
+  snippets?: SnippetOption[];
   relationTargets?: Record<string, RelationTarget>;
   /** The library entry this block references, when it is a reference rather than page content. */
   reusable?: ReusableBlockOption;
@@ -451,6 +457,7 @@ function BlockRow({
   disabled,
   termsByTaxonomy,
   media,
+  snippets,
   relationTargets,
   reusable,
   canPromote,
@@ -671,6 +678,7 @@ function BlockRow({
               value={(reusable ? reusable.data : block.data)[field.api_id]}
               termsByTaxonomy={termsByTaxonomy}
               media={media}
+              snippets={snippets}
               relationTargets={relationTargets}
               /**
                * Everything a nested `block` field needs, carried down rather than dropped.

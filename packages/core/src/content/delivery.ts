@@ -432,7 +432,7 @@ export async function buildItemPayload(
    *
    * Collected from the already-linked data so the walk sees the same strings that will be shipped.
    */
-  const snippetNames = collectSnippetNames(contentType.fields, linkedData);
+  const snippetNames = collectSnippetNames(contentType.fields, linkedData, blockTypes);
   const snippets = await snippetsByApiId(db, snippetNames);
   const resolvedData = applySnippets(contentType.fields, linkedData, snippets);
 
@@ -1493,34 +1493,86 @@ function resolveRichTextData(
  * definition-driven — a block's field definitions are not in scope here — so it reaches every
  * string, exactly as `collectLoose` and `resolveLoose` already do on their own passes.
  */
-function collectSnippetNames(fields: FieldRow[], data: Record<string, unknown>): string[] {
+function collectSnippetNames(
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  /**
+   * Block type definitions, so a `snippet` **field** inside a block is found.
+   *
+   * A token is a string and a structural walk finds it anywhere. A `snippet` field's value is a bare
+   * `api_id` — indistinguishable from any other string without knowing the field's type — so this is
+   * the one part of the walk that cannot be purely structural. Leaving it out would mean the field
+   * type works at the top level and silently not inside a block, which is where a chart lives; the
+   * feature would fail its own worked example.
+   */
+  blockTypes: ReadonlyMap<string, { fields: FieldRow[] }>,
+): string[] {
   const found = new Set<string>();
 
-  const walkLoose = (value: unknown): void => {
-    if (typeof value === 'string') {
-      for (const name of snippetTokensIn(value)) found.add(name);
-      return;
-    }
+  const addTokens = (value: unknown): void => {
+    if (typeof value === 'string') for (const name of snippetTokensIn(value)) found.add(name);
+  };
+
+  /** Tokens anywhere, plus `snippet` fields wherever definitions are in reach. */
+  const walk = (definitions: FieldRow[] | null, value: unknown): void => {
+    if (typeof value === 'string') return addTokens(value);
+
     if (Array.isArray(value)) {
-      for (const entry of value) walkLoose(entry);
+      for (const entry of value) walk(definitions, entry);
       return;
     }
-    if (typeof value === 'object' && value !== null) {
-      for (const entry of Object.values(value)) walkLoose(entry);
+
+    if (typeof value !== 'object' || value === null) return;
+    const record = value as Record<string, unknown>;
+
+    // A block instance: `{ id, type, data }`. Its own type's fields become the definitions for the
+    // level below, which is what makes a `snippet` field inside it visible.
+    const blockFields =
+      typeof record.type === 'string' ? (blockTypes.get(record.type)?.fields ?? null) : null;
+
+    for (const [key, entry] of Object.entries(record)) {
+      if (key === 'id' || key === 'type' || key === 'ref') continue;
+      // `data` on a block or repeater row carries the values; anything else is walked as-is.
+      walkFields(key === 'data' ? blockFields : null, entry);
     }
   };
 
-  for (const field of fields) {
-    const value = data[field.api_id];
-    if (value === undefined || value === null) continue;
-
-    if (field.type === 'text' || field.type === 'richtext') {
-      if (typeof value === 'string') for (const name of snippetTokensIn(value)) found.add(name);
-      continue;
+  /** Apply definitions when we have them, and fall back to the structural walk when we do not. */
+  const walkFields = (definitions: FieldRow[] | null, value: unknown): void => {
+    if (!definitions) return walk(null, value);
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return walk(definitions, value);
     }
 
-    if (field.type === 'block' || field.type === 'repeater') walkLoose(value);
-  }
+    const record = value as Record<string, unknown>;
+    for (const field of definitions) collectField(field, record[field.api_id]);
+  };
+
+  const collectField = (field: FieldRow, value: unknown): void => {
+    if (value === undefined || value === null) return;
+
+    if (field.type === 'text' || field.type === 'richtext') return addTokens(value);
+    if (field.type === 'snippet') {
+      if (typeof value === 'string' && value) found.add(value.toLowerCase());
+      return;
+    }
+    if (field.type === 'block') {
+      if (Array.isArray(value)) for (const block of value) walk(null, block);
+      return;
+    }
+    if (field.type === 'repeater') {
+      const rowFields = repeaterRowFields(field);
+      if (!Array.isArray(value)) return;
+      for (const row of value) {
+        const data = (row as { data?: unknown })?.data;
+        if (data && typeof data === 'object') {
+          for (const sub of rowFields) collectField(sub, (data as Record<string, unknown>)[sub.api_id]);
+        }
+      }
+    }
+  };
+
+  for (const field of fields) collectField(field, data[field.api_id]);
 
   return [...found];
 }

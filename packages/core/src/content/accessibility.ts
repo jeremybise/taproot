@@ -293,6 +293,13 @@ function walkField(field: FieldRow, value: unknown, context: A11yContext, state:
     case 'select':
     case 'taxonomy':
     case 'relation':
+    /*
+     * A snippet field names a shared value; whatever that value says is checked where it is written,
+     * not on every page that points at it. Reporting it here would accuse each of a dozen pages of
+     * the same problem and send their authors to a screen they may not be able to edit — which is
+     * the reasoning the `query` case below already gives for not following its results.
+     */
+    case 'snippet':
       return;
 
     /**

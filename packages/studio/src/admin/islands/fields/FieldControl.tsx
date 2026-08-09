@@ -15,6 +15,7 @@ import {
 import { RichTextEditor } from './RichTextEditor.js';
 import { RelationField } from './RelationField.js';
 import { LinkField, type LinkValue } from './LinkField.js';
+import { SnippetField, type SnippetOption } from './SnippetField.js';
 import { EmbedField } from './EmbedField.js';
 import { RepeaterField } from './RepeaterField.js';
 import { QueryField, type QueryValue } from './QueryField.js';
@@ -62,6 +63,14 @@ export interface FieldControlProps {
    * rather than costing a request per block field.
    */
   blockTypes?: BlockTypeOption[];
+  /**
+   * Every reusable text snippet, resolved server-side.
+   *
+   * One small global list rather than per field, so it rides along with the terms and media for the
+   * same reason those do — the editor page already reads the content type, and a fetch per snippet
+   * field would be a request per control on every load.
+   */
+  snippets?: SnippetOption[];
   /** The library's first page, resolved server-side with public URLs. The picker searches past it. */
   media?: MediaOption[];
   /**
@@ -106,6 +115,7 @@ export function FieldControl({
   termsByTaxonomy,
   blockTypes,
   media,
+  snippets,
   relationTargets,
   reusableBlocks,
   canPromote = false,
@@ -478,6 +488,26 @@ export function FieldControl({
        * their `multiple` config. A row of buttons is a repeater of these; see the `link` config
        * schema in core for why there is no `multiple` here to convert.
        */
+      /**
+       * A reference to a shared value, stored as the snippet's `api_id`.
+       *
+       * The `id` goes on the `<select>` itself, which is a labelable element — so the caller's
+       * `<label for>` works without `aria-labelledby`, unlike the custom controls beside it.
+       */
+      case 'snippet':
+        return (
+          <SnippetField
+            id={id}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(apiId) => onChange(apiId)}
+            snippets={snippets ?? []}
+            allowedKinds={stringArrayOr(config.allowedKinds, undefined) ?? []}
+            describedBy={describedBy || undefined}
+            invalid={Boolean(errors?.length)}
+            disabled={preview}
+          />
+        );
+
       case 'link': {
         const stored =
           typeof value === 'object' && value !== null && 'kind' in value

@@ -13,6 +13,7 @@ import {
 
 import { FieldControl, type TermOption } from './fields/FieldControl.js';
 import { ItemPicker } from './fields/ItemPicker.js';
+import type { SnippetOption } from './fields/SnippetField.js';
 import type { BlockTypeOption, ReusableBlockOption } from './fields/BlockListEditor.js';
 import AccessibilityPanel from './AccessibilityPanel.js';
 import PreviewPane from './PreviewPane.js';
@@ -90,6 +91,8 @@ interface Props {
    * stop a document field from ever reaching a PDF.
    */
   media?: MediaOption[];
+  /** Every reusable text snippet, for any `snippet` field on this type or inside its blocks. */
+  snippets?: SnippetOption[];
   /**
    * The assets this item already references, however old they are.
    *
@@ -185,6 +188,7 @@ export default function ItemEditor({
   canPublish,
   isHierarchical,
   media = [],
+  snippets = [],
   referencedMedia = [],
   defaultOgImage = null,
   path = '/',
@@ -601,6 +605,7 @@ export default function ItemEditor({
               // publishing rather than the one for editing a single page.
               canPromote={canPublish}
               media={media}
+              snippets={snippets}
             />
             ))}
         </section>

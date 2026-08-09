@@ -447,6 +447,63 @@ const MediaConfig: ConfigForm = ({ config, onChange }) => {
  * unchecked to allow anything" is a pattern this builder already teaches, and it means a field
  * created without opening this form is the useful one rather than the useless one.
  */
+/**
+ * Which snippet kinds this field will accept.
+ *
+ * Empty means any, matching `media`'s `accept` and `link`'s `allowedKinds` — and deliberately
+ * *unlike* `embed.allowedHosts`, where empty admits nothing. The difference is what the list bounds:
+ * that one is a security boundary against framing an arbitrary origin, so its permissive
+ * fallthrough would be the dangerous one. This narrows a picker over rows the CMS already holds.
+ */
+const SnippetConfig: ConfigForm = ({ config, onChange }) => {
+  const allowed = Array.isArray(config.allowedKinds) ? (config.allowedKinds as string[]) : [];
+  const kinds = [
+    { value: 'text', label: 'Text' },
+    { value: 'number', label: 'Number' },
+    { value: 'date', label: 'Date' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <fieldset>
+        <legend className="text-sm font-medium">Allowed kinds</legend>
+        <p className="mt-0.5 text-xs text-content-subtle">
+          Leave all unchecked to allow any. Narrowing to Number is what stops a chart's data point
+          being pointed at a sentence.
+        </p>
+        <div className="mt-2 space-y-1.5">
+          {kinds.map((kind) => (
+            <div key={kind.value} className="flex items-center gap-2">
+              <input
+                id={`snippet-kind-${kind.value}`}
+                type="checkbox"
+                checked={allowed.includes(kind.value)}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    allowedKinds: e.target.checked
+                      ? [...allowed, kind.value]
+                      : allowed.filter((entry) => entry !== kind.value),
+                  })
+                }
+              />
+              <label htmlFor={`snippet-kind-${kind.value}`} className="text-sm">
+                {kind.label}
+              </label>
+            </div>
+          ))}
+        </div>
+      </fieldset>
+
+      <p className="text-xs text-content-subtle">
+        Editors manage the values under Library → Text snippets. To put one in the middle of a
+        sentence instead, type its <code className="font-mono">{'{{ token }}'}</code> into any text
+        or rich text field — no field needed.
+      </p>
+    </div>
+  );
+};
+
 const LinkConfig: ConfigForm = ({ config, onChange }) => {
   const allowed = Array.isArray(config.allowedKinds) ? (config.allowedKinds as string[]) : [];
   const kinds = [
@@ -1282,6 +1339,7 @@ export const fieldConfigForms: Record<FieldType, ConfigForm> = {
   taxonomy: TaxonomyConfig,
   relation: RelationConfig,
   link: LinkConfig,
+  snippet: SnippetConfig,
   embed: EmbedConfig,
   block: BlockConfig,
   repeater: RepeaterConfig,
