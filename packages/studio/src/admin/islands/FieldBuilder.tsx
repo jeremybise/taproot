@@ -277,6 +277,27 @@ export default function FieldBuilder({
 
           <form onSubmit={save}>
             <div className="min-w-0 space-y-5 rounded-lg border border-border bg-surface-raised p-5">
+              {/*
+                Type first, because it is the decision the rest depend on: it fixes which options
+                form appears below, and it is the one thing that cannot be changed afterwards. It sat
+                third, under Label and API id, which asked an author to name a thing before deciding
+                what it was.
+
+                **Deliberately not a wizard step.** Hiding the rest of this form until a type is
+                picked was the obvious next move and costs more than it buys: `scripts/a11y-audit.mjs`
+                runs with `runScripts: 'outside-only'`, so what axe sees is this island's
+                server-rendered markup with its initial state — a new, unsaved draft. Gating the
+                fields behind a first step would take every input on this screen out of the audit
+                while the run kept reporting zero, which is the same trap as auditing a collapsed
+                panel or a closed `<dialog>`. Ordering gets most of the clarity and keeps all of it
+                in the DOM.
+              */}
+              <FieldTypePicker
+                value={draft.type}
+                disabled={!isNew}
+                onChange={(type) => setDraft({ ...draft, type, config: {} })}
+              />
+
               <div>
                 <label htmlFor="field-label" className="block text-sm font-medium">
                   Label
@@ -316,12 +337,6 @@ export default function FieldBuilder({
                   }`}
                 />
               </div>
-
-              <FieldTypePicker
-                value={draft.type}
-                disabled={!isNew}
-                onChange={(type) => setDraft({ ...draft, type, config: {} })}
-              />
 
               <div>
                 <label htmlFor="field-help" className="block text-sm font-medium">
