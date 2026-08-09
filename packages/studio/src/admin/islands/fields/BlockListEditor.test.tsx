@@ -85,21 +85,47 @@ const blocks = [
   { id: 'c', type: 'hero', data: { heading: 'Third' } },
 ];
 
+/**
+ * Open an "Add a block" panel and choose a type from it.
+ *
+ * Adding used to be one button per type sitting in the page; it is a panel now, so every test that
+ * adds a block has to open it. Written as a helper rather than repeated, because the alternative is
+ * eleven copies of the same two clicks and one of them ending up subtly different.
+ *
+ * `scope` matters for the nesting tests, where an outer block's panel and an inner block field's
+ * panel are both on screen and `getByRole` would find whichever came first.
+ */
+async function addBlock(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+  scope: HTMLElement | null = null,
+) {
+  const where = scope ? within(scope) : screen;
+  await user.click(where.getAllByRole('button', { name: 'Add a block' })[0]!);
+  await user.click(where.getByRole('button', { name: new RegExp(`^${name}`) }));
+}
+
 afterEach(cleanup);
 
 describe('adding blocks', () => {
-  it('offers one button per allowed block type', async () => {
+  it('offers every allowed block type inside the panel', async () => {
+    const user = userEvent.setup();
     setup();
 
-    expect(screen.getByRole('button', { name: '+ Hero' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '+ Quote' })).toBeTruthy();
+    // Nothing on screen until asked — the wall of one-button-per-type is what this replaced.
+    expect(screen.queryByRole('button', { name: /^Hero/ })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Add a block' }));
+
+    expect(screen.getByRole('button', { name: /^Hero/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Quote/ })).toBeTruthy();
   });
 
   it('appends the chosen type with a generated id', async () => {
     const user = userEvent.setup();
     const { onChange } = setup();
 
-    await user.click(screen.getByRole('button', { name: '+ Quote' }));
+    await addBlock(user, 'Quote');
 
     expect(onChange).toHaveBeenCalledTimes(1);
     const added = onChange.mock.calls[0]![0];
@@ -110,10 +136,19 @@ describe('adding blocks', () => {
     expect(added[0].id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it('closes the panel after adding, since the next act is editing', async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await addBlock(user, 'Quote');
+
+    expect(screen.queryByRole('button', { name: /^Quote/ })).toBeNull();
+  });
+
   it('stops offering more once maxBlocks is reached', () => {
     setup({ value: blocks, maxBlocks: 3 });
 
-    expect(screen.queryByRole('button', { name: '+ Hero' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add a block' })).toBeNull();
     expect(screen.getByText(/holds at most 3 blocks/)).toBeTruthy();
   });
 
@@ -314,20 +349,45 @@ describe('a block field inside a block', () => {
 
   const nested = [{ id: 's', type: 'section', data: { blocks: [] } }];
 
-  it('offers block types inside the nested field', () => {
+  it('offers block types inside the nested field', async () => {
+    const user = userEvent.setup();
     setup({ value: nested, blockTypes: [section, hero, quote] });
 
-    // The outer field's own add buttons, plus the nested field's.
-    expect(screen.getAllByRole('button', { name: '+ Hero' })).toHaveLength(2);
+    /*
+      Scoped to the Section's row, never picked by index. The nested field renders *inside* the list
+      item and the outer field's add control renders after the list, so `getAllByRole(...)[1]` is the
+      outer one — which is the trap the sibling test below already warns about, and which this test
+      fell into on its first rewrite: it opened the outer panel and asserted against it.
+    */
+    const row = screen.getByRole('listitem');
+    expect(screen.getAllByRole('button', { name: 'Add a block' })).toHaveLength(2);
+    await user.click(within(row).getByRole('button', { name: 'Add a block' }));
+
+    expect(within(row).getByRole('button', { name: /^Hero/ })).toBeTruthy();
     expect(screen.queryByText(/No block types are available/)).toBeNull();
   });
 
-  it('does not offer a block type inside itself', () => {
+  it('does not offer a block type inside itself', async () => {
+    const user = userEvent.setup();
     setup({ value: nested, blockTypes: [section, hero, quote] });
 
-    // "+ Section" exists once, at the top level. Offering it again inside a Section is the one
-    // arrangement that lets an editor descend forever.
-    expect(screen.getAllByRole('button', { name: '+ Section' })).toHaveLength(1);
+    // Section is offered at the top level and must not be offered again inside a Section — that is
+    // the one arrangement that lets an editor descend forever.
+    const row = screen.getByRole('listitem');
+    const trigger = within(row).getByRole('button', { name: 'Add a block' });
+    await user.click(trigger);
+
+    /*
+      Scoped to the panel the trigger controls, not to the row.
+
+      The row also contains this block's own disclosure heading, whose accessible name starts
+      "Section, 1 of 1" — so asserting `/^Section/` is absent anywhere in the row fails against the
+      heading rather than against a panel entry, and would have gone on failing however correct the
+      exclusion was.
+    */
+    const panel = document.getElementById(trigger.getAttribute('aria-controls')!)!;
+    expect(within(panel).queryByRole('button', { name: /^Section/ })).toBeNull();
+    expect(within(panel).getByRole('button', { name: /^Hero/ })).toBeTruthy();
   });
 
   it('says why the nested list is empty when every type is an ancestor', () => {
@@ -339,7 +399,8 @@ describe('a block field inside a block', () => {
     expect(screen.queryByText(/Create some under Settings/)).toBeNull();
   });
 
-  it('does not apply the outer field allowedBlocks to the nested one', () => {
+  it('does not apply the outer field allowedBlocks to the nested one', async () => {
+    const user = userEvent.setup();
     // FieldControl narrows `blockTypes` by this field's `allowedBlocks` before handing it over, so
     // the catalogue has to travel separately or a Section allowing only Sections would leave its
     // own block field able to hold nothing.
@@ -349,8 +410,11 @@ describe('a block field inside a block', () => {
       allBlockTypes: [section, hero, quote],
     });
 
-    expect(screen.getByRole('button', { name: '+ Hero' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '+ Quote' })).toBeTruthy();
+    const row = screen.getByRole('listitem');
+    await user.click(within(row).getByRole('button', { name: 'Add a block' }));
+
+    expect(within(row).getByRole('button', { name: /^Hero/ })).toBeTruthy();
+    expect(within(row).getByRole('button', { name: /^Quote/ })).toBeTruthy();
   });
 
   it('writes a nested block back through the outer block data', async () => {
@@ -358,10 +422,10 @@ describe('a block field inside a block', () => {
     const { onChange } = setup({ value: nested, blockTypes: [section, hero, quote] });
 
     // Scoped to the Section's row rather than picked out of the flat list by index: the outer
-    // field's add buttons render after the list, so an index here would silently mean the other
+    // field's add control renders after the list, so an index here would silently mean the other
     // one and the test would pass against the wrong control.
     const row = screen.getByRole('listitem');
-    await user.click(within(row).getByRole('button', { name: '+ Quote' }));
+    await addBlock(user, 'Quote', row);
 
     const next = onChange.mock.calls.at(-1)![0];
     expect(next[0].data.blocks).toHaveLength(1);

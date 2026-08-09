@@ -41,6 +41,7 @@ import {
 import { FieldControl, type TermOption } from './FieldControl.js';
 import { CollapseAll } from './CollapseAll.js';
 import { OverflowMenu } from '../OverflowMenu.js';
+import { AddBlockPanel } from './AddBlockPanel.js';
 import { useCollapsible } from './useCollapsible.js';
 import type { RelationTarget } from '../../relationOptions.js';
 
@@ -391,54 +392,13 @@ export function BlockListEditor({
               This region holds at most {maxBlocks} block{maxBlocks === 1 ? '' : 's'}.
             </p>
           ) : (
-            <fieldset>
-              <legend id={`${id}-add`} className="text-xs font-medium text-content-subtle">
-                Add a block
-              </legend>
-              {/*
-                One button per block type rather than a select plus an Add button. Adding a block is
-                the most common action here, and a select makes it two interactions and a decision
-                about which control commits it.
-              */}
-              <div aria-labelledby={`${id}-add`} className="mt-1.5 flex flex-wrap gap-2">
-                {placeable.map((blockType) => (
-                  <button
-                    key={blockType.id}
-                    type="button"
-                    onClick={() => add(blockType.api_id)}
-                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
-                  >
-                    + {blockType.name}
-                  </button>
-                ))}
-              </div>
-
-              {reusableBlocks.length > 0 && (
-                <>
-                  <p id={`${id}-library`} className="mt-3 text-xs font-medium text-content-subtle">
-                    From the library
-                  </p>
-                  {/*
-                    Listed apart from the block types because placing one is a different decision:
-                    it puts shared content on this page, and editing it later changes every other
-                    page that uses it too.
-                  */}
-                  <div aria-labelledby={`${id}-library`} className="mt-1.5 flex flex-wrap gap-2">
-                    {reusableBlocks.map((entry) => (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        onClick={() => addReference(entry)}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-accent bg-accent-subtle px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
-                      >
-                        <Library aria-hidden="true" size={14} />
-                        {entry.name}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </fieldset>
+            <AddBlockPanel
+              idPrefix={id}
+              blockTypes={placeable}
+              reusableBlocks={reusableBlocks}
+              onAdd={add}
+              onAddReference={addReference}
+            />
           )}
         </div>
       )}
