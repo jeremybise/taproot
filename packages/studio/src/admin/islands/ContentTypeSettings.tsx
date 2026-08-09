@@ -23,6 +23,26 @@ import { contentTypeIcons } from '../contentTypeIcons.js';
  * URLs. Both are fixed at creation and the UI says so rather than offering an edit the server
  * would reject.
  */
+/** Swap two entries, returning a new array — the reorder every move button performs. */
+function swap(keys: string[], from: number, to: number): string[] {
+  if (to < 0 || to >= keys.length) return keys;
+  const next = [...keys];
+  [next[from], next[to]] = [next[to]!, next[from]!];
+  return next;
+}
+
+/**
+ * What a column key is called, whether it names a built-in or a field.
+ *
+ * A key naming a field that has since been deleted keeps the key itself as its label rather than
+ * rendering blank. `resolveListColumns` drops it from the actual list, so this only shows on the
+ * settings screen — where seeing the stale key is exactly what tells an admin to remove it.
+ */
+function columnLabel(key: string, fields: FieldRow[]): string {
+  if ((BUILT_IN_COLUMNS as readonly string[]).includes(key)) return builtInLabel(key);
+  return fields.find((field) => field.api_id === key)?.label ?? key;
+}
+
 /** The built-in columns' visible names, matching what the list's own headings say. */
 function builtInLabel(key: string): string {
   return key === 'title'
@@ -52,12 +72,24 @@ export default function ContentTypeSettings({
   const [summaryTemplate, setSummaryTemplate] = useState(contentType.summary_template ?? '');
   const [icon, setIcon] = useState(contentType.icon ?? '');
   const [listColumns, setListColumns] = useState<string[]>(() => {
+    let stored: string[] | null = null;
     try {
-      const stored = contentType.list_columns ? JSON.parse(contentType.list_columns) : null;
-      return Array.isArray(stored) ? stored.filter((k) => typeof k === 'string') : [...DEFAULT_COLUMNS];
+      const parsed = contentType.list_columns ? JSON.parse(contentType.list_columns) : null;
+      if (Array.isArray(parsed)) stored = parsed.filter((k): k is string => typeof k === 'string');
     } catch {
-      return [...DEFAULT_COLUMNS];
+      // A stored value that will not parse falls back to the defaults rather than emptying the
+      // screen — the `parseJson` precedent, and the same fallback `resolveListColumns` applies.
     }
+    if (!stored || stored.length === 0) return [...DEFAULT_COLUMNS];
+
+    /*
+     * Title is put back if a stored order somehow lacks it.
+     *
+     * `resolveListColumns` already forces it when rendering, so a list can never lose its link to
+     * the editor — but without this the settings screen would show an order that does not match
+     * what the list actually renders, and saving would silently re-add it. Better to show the truth.
+     */
+    return stored.includes('title') ? stored : ['title', ...stored];
   });
   const [listSort, setListSort] = useState(contentType.list_sort ?? 'path');
   const [listSortField, setListSortField] = useState(contentType.list_sort_field ?? '');
@@ -239,46 +271,97 @@ export default function ContentTypeSettings({
         </p>
 
         {/*
-          Checkboxes in a fixed order rather than a reorderable list.
+          An ordered list with Move up / Move down, not a set of checkboxes.
 
-          Reordering would need drag-and-drop *plus* the keyboard controls the house rule requires
-          alongside it, to arrange five things somebody looks at once. The order here is built-ins
-          first then fields in their own builder order, which is already the order somebody thinks
-          about them in. If arranging them ever matters, `SortableFieldList` is the pattern.
+          The order is what the list actually renders, so it has to be expressible — and it is
+          arranged with **buttons rather than dragging**. The house rule is that drag is added
+          *alongside* keyboard control and never instead of it, so buttons alone satisfy it fully;
+          this is a screen configured once per content type, and dnd-kit here would be fifty lines of
+          boilerplate for an interaction nobody repeats. `SortableFieldList` remains the pattern if
+          dragging ever earns its place.
+
+          Every control names the column it acts on. A column of identical "Move up" buttons is
+          unusable in a screen reader's control list — the same rule `BlockListEditor` follows.
         */}
-        <div
-          role="group"
+        <ul
           aria-labelledby="ct-columns-label"
           aria-describedby="ct-columns-hint"
-          className="mt-2 grid grid-cols-1 gap-1.5 rounded-md border border-border p-3 sm:grid-cols-2"
+          className="mt-2 space-y-1 rounded-md border border-border p-2"
         >
-          {[
-            ...BUILT_IN_COLUMNS.map((key) => ({ key: key as string, label: builtInLabel(key) })),
-            ...columnCandidates(fields).map((field) => ({ key: field.api_id, label: field.label })),
-          ].map((column) => {
-            const locked = column.key === 'title';
+          {listColumns.map((key, index) => {
+            const label = columnLabel(key, fields);
+            const locked = key === 'title';
             return (
-              <label key={column.key} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={locked || listColumns.includes(column.key)}
-                  disabled={locked}
-                  onChange={(e) =>
-                    setListColumns(
-                      e.target.checked
-                        ? [...listColumns, column.key]
-                        : listColumns.filter((key) => key !== column.key),
-                    )
-                  }
-                />
-                <span className={locked ? 'text-content-muted' : undefined}>
-                  {column.label}
-                  {locked && ' (always shown)'}
+              <li key={key} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
+                <span className="min-w-0 flex-1 truncate">
+                  {label}
+                  {locked && <span className="ml-1 text-content-subtle">(always shown)</span>}
                 </span>
-              </label>
+
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  aria-label={`Move ${label} up`}
+                  onClick={() => setListColumns(swap(listColumns, index, index - 1))}
+                  className="rounded border border-border-strong px-2 py-1 text-xs transition-colors hover:bg-surface-sunken disabled:opacity-40"
+                >
+                  <span aria-hidden="true">↑</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={index === listColumns.length - 1}
+                  aria-label={`Move ${label} down`}
+                  onClick={() => setListColumns(swap(listColumns, index, index + 1))}
+                  className="rounded border border-border-strong px-2 py-1 text-xs transition-colors hover:bg-surface-sunken disabled:opacity-40"
+                >
+                  <span aria-hidden="true">↓</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={locked}
+                  aria-label={`Remove the ${label} column`}
+                  onClick={() => setListColumns(listColumns.filter((entry) => entry !== key))}
+                  className="rounded border border-border-strong px-2 py-1 text-xs text-danger transition-colors hover:bg-danger-subtle disabled:opacity-40 disabled:text-content-subtle"
+                >
+                  Remove
+                </button>
+              </li>
             );
           })}
-        </div>
+        </ul>
+
+        {/*
+          Adding appends to the end, which is where somebody looking at an ordered list expects a new
+          entry to land — and it is then one Move up away from anywhere else.
+        */}
+        {(() => {
+          const available = [
+            ...BUILT_IN_COLUMNS.map((key) => ({ key: key as string, label: builtInLabel(key) })),
+            ...columnCandidates(fields).map((field) => ({ key: field.api_id, label: field.label })),
+          ].filter((column) => !listColumns.includes(column.key));
+
+          if (available.length === 0) return null;
+
+          return (
+            <div className="mt-2">
+              <p id="ct-columns-add" className="text-xs font-medium text-content-subtle">
+                Add a column
+              </p>
+              <div aria-labelledby="ct-columns-add" className="mt-1.5 flex flex-wrap gap-2">
+                {available.map((column) => (
+                  <button
+                    key={column.key}
+                    type="button"
+                    onClick={() => setListColumns([...listColumns, column.key])}
+                    className="rounded-md border border-border-strong px-2.5 py-1 text-xs font-medium transition-colors hover:bg-surface-sunken"
+                  >
+                    + {column.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="@container">

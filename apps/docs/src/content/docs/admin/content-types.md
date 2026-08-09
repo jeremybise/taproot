@@ -113,9 +113,13 @@ site with a dozen types it makes the sidebar scannable rather than a list to rea
 **List columns**, on the type's settings screen, chooses which columns the list of these items has —
 and the order it is sorted in.
 
-Tick the built-ins you want (path, status, updated, created) and any of the type's own fields. A
-photograph, a start date, a job title: whatever tells one row from the next. **Title is always
-shown**, because it carries the link to the editor.
+The list shows the columns in the order they appear in the table. Use **Move up** and **Move down**
+to arrange them, **Remove** to drop one, and the buttons under **Add a column** to bring in a
+built-in (path, status, updated, created) or any of the type's own fields — a photograph, a start
+date, a job title: whatever tells one row from the next.
+
+**Title is always shown**, because it carries the link to the editor. You can move it, but not
+remove it.
 
 **Default order** sorts the list. Beyond the built-in orders, *Soonest first* and *Latest first* sort
 by one of the type's own fields — pick which underneath. An events list ordered by when the events
