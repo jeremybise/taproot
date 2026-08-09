@@ -146,6 +146,22 @@ const inputClass =
     Three separate add forms rather than one form that shows and hides fields by target type.
     Each is a fieldset with its own legend, so the grouping is announced rather than implied by
     layout, and no field is present-but-irrelevant. It also works with no JavaScript at all.
+
+    **Each form and each fieldset carries `min-w-0`, and neither is decoration.**
+
+    A grid item's default `min-width: auto` refuses to shrink below its content's *min-content*
+    size, and that size propagates all the way down: the page picker's result rows carry `truncate`,
+    which is `white-space: nowrap`, so their min-content is the whole untruncated "title + path".
+    The `min-w-0` already on the inner flex child is not enough — it lets the flex item shrink
+    during flex layout, while the intrinsic contribution still reaches the grid item. Measured at a
+    305px viewport: the column sized to 300px and the page scrolled sideways.
+
+    The `<fieldset>` needs its own for a different reason: the UA stylesheet gives it
+    `min-inline-size: min-content`, so it stays wider than a parent that can now shrink. Fixing only
+    the form left 10px of the overflow behind.
+
+    `scripts/a11y-audit.mjs` sees neither, because it loads no CSS and its reflow check reads class
+    strings. Verify by measuring `scrollingElement.scrollWidth` in a real browser.
   -->
   <section aria-labelledby="add-heading" class="mb-8">
     <h2 id="add-heading" class="mb-3 text-base font-semibold">Add an item</h2>
@@ -172,10 +188,10 @@ const inputClass =
           <form
             method="post"
             action={`/api/taproot/menus/${menu.id}/items`}
-            class="rounded-lg border border-border bg-surface-raised p-4"
+            class="min-w-0 rounded-lg border border-border bg-surface-raised p-4"
           >
             <input type="hidden" name="targetType" value={key} />
-            <fieldset>
+            <fieldset class="min-w-0">
               <legend class="text-sm font-medium">{legend}</legend>
               <p id={`${key}-hint`} class="mt-0.5 mb-2 text-xs text-content-subtle">
                 {hint}

@@ -33,6 +33,17 @@ measuring `scrollingElement.scrollWidth` in a real browser across 11 routes × 5
     viewport is *not* clipped by an `overflow-x: auto` ancestor — so a 1px `<span>` inside a 753px
     table laid out at x=741 and dragged the page 437px sideways while the table itself scrolled
     correctly. `[class~='overflow-x-auto'] { position: relative }` in `admin.css` is the fix.
+  - **`min-w-0` on a flex child does not stop its min-content reaching a grid item above it**, and a
+    `<fieldset>` needs its own besides. The menus screen's three add-item forms are grid children,
+    and once one held a picker whose result rows carry `truncate` — `white-space: nowrap`, so their
+    min-content is the whole untruncated "title + path" — the column sized to 300px inside a 305px
+    viewport. The inner `min-w-0` was already there and is what lets the flex item shrink *during
+    flex layout*; the intrinsic contribution still propagates to the grid item's `min-width: auto`.
+    Fixing only the form left 10px behind, because the UA stylesheet gives `<fieldset>`
+    `min-inline-size: min-content` and it stays wider than a parent that can now shrink. Both need
+    `min-w-0`. Note the general shape: **a truncating row inside a grid item is a reflow hazard, and
+    the truncation is exactly what hides it** — the text looks correctly clipped at every width while
+    the column refuses to narrow.
 - **`reflowHazards()` in `a11y-audit.mjs` is narrow on purpose.** A first draft also flagged every
   `min-w-56`, every unprefixed `grid-cols-2`, and the sidebar's `w-60` — measurement showed all three
   were fine, so they were removed. **A check that fires on verified-good markup is one somebody
