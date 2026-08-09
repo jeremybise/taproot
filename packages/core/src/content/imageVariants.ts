@@ -224,13 +224,28 @@ export function variantWidthsFor(naturalWidth: number | null): number[] {
   if (rungs.length === 0) return [MEDIA_VARIANT_WIDTHS[0]];
 
   /**
-   * The ceiling earns a rung of its own when the ladder stops short of it.
+   * The ceiling earns a rung of its own when the ladder stops short of it — **and only when the
+   * ladder can actually express it.**
    *
    * The rungs are round numbers and a real image is not: a 3.5:1 photo cropped to 4:3 leaves 605
    * usable pixels, whose largest rung is 480 — so a quarter of the detail that exists would never
    * be offered, and on a retina screen that is the difference between sharp and not. Deterministic
    * per asset and ratio, so it adds exactly one cache entry rather than opening the width up.
+   *
+   * The second condition is the half that shipped missing. `parseMediaVariant` clamps anything
+   * above the top rung *to* the top rung, so a source **wider** than the whole ladder can never be
+   * requested at its own width — offering it anyway mints a second URL that is byte-identical to
+   * the top candidate while claiming in its `w` descriptor to be wider. Measured in production:
+   * `?w=2000` and `?w=1920` both answered 128,232 bytes on a 2000px source, and 62 of that
+   * library's 107 images sit above the ladder — so nearly every photograph carried a duplicate
+   * rung, a second edge-cache entry, and a candidate the browser would size its choice against
+   * wrongly. The tests reached 1920 and stopped, which is why the whole above-the-ladder case was
+   * unexamined.
    */
   const top = rungs[rungs.length - 1] ?? 0;
-  return top < naturalWidth ? [...rungs, naturalWidth] : [...rungs];
+  // `?? 0`, matching `top` above. Unreachable — the ladder is a non-empty literal — and it fails
+  // towards *not* offering a ceiling, which is the direction this whole condition exists to guard.
+  const ladderTop = MEDIA_VARIANT_WIDTHS[MEDIA_VARIANT_WIDTHS.length - 1] ?? 0;
+
+  return top < naturalWidth && naturalWidth < ladderTop ? [...rungs, naturalWidth] : [...rungs];
 }

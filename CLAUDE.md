@@ -1404,10 +1404,22 @@ many), *Block*, *Reusable Block*, *Content Type*.
     down answers a reasonable request with a silently blurrier picture. `ar` is quantised on the way
     *out* as well as in, or a consumer sending `16/9` unrounded builds `ar=1.7777777777777777`, the
     route answers `1.78`, and every candidate misses the cache while still rendering correctly.
-  - **The ladder also offers the ceiling itself.** Rungs are round numbers and a real image is not:
-    a 3.5:1 photo cropped to 4:3 leaves 605 usable pixels whose largest rung is 480, so a quarter of
-    the detail that exists would never be offered. Deterministic per asset and ratio, so it costs
-    one cache entry rather than opening the width up.
+  - **The ladder also offers the ceiling itself — but only *below* the top rung.** Rungs are round
+    numbers and a real image is not: a 3.5:1 photo cropped to 4:3 leaves 605 usable pixels whose
+    largest rung is 480, so a quarter of the detail that exists would never be offered.
+    Deterministic per asset and ratio, so it costs one cache entry rather than opening the width up.
+    The second half of that condition shipped missing, and the reason it is needed is the exact
+    mechanism that makes the first half honest. A `w` descriptor is a promise about the delivered
+    file's width, and two things keep it: `parseMediaVariant` snaps **up** to the next rung, and
+    `fit: 'scale-down'` clamps the request back to the source — so `?w=605` snaps to 640 and returns
+    605 because the source has no more. **Above the ladder there is nothing left to clamp**, so a
+    2000px source offered a `2000w` candidate that `parseMediaVariant` capped to 1920: byte-identical
+    to the `1920w` candidate beside it (measured at 128,232 bytes for both), a second edge-cache
+    entry, and a width the browser sized its choice against wrongly. 62 of one real library's 107
+    images sit above the ladder, so this was nearly every photograph on the site. The suite reached
+    `variantWidthsFor(1920)` and stopped, which is why the whole above-the-ladder case went
+    unexamined; the property test now asserts `min(parseMediaVariant(w), naturalWidth) === w` for
+    every rung offered, which is the promise itself rather than an example of it.
   - **Format is in the URL and never negotiated from `Accept`.** These responses are stored in a
     shared cache keyed on the URL, and `Vary` is honoured there only for `Accept-Encoding` — an
     `f=auto` would serve the first visitor's format to everyone behind them, which is the admin-HTML

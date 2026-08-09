@@ -184,6 +184,44 @@ describe('variantWidthsFor', () => {
     expect(variantWidthsFor(768)).toEqual([320, 480, 640, 768]);
   });
 
+  /**
+   * The case the suite reached 1920 and stopped short of.
+   *
+   * A source wider than the whole ladder cannot be requested at its own width — `parseMediaVariant`
+   * clamps anything above the top rung *to* the top rung — so appending it produced a second URL
+   * that was byte-identical to the 1920 candidate while its `w` descriptor claimed to be wider.
+   * Measured in production at 128,232 bytes for both `?w=1920` and `?w=2000` on a 2000px source,
+   * across most of a real library.
+   */
+  it('does not offer a ceiling the ladder cannot express', () => {
+    expect(variantWidthsFor(2000)).toEqual([...MEDIA_VARIANT_WIDTHS]);
+    expect(variantWidthsFor(2048)).toEqual([...MEDIA_VARIANT_WIDTHS]);
+    expect(variantWidthsFor(4000)).toEqual([...MEDIA_VARIANT_WIDTHS]);
+  });
+
+  /**
+   * The property that ties the two halves together: a `w` descriptor is a promise about how wide
+   * the delivered file is, and the browser sizes its choice against it. So every rung offered here
+   * has to come back at exactly that width once the route has had its say.
+   *
+   * Two mechanisms make that true and they are easy to conflate. `parseMediaVariant` snaps a width
+   * **up** to the next rung, and `fit: 'scale-down'` then clamps the request to the source — which
+   * is what makes the below-the-ladder ceiling honest: `?w=605` snaps to 640 and is clamped back to
+   * 605 by a source only 605 wide. Above the ladder there is nothing left to clamp, which is
+   * exactly why that case was wrong and this one is not a matter of taste.
+   *
+   * Sources below the bottom rung are the documented exception and are excluded: a 200px source is
+   * offered `[320]` because no `srcset` at all is worse than one the resizer declines to upscale.
+   */
+  it('offers only rungs the route delivers at that exact width', () => {
+    for (const natural of [605, 768, 1000, 1600, 1920, 2000, 4000]) {
+      for (const width of variantWidthsFor(natural)) {
+        const requested = parse(`https://cms.example/x.jpg?w=${width}`).width as number;
+        expect(Math.min(requested, natural)).toBe(width);
+      }
+    }
+  });
+
   it('offers the bottom rung alone for a source smaller than it', () => {
     expect(variantWidthsFor(200)).toEqual([320]);
   });
