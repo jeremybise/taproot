@@ -69,7 +69,28 @@ export function fieldValueText(field: FieldRow | undefined, value: unknown): str
   if (typeof value !== 'string') return '';
 
   // Richtext is stored as HTML; flattening is what stops a summary reading "<p>Apply".
-  return field?.type === 'richtext' ? htmlToText(value) : value;
+  if (field?.type === 'richtext') return htmlToText(value);
+
+  /*
+   * A date is stored as an ISO string, and `2026-03-03T23:00:00.000Z` is not something to put in a
+   * sentence or a table cell. Formatted here rather than at each call site so a summary line and a
+   * list column cannot disagree about how the same field reads.
+   *
+   * The time is shown only when the stored value carries one, which is what the field's own
+   * `includeTime` option produces — so an all-day date does not gain a misleading midnight. `en-US`
+   * matches `renderSnippet`, and moves with it if a locale setting ever exists.
+   */
+  if (field?.type === 'date') {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    const hasTime = value.includes('T');
+    return new Intl.DateTimeFormat('en-US', {
+      dateStyle: 'medium',
+      ...(hasTime ? { timeStyle: 'short' } : { timeZone: 'UTC' }),
+    }).format(parsed);
+  }
+
+  return value;
 }
 
 /**

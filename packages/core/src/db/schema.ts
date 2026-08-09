@@ -312,6 +312,28 @@ export interface ContentTypesTable {
    * `0027_summary_template` for why it was widened rather than merely wired up.
    */
   summary_template: string | null;
+  /**
+   * Which columns this type's admin list shows, as a JSON array of keys.
+   *
+   * A key is either a field's `api_id` or a built-in name (`title`, `path`, `status`, `updated`,
+   * `created`). Null means the five built-ins every list showed before this was configurable, which
+   * is what keeps the migration from changing every screen somebody was used to.
+   *
+   * Read through `resolveListColumns`, never parsed at a call site: a key naming a field that has
+   * since been deleted is dropped rather than rendering an empty column, and that rule has to hold
+   * everywhere.
+   */
+  list_columns: JsonText | null;
+  /** One of `ITEM_SORTS`. Null means `path`, the order every list had before this. */
+  list_sort: string | null;
+  /**
+   * The field `field_asc` / `field_desc` order by.
+   *
+   * Null for every other order. A field named here and later deleted drops the sort back to `path`
+   * rather than erroring — the same rule a query field's `dateFieldApiId` follows, and for the same
+   * reason: a live screen must not break for a configuration change made weeks earlier elsewhere.
+   */
+  list_sort_field: string | null;
   /** Order in the admin sidebar, where each content type is its own entry. Ties break by name. */
   position: number;
   /**

@@ -4,13 +4,18 @@ import PageHeader from '../../../components/PageHeader.astro';
 import StatusBadge from '../../../components/StatusBadge.astro';
 import Timestamp from '../../../components/Timestamp.astro';
 import {
+  ITEM_SORT_LABELS,
   countItemsByStatus,
   getContentTypeByApiId,
+  fieldValueText,
   listItemSummaries,
   loadItemData,
+  resolveListColumns,
+  resolveListSort,
   summaryLabel,
   termIdsForBranch,
 } from '@taprootcms/core';
+import { mediaOptionsByIds } from '../../../mediaOptions.js';
 import { taxonomyFilterOptions } from '../../../termOptions.js';
 import { parseStatusFilter, statusFilterOptions } from '../../../status.js';
 import { getTaproot, loginRedirect, canEditContent } from '../../../../runtime/guards.js';
@@ -68,30 +73,126 @@ const termIds = termFilter ? await termIdsForBranch(taproot.db.db, termFilter) :
 
 const facetFilters = { contentTypeId: contentType.id, search: search || undefined, termIds };
 
+/**
+ * The columns and order this type asks for, resolved against the fields that exist *now*.
+ *
+ * A key naming a deleted field is dropped and a sort naming one falls back to `path`, both in core
+ * — see `listColumns.ts`. Neither is an error: the preference is edited on one screen and the fields
+ * on another, so they go out of step as a matter of course.
+ */
+const columns = resolveListColumns(contentType, contentType.fields);
+const listSort = resolveListSort(contentType, contentType.fields);
+
 const [{ items, total }, statusCounts] = await Promise.all([
-  listItemSummaries(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 200 }),
+  listItemSummaries(taproot.db.db, {
+    ...facetFilters,
+    status: statusFilter,
+    limit: 200,
+    ...listSort,
+  }),
   countItemsByStatus(taproot.db.db, facetFilters),
 ]);
 
 /**
- * Field values for this page of rows, but only when the type has a summary template to spend them on.
+ * Stored values for this page of rows, loaded when anything on screen needs them.
  *
- * This is what finally makes that setting mean something. It was `title_field`, the settings screen
- * described it as "which field labels an item in admin lists", and **no list read it** — so the
- * label promised something the CMS did not do. Gated on the template being set, so a type without
- * one costs exactly what it did before: nothing.
- *
- * One query for the whole page rather than one per row, which is the rule `resolveDelivery` follows
- * for its own lookups.
+ * Needed by the summary template and by any field column, so it is fetched once for both rather
+ * than twice — and **once for the page rather than once per row**, which is the rule
+ * `resolveDelivery` follows for its own lookups. A type with no template and only built-in columns
+ * costs exactly what it did before: nothing.
  */
-const summaryData = contentType.summary_template
+const fieldColumns = columns.filter((column) => column.field);
+const needsData = Boolean(contentType.summary_template) || fieldColumns.length > 0;
+
+const itemData = needsData
   ? await loadItemData(taproot.db.db, items.map((item) => item.id))
   : null;
+
+const summaryData = contentType.summary_template ? itemData : null;
+
+/**
+ * Thumbnails for any `media` column, in one query for the whole page.
+ *
+ * A media value is an id, and `content_item_values` carries text, numbers and dates — so this is the
+ * one column type that cannot come from the value index and has to be resolved from `data`.
+ */
+const thumbnailFields = columns.filter((column) => column.thumbnail).map((column) => column.field!);
+const thumbnailIds = new Set<string>();
+if (itemData && thumbnailFields.length > 0) {
+  for (const values of itemData.values()) {
+    for (const field of thumbnailFields) {
+      const value = values[field.api_id];
+      // A media field stores a bare id when single and an ordered array when it allows several; a
+      // column shows the first either way, since a row has space for one picture.
+      const first = Array.isArray(value) ? value[0] : value;
+      if (typeof first === 'string' && first) thumbnailIds.add(first);
+    }
+  }
+}
+
+const thumbnails = new Map(
+  thumbnailIds.size > 0
+    ? (await mediaOptionsByIds(taproot.db.db, taproot.storage, [...thumbnailIds])).map((asset) => [
+        asset.id,
+        asset,
+      ])
+    : [],
+);
+
+/** One cell's text, or an image when the column is a thumbnail. */
+function cellText(item: (typeof items)[number], column: (typeof columns)[number]): string {
+  const values = itemData?.get(item.id) ?? {};
+  return fieldValueText(column.field ?? undefined, values[column.field!.api_id]);
+}
+
+function cellImage(item: (typeof items)[number], column: (typeof columns)[number]) {
+  const values = itemData?.get(item.id) ?? {};
+  const value = values[column.field!.api_id];
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === 'string' ? (thumbnails.get(first) ?? null) : null;
+}
 
 const labelFor = (item: (typeof items)[number]) =>
   summaryData
     ? summaryLabel(contentType.summary_template, contentType.fields, summaryData.get(item.id) ?? {}, item.title)
     : item.title;
+
+/**
+ * What the table's caption says it is ordered by.
+ *
+ * Named rather than left as "path" for every list: the caption is the only place a screen-reader
+ * user is told the order, and saying "path" on a list actually sorted by start date is worse than
+ * saying nothing. Reads the *resolved* sort, so a preference that fell back reports the fallback.
+ */
+const sortCaption = (() => {
+  if (!listSort.sortField) return ITEM_SORT_LABELS[listSort.sort].toLowerCase();
+
+  const field = contentType.fields.find((f) => f.api_id === listSort.sortField!.apiId);
+  const descending = listSort.sort === 'field_desc';
+
+  /*
+   * Worded by the field's kind rather than reusing `ITEM_SORT_LABELS`.
+   *
+   * Those two labels are deliberately generic — "Soonest first" — because the query field's control
+   * does not know what it is ordering by. Here we do, and "Position, soonest first" on a text field
+   * is simply wrong. The caption is the only place a screen-reader user is told the order, so it is
+   * worth getting right rather than reusing a string that happens to exist.
+   */
+  const direction =
+    listSort.sortField.kind === 'date'
+      ? descending
+        ? 'latest first'
+        : 'soonest first'
+      : listSort.sortField.kind === 'number'
+        ? descending
+          ? 'highest first'
+          : 'lowest first'
+        : descending
+          ? 'Z to A'
+          : 'A to Z';
+
+  return `${field?.label ?? 'a field'}, ${direction}`;
+})();
 
 const statusOptions = statusFilterOptions(statusCounts, statusFilter);
 const statusTotal = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
@@ -210,55 +311,78 @@ const plural = contentType.name_plural.toLowerCase();
       <div class="overflow-x-auto rounded-lg border border-border">
         <table class="w-full text-left text-sm">
           <caption class="sr-only-focusable">
-            {contentType.name_plural}, ordered by path
+            {contentType.name_plural}, ordered by {sortCaption}
           </caption>
           <thead class="bg-surface-sunken text-xs uppercase tracking-wide text-content-subtle">
             <tr>
-              <th scope="col" class="px-4 py-2.5 font-medium">
-                Title
-              </th>
-              <th scope="col" class="px-4 py-2.5 font-medium">
-                Path
-              </th>
-              <th scope="col" class="px-4 py-2.5 font-medium">
-                Status
-              </th>
-              <th scope="col" class="px-4 py-2.5 font-medium">
-                Updated
-              </th>
-              <th scope="col" class="px-4 py-2.5 font-medium">
-                Created
-              </th>
+              {columns.map((column) => (
+                <th scope="col" class="px-4 py-2.5 font-medium">
+                  {column.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
               <tr class="border-t border-border">
-                <th scope="row" class="px-4 py-2.5 font-medium">
-                  {/*
-                    Indentation shows the tree visually; the path column carries the same
-                    information non-visually, so hierarchy is never conveyed by appearance alone.
-                    Flat types get no indent because there is none to convey.
-                  */}
-                  <span
-                    style={isHierarchical ? `padding-left:${item.depth * 1.25}rem` : undefined}
-                    class="inline-block"
-                  >
-                    <a href={`/admin/content/${item.id}`} class="hover:underline">
-                      {labelFor(item)}
-                    </a>
-                  </span>
-                </th>
-                <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{item.path}</td>
-                <td class="px-4 py-2.5">
-                  <StatusBadge status={item.status} />
-                </td>
-                <td class="px-4 py-2.5 text-content-muted">
-                  <Timestamp value={item.updated_at} />
-                </td>
-                <td class="px-4 py-2.5 text-content-muted">
-                  <Timestamp value={item.created_at} />
-                </td>
+                {columns.map((column) =>
+                  column.key === 'title' ? (
+                    <th scope="row" class="px-4 py-2.5 font-medium">
+                      {/*
+                        Indentation shows the tree visually; the path column carries the same
+                        information non-visually, so hierarchy is never conveyed by appearance
+                        alone. Flat types get no indent because there is none to convey.
+                      */}
+                      <span
+                        style={isHierarchical ? `padding-left:${item.depth * 1.25}rem` : undefined}
+                        class="inline-block"
+                      >
+                        <a href={`/admin/content/${item.id}`} class="hover:underline">
+                          {labelFor(item)}
+                        </a>
+                      </span>
+                    </th>
+                  ) : column.key === 'path' ? (
+                    <td class="px-4 py-2.5 font-mono text-xs text-content-muted">{item.path}</td>
+                  ) : column.key === 'status' ? (
+                    <td class="px-4 py-2.5">
+                      <StatusBadge status={item.status} />
+                    </td>
+                  ) : column.key === 'updated' ? (
+                    <td class="px-4 py-2.5 text-content-muted">
+                      <Timestamp value={item.updated_at} />
+                    </td>
+                  ) : column.key === 'created' ? (
+                    <td class="px-4 py-2.5 text-content-muted">
+                      <Timestamp value={item.created_at} />
+                    </td>
+                  ) : column.thumbnail ? (
+                    <td class="px-4 py-2">
+                      {/*
+                        `alt=""` because the row's title is right beside it and already names the
+                        item — a thumbnail that announced the asset's own alt text would make a
+                        screen reader read the row twice (WCAG 1.1.1). A row with no image keeps an
+                        empty cell rather than collapsing, so the columns stay aligned.
+                      */}
+                      {cellImage(item, column) ? (
+                        <img
+                          src={cellImage(item, column)!.url}
+                          alt=""
+                          loading="lazy"
+                          width="56"
+                          height="40"
+                          class="h-10 w-14 rounded border border-border bg-surface-sunken object-cover"
+                        />
+                      ) : (
+                        <span class="sr-only-focusable">No image</span>
+                      )}
+                    </td>
+                  ) : (
+                    <td class="px-4 py-2.5 text-content-muted">
+                      <span class="line-clamp-2">{cellText(item, column)}</span>
+                    </td>
+                  ),
+                )}
               </tr>
             ))}
           </tbody>

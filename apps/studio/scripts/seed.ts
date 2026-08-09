@@ -7,6 +7,8 @@ import {
   createRelease,
   hashSessionToken,
   createReusableBlock,
+  createSnippet,
+  listSnippets,
   createTaxonomy,
   createTerm,
   createUser,
@@ -527,9 +529,17 @@ const event = await ensureType(
     name_plural: 'Events',
     description: 'A dated event. Flat, with URLs under /events.',
     kind: 'collection',
-    icon: null,
+    icon: 'calendar',
     url_prefix: 'events',
     summary_template: '{{ title }}',
+    /*
+     * The case configurable columns were built for: an events list ordered by when the events
+     * actually happen, showing the date rather than a path nobody reads. Seeded so the feature is
+     * visible on a fresh clone rather than something you have to go and switch on to see.
+     */
+    list_columns: ['title', 'starts_at', 'location', 'status'],
+    list_sort: 'field_asc',
+    list_sort_field: 'starts_at',
   },
   [
     {
@@ -701,8 +711,11 @@ const person = await ensureType(
     name_plural: 'People',
     description: 'A member of staff, listed in the directory. Flat, with URLs under /people.',
     kind: 'collection',
-    icon: null,
+    icon: 'user',
     url_prefix: 'people',
+    // A photograph and a job title tell one row from the next here; a path does not, and these
+    // people have no pages anyway.
+    list_columns: ['photo', 'title', 'position', 'department'],
     /**
      * No pages of their own, which is the point of seeding a directory rather than another
      * collection of pages.
@@ -1614,6 +1627,38 @@ const visitPrompt =
   }));
 
 if (!existingReusable) console.log('  reusable block "Visit prompt" (created)');
+
+/*
+ * Two text snippets, seeded so the feature is visible on a fresh clone.
+ *
+ * `tuition` is the case that prompted them: a number with a display form, so prose reads "$4,500"
+ * while a chart could plot 4500. `application_deadline` is a date, which exercises the other half
+ * of the derived formatting. Idempotent by `api_id`, like everything else here.
+ */
+const existingSnippets = new Set((await listSnippets(handle.db)).map((entry) => entry.api_id));
+
+for (const snippet of [
+  {
+    api_id: 'tuition',
+    name: 'Current tuition',
+    description: 'In-state, per year. Reviewed each spring by the Business Office.',
+    kind: 'number' as const,
+    value: '4500',
+    display: '$4,500',
+  },
+  {
+    api_id: 'application_deadline',
+    name: 'Application deadline',
+    description: 'Autumn intake.',
+    kind: 'date' as const,
+    value: '2026-08-15',
+    display: null,
+  },
+]) {
+  if (existingSnippets.has(snippet.api_id)) continue;
+  await createSnippet(handle.db, snippet);
+  console.log(`  snippet "${snippet.api_id}" (created)`);
+}
 
 // Reference it from two published pages. Written directly rather than through `updateItem` because
 // `ensureItem` has already returned early for an existing row, and this has to run either way.

@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import type { ContentTypeRow, FieldRow } from '@taprootcms/core';
+import {
+  BUILT_IN_COLUMNS,
+  DEFAULT_COLUMNS,
+  ITEM_SORTS,
+  ITEM_SORT_LABELS,
+  columnCandidates,
+  indexedValueKind,
+  type ContentTypeRow,
+  type FieldRow,
+} from '@taprootcms/core';
 
 import type { MediaOption } from '../mediaOptions.js';
 import { MediaField } from './media/MediaField.js';
@@ -14,6 +23,19 @@ import { contentTypeIcons } from '../contentTypeIcons.js';
  * URLs. Both are fixed at creation and the UI says so rather than offering an edit the server
  * would reject.
  */
+/** The built-in columns' visible names, matching what the list's own headings say. */
+function builtInLabel(key: string): string {
+  return key === 'title'
+    ? 'Title'
+    : key === 'path'
+      ? 'Path'
+      : key === 'status'
+        ? 'Status'
+        : key === 'updated'
+          ? 'Updated'
+          : 'Created';
+}
+
 export default function ContentTypeSettings({
   contentType,
   fields,
@@ -29,6 +51,16 @@ export default function ContentTypeSettings({
   const [description, setDescription] = useState(contentType.description ?? '');
   const [summaryTemplate, setSummaryTemplate] = useState(contentType.summary_template ?? '');
   const [icon, setIcon] = useState(contentType.icon ?? '');
+  const [listColumns, setListColumns] = useState<string[]>(() => {
+    try {
+      const stored = contentType.list_columns ? JSON.parse(contentType.list_columns) : null;
+      return Array.isArray(stored) ? stored.filter((k) => typeof k === 'string') : [...DEFAULT_COLUMNS];
+    } catch {
+      return [...DEFAULT_COLUMNS];
+    }
+  });
+  const [listSort, setListSort] = useState(contentType.list_sort ?? 'path');
+  const [listSortField, setListSortField] = useState(contentType.list_sort_field ?? '');
   const [urlPrefix, setUrlPrefix] = useState(contentType.url_prefix ?? '');
   const [previewPath, setPreviewPath] = useState(contentType.preview_path ?? '');
   const [itemPages, setItemPages] = useState(contentType.item_pages === 1);
@@ -52,6 +84,13 @@ export default function ContentTypeSettings({
           description: description.trim() || null,
           summary_template: summaryTemplate.trim() || null,
           icon: icon || null,
+          list_columns: listColumns,
+          list_sort: listSort,
+          // Only meaningful for the two field orders; sent null otherwise so the column cannot hold
+          // a stale field name that means nothing — the same rule `publish_at` follows off
+          // `scheduled`.
+          list_sort_field:
+            listSort === 'field_asc' || listSort === 'field_desc' ? listSortField || null : null,
           default_og_image_id: ogImageId || null,
           ...(contentType.kind === 'collection'
             ? { url_prefix: urlPrefix.trim() || null, item_pages: itemPages }
@@ -188,6 +227,111 @@ export default function ContentTypeSettings({
             ))}
           </p>
         )}
+      </div>
+
+      <div>
+        <span id="ct-columns-label" className="block text-sm font-medium">
+          List columns
+        </span>
+        <p id="ct-columns-hint" className="mt-0.5 text-xs text-content-subtle">
+          What the list of these shows. Title always appears — it carries the link to the editor, so
+          a list without it could not be clicked out of.
+        </p>
+
+        {/*
+          Checkboxes in a fixed order rather than a reorderable list.
+
+          Reordering would need drag-and-drop *plus* the keyboard controls the house rule requires
+          alongside it, to arrange five things somebody looks at once. The order here is built-ins
+          first then fields in their own builder order, which is already the order somebody thinks
+          about them in. If arranging them ever matters, `SortableFieldList` is the pattern.
+        */}
+        <div
+          role="group"
+          aria-labelledby="ct-columns-label"
+          aria-describedby="ct-columns-hint"
+          className="mt-2 grid grid-cols-1 gap-1.5 rounded-md border border-border p-3 sm:grid-cols-2"
+        >
+          {[
+            ...BUILT_IN_COLUMNS.map((key) => ({ key: key as string, label: builtInLabel(key) })),
+            ...columnCandidates(fields).map((field) => ({ key: field.api_id, label: field.label })),
+          ].map((column) => {
+            const locked = column.key === 'title';
+            return (
+              <label key={column.key} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={locked || listColumns.includes(column.key)}
+                  disabled={locked}
+                  onChange={(e) =>
+                    setListColumns(
+                      e.target.checked
+                        ? [...listColumns, column.key]
+                        : listColumns.filter((key) => key !== column.key),
+                    )
+                  }
+                />
+                <span className={locked ? 'text-content-muted' : undefined}>
+                  {column.label}
+                  {locked && ' (always shown)'}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="@container">
+        <div className="grid gap-4 @sm:grid-cols-2">
+          <div>
+            <label htmlFor="ct-list-sort" className="block text-sm font-medium">
+              Default order
+            </label>
+            <p id="ct-list-sort-hint" className="mt-0.5 text-xs text-content-subtle">
+              How the list is sorted when nobody has filtered it.
+            </p>
+            <select
+              id="ct-list-sort"
+              value={listSort}
+              aria-describedby="ct-list-sort-hint"
+              onChange={(e) => setListSort(e.target.value)}
+              className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+            >
+              {ITEM_SORTS.map((sort) => (
+                <option key={sort} value={sort}>
+                  {ITEM_SORT_LABELS[sort]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(listSort === 'field_asc' || listSort === 'field_desc') && (
+            <div>
+              <label htmlFor="ct-list-sort-field" className="block text-sm font-medium">
+                Order by which field
+              </label>
+              <p id="ct-list-sort-field-hint" className="mt-0.5 text-xs text-content-subtle">
+                Only fields the value index carries — text, number, yes/no, date and choice.
+              </p>
+              <select
+                id="ct-list-sort-field"
+                value={listSortField}
+                aria-describedby="ct-list-sort-field-hint"
+                onChange={(e) => setListSortField(e.target.value)}
+                className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+              >
+                <option value="">— Pick a field —</option>
+                {fields
+                  .filter((field) => indexedValueKind(field.type))
+                  .map((field) => (
+                    <option key={field.id} value={field.api_id}>
+                      {field.label}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       <div>

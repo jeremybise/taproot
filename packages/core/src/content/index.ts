@@ -5,6 +5,7 @@ export * from './contentTypeKind.js';
 export * from './snippets.js';
 export * from './snippetTokens.js';
 export * from './libraryVersion.js';
+export * from './listColumns.js';
 export * from './cacheTags.js';
 export * from './pendingPurges.js';
 export * from './embeds.js';

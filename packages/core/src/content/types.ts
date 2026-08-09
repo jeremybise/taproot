@@ -198,6 +198,9 @@ export async function createContentType(
      */
     item_pages: input.kind === 'collection' && input.item_pages === false ? 0 : 1,
     summary_template: input.summary_template ?? null,
+    list_columns: input.list_columns ? stringifyJson(input.list_columns) : null,
+    list_sort: input.list_sort ?? null,
+    list_sort_field: input.list_sort_field ?? null,
     default_og_image_id: input.default_og_image_id ?? null,
     // Appended to the end of the sidebar rather than dropped at 0, so creating a type does not
     // silently reshuffle an order someone already arranged.
@@ -278,6 +281,17 @@ export async function updateContentType(
       input.summary_template === undefined
         ? existing.summary_template
         : (input.summary_template ?? null),
+    list_columns:
+      input.list_columns === undefined
+        ? existing.list_columns
+        : input.list_columns
+          ? stringifyJson(input.list_columns)
+          : null,
+    list_sort: input.list_sort === undefined ? existing.list_sort : (input.list_sort ?? null),
+    list_sort_field:
+      input.list_sort_field === undefined
+        ? existing.list_sort_field
+        : (input.list_sort_field ?? null),
     default_og_image_id:
       input.default_og_image_id === undefined
         ? existing.default_og_image_id

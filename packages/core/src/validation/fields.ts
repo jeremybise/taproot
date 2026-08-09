@@ -1239,6 +1239,16 @@ export const contentTypeInputSchema = z.object({
    * field's `dateFieldApiId`.
    */
   summary_template: z.string().max(200).nullish(),
+  /**
+   * Column keys, validated as a list of strings and no further.
+   *
+   * A key naming a field that no longer exists is dropped at render time by `resolveListColumns`
+   * rather than refused here, because the preference outlives the fields it names — refusing the
+   * save would make deleting a field break an unrelated screen's settings.
+   */
+  list_columns: z.array(z.string().max(64)).max(12).nullish(),
+  list_sort: z.enum(ITEM_SORTS).nullish(),
+  list_sort_field: z.string().max(64).nullish(),
   /** Social-card image for items of this type that have not chosen one. */
   default_og_image_id: z.string().nullish(),
 });

@@ -92,6 +92,26 @@ export async function referencedMediaOptions(
   return media.map((row) => toMediaOption(row, storage));
 }
 
+/**
+ * Assets by id, for a page of rows that each show one.
+ *
+ * A list with a thumbnail column needs the assets its visible rows point at — a different question
+ * from both `mediaOptions` (the library's most recent page) and `referencedMediaOptions` (one item's
+ * own references). One query for the whole page, never one per row.
+ */
+export async function mediaOptionsByIds(
+  db: Kysely<Database>,
+  storage: { publicUrl(key: string): string },
+  ids: string[],
+): Promise<MediaOption[]> {
+  // `listMedia` reads an empty id list as "match nothing", which is right there and is a query worth
+  // not making at all here.
+  if (ids.length === 0) return [];
+
+  const { media } = await listMedia(db, { ids, limit: ids.length });
+  return media.map((row) => toMediaOption(row, storage));
+}
+
 /** One image by id, for rendering a content type's inherited default. */
 export function findImage(images: MediaOption[], id: string | null): MediaOption | null {
   return id ? (images.find((image) => image.id === id) ?? null) : null;

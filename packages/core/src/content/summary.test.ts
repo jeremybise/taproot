@@ -142,3 +142,22 @@ describe('summaryLabel', () => {
     );
   });
 });
+
+describe('date values', () => {
+  const dated = field({ api_id: 'starts_at', type: 'date' });
+
+  it('reads a date readably rather than as stored ISO', () => {
+    // The raw value is what a list column and a summary line would otherwise show:
+    // "2026-03-03T23:00:00.000Z" is not something to put in a table cell.
+    expect(fieldValueText(dated, '2026-03-03T23:00:00.000Z')).toMatch(/Mar 3, 2026/);
+  });
+
+  it('shows a time only when the stored value carries one', () => {
+    // An all-day date must not gain a misleading midnight, which is what a blanket time format does.
+    expect(fieldValueText(dated, '2026-03-03')).toBe('Mar 3, 2026');
+  });
+
+  it('falls back to the raw value rather than showing "Invalid Date"', () => {
+    expect(fieldValueText(dated, 'sometime in March')).toBe('sometime in March');
+  });
+});
