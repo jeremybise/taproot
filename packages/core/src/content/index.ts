@@ -18,6 +18,7 @@ export * from './workflow.js';
 export * from './scheduler.js';
 export * from './seo.js';
 export * from './sanitizeHtml.js';
+export * from './summary.js';
 export * from './accessibility.js';
 export * from './accessibilityReport.js';
 export * from './imageCrop.js';

@@ -52,7 +52,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   fields = [
@@ -218,7 +218,7 @@ describe('the resolve endpoint', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     const noticeFields = [
       await createField(h.db.db, blockType.id, {
@@ -447,7 +447,7 @@ describe('the items endpoint', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     await createItem(h.db, singleton, [], {
       contentTypeId: singleton.id,
@@ -472,7 +472,7 @@ describe('the items endpoint', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     h.as(editor);
@@ -672,7 +672,7 @@ describe('a collection whose items have no pages', () => {
       description: null,
       icon: null,
       url_prefix: 'people',
-      title_field: 'title',
+      summary_template: '{{ title }}',
       item_pages: false,
     });
 
@@ -966,7 +966,7 @@ describe('the search endpoint', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     h.as(editor);

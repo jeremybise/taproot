@@ -197,7 +197,7 @@ export async function createContentType(
      * `typeHasItemPages` will not read.
      */
     item_pages: input.kind === 'collection' && input.item_pages === false ? 0 : 1,
-    title_field: input.title_field ?? null,
+    summary_template: input.summary_template ?? null,
     default_og_image_id: input.default_og_image_id ?? null,
     // Appended to the end of the sidebar rather than dropped at 0, so creating a type does not
     // silently reshuffle an order someone already arranged.
@@ -274,7 +274,10 @@ export async function updateContentType(
           : (input.preview_path ?? null)
         : null,
     item_pages: itemPages ? 1 : 0,
-    title_field: input.title_field === undefined ? existing.title_field : (input.title_field ?? null),
+    summary_template:
+      input.summary_template === undefined
+        ? existing.summary_template
+        : (input.summary_template ?? null),
     default_og_image_id:
       input.default_og_image_id === undefined
         ? existing.default_og_image_id

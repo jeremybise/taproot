@@ -51,7 +51,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   fields = [
@@ -279,7 +279,7 @@ describe('references', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
     const headingField = await createField(handle.db, blockType.id, {
       api_id: 'heading',
@@ -450,7 +450,7 @@ describe('the schema endpoint', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     const schema = await deliverySchema(handle.db);

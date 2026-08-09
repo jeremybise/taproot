@@ -188,7 +188,7 @@ async function seedPageType(): Promise<{ type: ContentTypeRow; fields: FieldRow[
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   const body = await createField(handle.db, type.id, {
@@ -217,7 +217,7 @@ describe('content types', () => {
         description: null,
         icon: null,
         url_prefix: null,
-        title_field: null,
+        summary_template: null,
       }),
     ).rejects.toThrow(/already exists/);
   });
@@ -231,7 +231,7 @@ describe('content types', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
     expect(type.url_prefix).toBe('event');
   });
@@ -254,7 +254,7 @@ describe('content types', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     await createField(handle.db, type.id, {
@@ -460,7 +460,7 @@ describe('content items', () => {
       description: null,
       icon: null,
       url_prefix: 'events',
-      title_field: null,
+      summary_template: null,
     });
 
     const page = await createItem(handle, pageType, pageFields, {
@@ -491,7 +491,7 @@ describe('content items', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     const first = await createItem(handle, pageType, pageFields, {
@@ -519,7 +519,7 @@ describe('content items', () => {
       description: null,
       icon: null,
       url_prefix: 'events',
-      title_field: null,
+      summary_template: null,
     });
 
     await createItem(handle, eventType, [], { contentTypeId: eventType.id, title: 'Open House' });
@@ -551,7 +551,7 @@ describe('content items', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     await createItem(handle, type, [], { contentTypeId: type.id, title: 'Weather Banner' });
@@ -631,7 +631,7 @@ describe('content items', () => {
       icon: null,
       url_prefix: null,
       preview_path: '/',
-      title_field: null,
+      summary_template: null,
     });
     expect(singleton.preview_path).toBe('/');
 
@@ -655,7 +655,7 @@ describe('content items', () => {
       icon: null,
       url_prefix: null,
       preview_path: '/sneaky',
-      title_field: null,
+      summary_template: null,
     });
     expect(page.preview_path).toBeNull();
   });
@@ -693,7 +693,7 @@ describe('content items', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     const headline = await createField(handle.db, type.id, {
@@ -1184,7 +1184,7 @@ describe('filtering a list by term', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
 
     const tags = await createField(handle.db, type.id, {
@@ -1301,7 +1301,7 @@ describe('itemsReferencing', () => {
       description: null,
       icon: null,
       url_prefix: 'events',
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
 
     const hostPage = await createField(handle.db, event.id, {
@@ -1516,7 +1516,7 @@ describe('block types share the content_types table', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
   }
 
@@ -1685,7 +1685,7 @@ describe('status counts', () => {
       description: null,
       icon: null,
       url_prefix: 'events',
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     await createItem(handle, eventType, [], {
       contentTypeId: eventType.id,

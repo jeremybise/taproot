@@ -191,7 +191,7 @@ const page = await ensureType(
     kind: 'page',
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   },
   [
     {
@@ -276,7 +276,7 @@ const hero = await ensureType(
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {
@@ -318,7 +318,7 @@ const callToAction = await ensureType(
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {
@@ -360,7 +360,7 @@ const prose = await ensureType(
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {
@@ -384,7 +384,7 @@ const quote = await ensureType(
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {
@@ -417,7 +417,7 @@ const gallery = await ensureType(
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {
@@ -460,7 +460,7 @@ const video = await ensureType(
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {
@@ -498,7 +498,7 @@ const embeddedForm = await ensureType(
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {
@@ -529,7 +529,7 @@ const event = await ensureType(
     kind: 'collection',
     icon: null,
     url_prefix: 'events',
-    title_field: 'title',
+    summary_template: '{{ title }}',
   },
   [
     {
@@ -713,7 +713,7 @@ const person = await ensureType(
      * return a result whose link is a page nobody designed.
      */
     item_pages: false,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   },
   [
     {
@@ -775,7 +775,7 @@ const eventListing = await ensureType(
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {
@@ -819,7 +819,7 @@ const banner = await ensureType(
     kind: 'singleton',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   },
   [
     {

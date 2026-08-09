@@ -61,7 +61,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   fields = [
@@ -167,7 +167,7 @@ describe('staging', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     const richFields = [
       await createField(handle.db, richType.id, {

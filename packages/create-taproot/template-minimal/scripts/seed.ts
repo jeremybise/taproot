@@ -61,7 +61,7 @@ async function ensureType(): Promise<{ type: ContentTypeRow; fields: FieldRow[] 
     description: 'A page on the site.',
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
     default_og_image_id: null,
   });
 

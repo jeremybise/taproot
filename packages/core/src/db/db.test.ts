@@ -32,7 +32,7 @@ async function seedPageType() {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
       created_at: ts,
       updated_at: ts,
     })

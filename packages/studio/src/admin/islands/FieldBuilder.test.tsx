@@ -46,7 +46,7 @@ const contentType: ContentTypeRow = {
   kind: 'page',
   icon: null,
   url_prefix: null,
-  title_field: null,
+  summary_template: null,
   created_at: '',
   updated_at: '',
 } as ContentTypeRow;

@@ -36,7 +36,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   fields = [
@@ -168,7 +168,7 @@ describe('auditContentItems', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
     const calloutText = await createField(handle.db, blockType.id, {
       api_id: 'text',

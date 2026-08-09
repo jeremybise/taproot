@@ -28,7 +28,7 @@ async function seedPageType(): Promise<{ type: ContentTypeRow; fields: FieldRow[
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   const body = await createField(handle.db, type.id, {

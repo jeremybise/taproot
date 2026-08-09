@@ -27,7 +27,7 @@ export default function ContentTypeSettings({
   const [name, setName] = useState(contentType.name);
   const [namePlural, setNamePlural] = useState(contentType.name_plural);
   const [description, setDescription] = useState(contentType.description ?? '');
-  const [titleField, setTitleField] = useState(contentType.title_field ?? '');
+  const [summaryTemplate, setSummaryTemplate] = useState(contentType.summary_template ?? '');
   const [icon, setIcon] = useState(contentType.icon ?? '');
   const [urlPrefix, setUrlPrefix] = useState(contentType.url_prefix ?? '');
   const [previewPath, setPreviewPath] = useState(contentType.preview_path ?? '');
@@ -50,7 +50,7 @@ export default function ContentTypeSettings({
           name: name.trim(),
           name_plural: namePlural.trim(),
           description: description.trim() || null,
-          title_field: titleField || null,
+          summary_template: summaryTemplate.trim() || null,
           icon: icon || null,
           default_og_image_id: ogImageId || null,
           ...(contentType.kind === 'collection'
@@ -146,28 +146,48 @@ export default function ContentTypeSettings({
       </div>
 
       <div>
-        <label htmlFor="ct-title-field" className="block text-sm font-medium">
-          Title field
+        <label htmlFor="ct-summary-template" className="block text-sm font-medium">
+          Summary line <span className="font-normal text-content-subtle">(optional)</span>
         </label>
-        <p id="ct-title-field-hint" className="mt-0.5 text-xs text-content-subtle">
-          Which field labels an item in admin lists. Defaults to the item's own title.
+        <p id="ct-summary-template-hint" className="mt-0.5 text-xs text-content-subtle">
+          How one of these reads in a list, and — for a block type — on its collapsed row. Write
+          <code className="mx-1 font-mono">{'{{ field_api_id }}'}</code>
+          where a value should go. Leave it empty to use the item's own title.
         </p>
-        <select
-          id="ct-title-field"
-          value={titleField}
-          aria-describedby="ct-title-field-hint"
-          onChange={(e) => setTitleField(e.target.value)}
-          className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
-        >
-          <option value="">— Use the item title —</option>
-          {fields
-            .filter((field) => field.type === 'text')
-            .map((field) => (
-              <option key={field.id} value={field.api_id}>
-                {field.label}
-              </option>
+        <input
+          id="ct-summary-template"
+          value={summaryTemplate}
+          maxLength={200}
+          placeholder={
+            /* A worked example beats an abstract one: it shows a token, a literal separator, and
+               that two fields can be combined, which is the whole reason this is not a field picker. */
+            fields.length > 1
+              ? `{{ ${fields[0]!.api_id} }} · {{ ${fields[1]!.api_id} }}`
+              : fields.length === 1
+                ? `{{ ${fields[0]!.api_id} }}`
+                : '{{ headline }}'
+          }
+          aria-describedby="ct-summary-template-hint ct-summary-template-fields"
+          onChange={(e) => setSummaryTemplate(e.target.value)}
+          className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+        />
+        {fields.length > 0 && (
+          /*
+            The available names, listed rather than left to be remembered. A token naming a field
+            that does not exist renders as nothing — deliberately, since a template outlives the
+            fields it names — which is forgiving at save time and unhelpful at authoring time unless
+            the real names are on screen.
+          */
+          <p id="ct-summary-template-fields" className="mt-1.5 text-xs text-content-subtle">
+            Fields you can use:{' '}
+            {fields.map((f, i) => (
+              <span key={f.id}>
+                {i > 0 && ', '}
+                <code className="font-mono">{f.api_id}</code>
+              </span>
             ))}
-        </select>
+          </p>
+        )}
       </div>
 
       <div>

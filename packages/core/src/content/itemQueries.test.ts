@@ -43,7 +43,7 @@ async function makeType(apiId: string, name: string) {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 }
 
@@ -281,7 +281,7 @@ describe('what a result carries', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     const item = await createItem(handle, plain, [], {
       contentTypeId: plain.id,
@@ -310,7 +310,7 @@ describe('filtering and ordering by the item’s own date', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     const field = await createField(handle.db, type.id, {
       api_id: 'events',
@@ -427,7 +427,7 @@ describe('filtering and ordering by the item’s own date', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     const field = await createField(handle.db, type.id, {
       api_id: 'events',
@@ -478,7 +478,7 @@ describe('a query inside a block', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     await createField(handle.db, listingBlock.id, {
@@ -499,7 +499,7 @@ describe('a query inside a block', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     const sections = await createField(handle.db, withBlocks.id, {
       api_id: 'sections',

@@ -62,7 +62,7 @@ async function seedPageType(): Promise<{ type: ContentTypeRow; fields: FieldRow[
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   const body = await createField(h.db.db, type.id, {
@@ -429,7 +429,7 @@ describe('form conventions the admin screens depend on', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     h.as(admin);

@@ -42,7 +42,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   fields = [
@@ -133,7 +133,7 @@ describe('minting for the split-view pane', () => {
       icon: null,
       url_prefix: null,
       preview_path: previewPath,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     return createItem(h.db, type, [], {
       contentTypeId: type.id,

@@ -31,6 +31,7 @@ import {
 import type { MediaOption } from '../../mediaOptions.js';
 import {
   isFieldVisible,
+  renderSummary,
   newId,
   type BlockInstance,
   type ContentTypeRow,
@@ -517,6 +518,21 @@ function BlockRow({
   const name = blockType?.name ?? block.type;
 
   /**
+   * What this particular block says it holds, from its type's summary template.
+   *
+   * A collapsed row used to read "Card 2 of 5", which is three identical rows telling an editor
+   * nothing about which card is which — the reason collapsing a long region was a way of losing
+   * your place rather than of navigating it. `summaryLabel` falls back to the type name, so a type
+   * with no template behaves exactly as before.
+   *
+   * Rendered as text, never markup: `renderSummary` flattens richtext through `htmlToText` for
+   * precisely this reason.
+   */
+  const summary = blockType
+    ? renderSummary(blockType.summary_template, blockType.fields, (reusable ? reusable.data : block.data) ?? {})
+    : '';
+
+  /**
    * A block whose type has been deleted still renders, as an error rather than a blank.
    *
    * Deleting a block type in use is refused, so this is unusual — but if it happens, silently
@@ -575,15 +591,21 @@ function BlockRow({
             ) : (
               <ChevronUp aria-hidden="true" size={14} />
             )}
-            <span className="truncate">{reusable ? reusable.name : name}</span>
+            <span className="shrink-0 truncate">{reusable ? reusable.name : name}</span>
             {/*
               A text node *between* the spans, not inside either of them. Accessible-name
               computation trims each element's own text, so a leading space inside the second span
               disappears and the button announces as "Quote2 of 3".
             */}
             {' '}
-            <span className="text-xs font-normal text-content-subtle">
+            {/*
+              The summary joins the accessible name rather than being decoration beside it: "Card,
+              Apply now, 2 of 5" is what distinguishes this row from the next one, and a
+              screen-reader user needs that at least as much as a sighted one.
+            */}
+            <span className="min-w-0 truncate text-xs font-normal text-content-subtle">
               {reusable ? `shared ${name}, ` : ''}
+              {summary && `${summary}, `}
               {index + 1} of {total}
             </span>
           </button>

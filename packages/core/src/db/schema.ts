@@ -300,8 +300,18 @@ export interface ContentTypesTable {
    * reading the column itself is one that will forget the kind check.
    */
   item_pages: number;
-  /** Field `api_id` whose value is shown as the item's label in admin lists. */
-  title_field: string | null;
+  /**
+   * How an item or block instance of this type is summarised in one line, as a template.
+   *
+   * `{{ api_id }}` tokens filled from the item's `data` — `{{ headline }} · {{ link }}` — rendered by
+   * `renderSummary` and always as **text**. Null means "use the item's own title", which is right for
+   * most content types; a block instance has no title, so its type's name is the floor instead.
+   *
+   * This replaced `title_field`, which named a single field, was offered by the settings screen as
+   * "which field labels an item in admin lists", and was read by no list at all. See
+   * `0027_summary_template` for why it was widened rather than merely wired up.
+   */
+  summary_template: string | null;
   /** Order in the admin sidebar, where each content type is its own entry. Ties break by name. */
   position: number;
   /**

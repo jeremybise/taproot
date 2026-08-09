@@ -7,6 +7,8 @@ import {
   countItemsByStatus,
   getContentTypeByApiId,
   listItemSummaries,
+  loadItemData,
+  summaryLabel,
   termIdsForBranch,
 } from '@taprootcms/core';
 import { taxonomyFilterOptions } from '../../../termOptions.js';
@@ -70,6 +72,26 @@ const [{ items, total }, statusCounts] = await Promise.all([
   listItemSummaries(taproot.db.db, { ...facetFilters, status: statusFilter, limit: 200 }),
   countItemsByStatus(taproot.db.db, facetFilters),
 ]);
+
+/**
+ * Field values for this page of rows, but only when the type has a summary template to spend them on.
+ *
+ * This is what finally makes that setting mean something. It was `title_field`, the settings screen
+ * described it as "which field labels an item in admin lists", and **no list read it** — so the
+ * label promised something the CMS did not do. Gated on the template being set, so a type without
+ * one costs exactly what it did before: nothing.
+ *
+ * One query for the whole page rather than one per row, which is the rule `resolveDelivery` follows
+ * for its own lookups.
+ */
+const summaryData = contentType.summary_template
+  ? await loadItemData(taproot.db.db, items.map((item) => item.id))
+  : null;
+
+const labelFor = (item: (typeof items)[number]) =>
+  summaryData
+    ? summaryLabel(contentType.summary_template, contentType.fields, summaryData.get(item.id) ?? {}, item.title)
+    : item.title;
 
 const statusOptions = statusFilterOptions(statusCounts, statusFilter);
 const statusTotal = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
@@ -223,7 +245,7 @@ const plural = contentType.name_plural.toLowerCase();
                     class="inline-block"
                   >
                     <a href={`/admin/content/${item.id}`} class="hover:underline">
-                      {item.title}
+                      {labelFor(item)}
                     </a>
                   </span>
                 </th>

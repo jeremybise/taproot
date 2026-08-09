@@ -120,7 +120,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: '/people',
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   const blockType = await createContentType(handle.db, {
@@ -131,7 +131,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   });
   await createField(handle.db, blockType.id, {
     api_id: 'words',
@@ -374,7 +374,7 @@ describe('the terms a facet is built from', () => {
       description: null,
       icon: null,
       url_prefix: '/news',
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     const tagged = await createField(handle.db, newsType.id, {
       api_id: 'departments',
@@ -536,7 +536,7 @@ describe('a collection with no item pages', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
       item_pages: false,
     });
 
@@ -605,7 +605,7 @@ describe('one shape for a listing and a query result', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: 'title',
+      summary_template: '{{ title }}',
     });
     const listing = await createField(handle.db, hostType.id, {
       api_id: 'people',

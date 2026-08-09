@@ -26,7 +26,7 @@ if (Astro.request.method === 'POST') {
     description: String(form.get('description') ?? '').trim() || null,
     url_prefix: null,
     icon: null,
-    title_field: null,
+    summary_template: null,
   });
 
   if (!parsed.success) {

@@ -37,7 +37,7 @@ async function seedBlockType(): Promise<{ type: ContentTypeRow; fields: FieldRow
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
   });
 
   const body = await createField(handle.db, type.id, {
@@ -63,7 +63,7 @@ async function seedPageTypeWithBlocks(): Promise<{ type: ContentTypeRow; fields:
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   const sections = await createField(handle.db, type.id, {

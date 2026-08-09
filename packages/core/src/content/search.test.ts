@@ -61,7 +61,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   fields = [
@@ -125,7 +125,7 @@ describe('what reaches the text index', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     await createField(handle.db, blockType.id, {
@@ -190,7 +190,7 @@ describe('what reaches the text index', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     const heading = await createField(handle.db, blockType.id, {
@@ -271,7 +271,7 @@ describe('staying in step with the item', () => {
       description: null,
       icon: null,
       url_prefix: null,
-      title_field: null,
+      summary_template: null,
     });
 
     await createField(handle.db, blockType.id, {

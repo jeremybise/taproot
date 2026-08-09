@@ -34,7 +34,7 @@ beforeEach(async () => {
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
   fields = [
     await createField(handle.db, type.id, {

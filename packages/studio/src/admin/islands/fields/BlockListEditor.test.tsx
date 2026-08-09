@@ -44,7 +44,7 @@ function blockType(overrides: Partial<BlockTypeOption> = {}): BlockTypeOption {
     kind: 'block',
     icon: null,
     url_prefix: null,
-    title_field: null,
+    summary_template: null,
     position: 0,
     default_og_image_id: null,
     created_at: '',

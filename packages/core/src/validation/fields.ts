@@ -1194,7 +1194,15 @@ export const contentTypeInputSchema = z.object({
    * is what every collection before this column had.
    */
   item_pages: z.boolean().optional(),
-  title_field: z.string().nullish(),
+  /**
+   * Length-bounded, and otherwise unvalidated on purpose.
+   *
+   * A token naming a field that does not exist renders as nothing rather than erroring — see
+   * `renderSummary` — because a template outlives the fields it names, and refusing the save would
+   * make renaming a field on one screen break the type's settings on another. Same shape as a query
+   * field's `dateFieldApiId`.
+   */
+  summary_template: z.string().max(200).nullish(),
   /** Social-card image for items of this type that have not chosen one. */
   default_og_image_id: z.string().nullish(),
 });

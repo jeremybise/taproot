@@ -53,7 +53,7 @@ async function seedTaggedType(
     description: null,
     icon: null,
     url_prefix: null,
-    title_field: 'title',
+    summary_template: '{{ title }}',
   });
 
   const departments = await createField(handle.db, type.id, {
