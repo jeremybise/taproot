@@ -173,18 +173,34 @@ describe('reordering by keyboard', () => {
 });
 
 describe('removing blocks', () => {
-  it('names the block in the remove button', () => {
+  /**
+   * Remove now lives in the row's `⋯` menu rather than beside the reorder buttons.
+   *
+   * These tests open it, which is the point: the interaction genuinely changed, so a test that
+   * still found a bare "Remove Quote" button would be asserting a control nobody can reach.
+   */
+  it('names the block in the menu that holds its actions', () => {
     setup({ value: blocks });
-    expect(screen.getByRole('button', { name: 'Remove Quote' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'More actions for Quote' })).toBeTruthy();
   });
 
   it('removes only that block', async () => {
     const user = userEvent.setup();
     const { onChange } = setup({ value: blocks });
 
-    await user.click(screen.getByRole('button', { name: 'Remove Quote' }));
+    await user.click(screen.getByRole('button', { name: 'More actions for Quote' }));
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
 
     expect(onChange.mock.calls[0]![0].map((b: { id: string }) => b.id)).toEqual(['a', 'c']);
+  });
+
+  it('keeps reordering on the row, where it is used repeatedly', () => {
+    setup({ value: blocks });
+
+    // The split is by frequency: a click to reach ordering is a click paid every time a region is
+    // composed, so these must not follow Remove into the menu.
+    expect(screen.getByRole('button', { name: 'Move Quote up' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move Quote down' })).toBeTruthy();
   });
 });
 

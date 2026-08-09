@@ -39,6 +39,7 @@ import {
 
 import { FieldControl, type TermOption } from './FieldControl.js';
 import { CollapseAll } from './CollapseAll.js';
+import { OverflowMenu } from '../OverflowMenu.js';
 import { useCollapsible } from './useCollapsible.js';
 import type { RelationTarget } from '../../relationOptions.js';
 
@@ -590,30 +591,16 @@ function BlockRow({
 
         {!disabled && (
           <>
-            {reusable ? (
-              <button
-                type="button"
-                onClick={onDetach}
-                aria-label={`Detach ${reusable.name} from the library`}
-                title="Detach from the library — this page keeps its own copy"
-                className="rounded border border-border-strong px-1.5 py-1 transition-colors hover:bg-surface-sunken"
-              >
-                <Link2Off aria-hidden="true" size={14} />
-              </button>
-            ) : (
-              canPromote && (
-                <button
-                  type="button"
-                  onClick={onPromote}
-                  disabled={promoting}
-                  aria-label={`Save ${name} to the library`}
-                  title="Save to the library so other pages can use it"
-                  className="rounded border border-border-strong px-1.5 py-1 transition-colors hover:bg-surface-sunken disabled:opacity-40"
-                >
-                  <Library aria-hidden="true" size={14} />
-                </button>
-              )
-            )}
+            {/*
+              Ordering stays on the row; everything else moved into the `⋯` menu.
+
+              Five icon buttons plus a drag handle left almost no width for the block's own name on a
+              phone. The split is by frequency, not by danger: reordering is what an editor does
+              repeatedly while composing, so a click to reach it is a click paid every time, while
+              promoting to the library and removing are occasional. That destruction also ends up
+              one step further away is consistent with delete already being separated from the other
+              icons rather than made a peer of them.
+            */}
             <button
               type="button"
               onClick={onMoveUp}
@@ -632,14 +619,38 @@ function BlockRow({
             >
               <ArrowDown aria-hidden="true" className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={onRemove}
-              aria-label={`Remove ${name}`}
-              className="rounded border border-border-strong px-1.5 py-1 text-danger transition-colors hover:bg-danger-subtle"
-            >
-              <Trash2 aria-hidden="true" size={14} />
-            </button>
+
+            <OverflowMenu
+              // Named for the block, not "More actions": a page holds several of these and an
+              // identical name on each says which control you are on and nothing about which block.
+              label={`More actions for ${reusable ? reusable.name : name}`}
+              items={[
+                ...(reusable
+                  ? [
+                      {
+                        label: 'Detach from the library',
+                        onSelect: onDetach,
+                        icon: <Link2Off aria-hidden="true" size={14} />,
+                      },
+                    ]
+                  : canPromote
+                    ? [
+                        {
+                          label: 'Save to the library',
+                          onSelect: onPromote,
+                          disabled: promoting,
+                          icon: <Library aria-hidden="true" size={14} />,
+                        },
+                      ]
+                    : []),
+                {
+                  label: 'Remove',
+                  onSelect: onRemove,
+                  danger: true,
+                  icon: <Trash2 aria-hidden="true" size={14} />,
+                },
+              ]}
+            />
           </>
         )}
       </div>
