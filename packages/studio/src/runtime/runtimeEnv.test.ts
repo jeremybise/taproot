@@ -1,5 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -18,7 +19,10 @@ import { describe, expect, it } from 'vitest';
  * it.
  */
 
-const RUNTIME = new URL('.', import.meta.url).pathname;
+// `fileURLToPath`, not `.pathname`, which is what `sourceEncoding.test.ts` already does: on Windows
+// a file URL's pathname is `/C:/…`, and `readdir` resolves that leading slash against the drive to
+// `C:\C:\…`. Passes on Unix either way, which is how the wrong one gets written.
+const RUNTIME = fileURLToPath(new URL('.', import.meta.url));
 
 /**
  * Files allowed to touch `process.env` directly.
