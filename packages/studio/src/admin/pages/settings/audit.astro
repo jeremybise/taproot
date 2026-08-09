@@ -1,5 +1,6 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
+import Pager from '../../components/Pager.astro';
 import Timestamp from '../../components/Timestamp.astro';
 import { listAuditActions, listAuditEntries, listUsers } from '@taprootcms/core';
 import { getTaproot, loginRedirect, canManageUsers } from '../../../runtime/guards.js';
@@ -25,11 +26,24 @@ const params = Astro.url.searchParams;
 const action = params.get('action') ?? '';
 const actorId = params.get('actor') ?? '';
 
+/**
+ * Paged, because this is the one table here that grows without bound.
+ *
+ * Retention is 400 days by default on a real deployment, so a capped-and-silent list is a log that
+ * quietly stops being a log: it would show the most recent 200 entries and say nothing, which is
+ * worst precisely when somebody is looking for something older — the only reason anybody opens this
+ * screen. Every other list in the admin is bounded by how much content exists; this one is bounded
+ * by how long the deployment has been running.
+ */
+const PER_PAGE = 100;
+const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
+
 const [{ entries, total }, actions, users] = await Promise.all([
   listAuditEntries(taproot.db.db, {
     action: action || undefined,
     actorId: actorId || undefined,
-    limit: 200,
+    limit: PER_PAGE,
+    offset: (page - 1) * PER_PAGE,
   }),
   // Offered from what exists rather than a fixed list, so a filter never names an action this
   // deployment has never performed.
@@ -137,9 +151,13 @@ const filtered = Boolean(action || actorId);
   {
     entries.length === 0 ? (
       <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
-        {filtered
-          ? 'Nothing matches this filter.'
-          : 'Nothing recorded yet. Entries appear as content is published or deleted, and as people are added or their access changes.'}
+        {/* `page > 1` first: paging made an empty page reachable, and telling somebody who walked
+            off the end that nothing has ever been recorded is plainly false. */}
+        {page > 1
+          ? 'No entries on this page.'
+          : filtered
+            ? 'Nothing matches this filter.'
+            : 'Nothing recorded yet. Entries appear as content is published or deleted, and as people are added or their access changes.'}
       </p>
     ) : (
       <div class="overflow-x-auto rounded-lg border border-border">
@@ -196,11 +214,17 @@ const filtered = Boolean(action || actorId);
     )
   }
 
-  {
-    total > entries.length && (
-      <p class="mt-2 text-sm text-content-subtle">
-        Showing the {entries.length} most recent of {total}. Filter to narrow the list.
-      </p>
-    )
-  }
+  {/*
+    This replaced a note reading "Showing the N most recent of M. Filter to narrow the list." That
+    was honest — it is the pattern the rest of the admin now follows — but filtering is the wrong
+    instrument here: the question this screen answers is "what happened, and when", and an older
+    entry you cannot name is not one you can filter down to. Paging is what reaches it. The header
+    still carries the total, so nothing was lost by dropping the sentence.
+  */}
+  <Pager
+    page={page}
+    hasMore={page * PER_PAGE < total}
+    params={params}
+    basePath="/admin/settings/audit"
+  />
 </AdminLayout>

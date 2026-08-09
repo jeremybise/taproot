@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { listMedia, needsAltText } from '@taprootcms/core';
+import Pager from '../../components/Pager.astro';
+import { listMedia, needsAltText, undescribedImages } from '@taprootcms/core';
 import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
 
 const taproot = getTaproot(Astro.locals);
@@ -16,10 +17,39 @@ const user = taproot.user;
  * exactly where the picker's search was already earning its keep.
  */
 const search = Astro.url.searchParams.get('q')?.trim() ?? '';
-const { media: assets, total } = await listMedia(taproot.db.db, {
-  search: search || undefined,
-  limit: 100,
-});
+
+/**
+ * Paged, because this screen was the one already over its own cap.
+ *
+ * 107 assets against a `limit: 100` meant seven were unreachable from here, with the header
+ * cheerfully printing the true total above them. Search was the only way past it, which works when
+ * you know what you are looking for and not at all when you are browsing — and browsing is what a
+ * media library is for.
+ */
+const PER_PAGE = 100;
+const page = Math.max(1, Number(Astro.url.searchParams.get('page') ?? '1') || 1);
+
+const [{ media: assets, total }, undescribed] = await Promise.all([
+  listMedia(taproot.db.db, {
+    search: search || undefined,
+    limit: PER_PAGE,
+    offset: (page - 1) * PER_PAGE,
+  }),
+  /*
+   * The alt-text banner is a fact about the *library*, so it is a query rather than a tally of
+   * what happened to load. It counted `assets` before, which made it silently wrong in two
+   * directions at once: capped at a hundred, and narrowed by whatever was in the search box. On a
+   * library past the cap it could read zero while undescribed images sat on the next page — an
+   * accessibility warning going quiet exactly as a site grows big enough to need it.
+   *
+   * `limit: 1` because only the total is wanted here; the report screen is where the list belongs.
+   * Shared with that report rather than re-expressed, so "needs describing" has one definition —
+   * `alt_text is null` and not `''`, which is how an image is marked decorative.
+   */
+  undescribedImages(taproot.db.db, { limit: 1 }),
+]);
+
+const hasMore = page * PER_PAGE < total;
 
 const withUrls = assets.map((asset) => ({
   ...asset,
@@ -30,7 +60,7 @@ const withUrls = assets.map((asset) => ({
   undescribed: needsAltText({ mimeType: asset.mime_type, altText: asset.alt_text }),
 }));
 
-const missingAlt = withUrls.filter((asset) => asset.undescribed).length;
+const missingAlt = undescribed.total;
 
 // The upload form posts to the API, which redirects back here with one of these.
 const uploaded = Astro.url.searchParams.get('uploaded');
@@ -94,8 +124,14 @@ const uploadError = Astro.url.searchParams.get('error');
   {
     missingAlt > 0 && (
       <p class="mb-6 rounded-md border border-warning bg-warning-subtle px-4 py-3 text-sm">
+        {/*
+          "in the library", because this counts the whole table rather than the page on screen — so
+          the number stays true behind a search and past the cap, and does not appear to contradict
+          a filtered grid showing none of them.
+        */}
         <strong class="font-semibold">
-          {missingAlt} {missingAlt === 1 ? 'image is' : 'images are'} missing alt text.
+          {missingAlt} {missingAlt === 1 ? 'image in the library is' : 'images in the library are'}{' '}
+          missing alt text.
         </strong>{' '}
         A screen reader announces nothing useful for them, which is a WCAG 1.1.1 failure on every
         page they appear on. Open one to describe it — or to mark it decorative, if it carries no
@@ -159,7 +195,16 @@ const uploadError = Astro.url.searchParams.get('error');
   {
     withUrls.length === 0 ? (
       <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
-        No media uploaded yet.
+        {/*
+          Three states, because paging made the second and third reachable: "nothing here yet" is
+          only true of an empty library, and telling somebody who has just searched that they have
+          never uploaded anything reads as their library having been lost.
+        */}
+        {search
+          ? `No media matches “${search}”.`
+          : page > 1
+            ? 'No media on this page.'
+            : 'No media uploaded yet.'}
       </p>
     ) : (
       <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -196,6 +241,14 @@ const uploadError = Astro.url.searchParams.get('error');
       </ul>
     )
   }
+
+  <Pager
+    page={page}
+    hasMore={hasMore}
+    params={Astro.url.searchParams}
+    basePath="/admin/media"
+    nextLabel="Next"
+  />
 
   <p class="mt-8 max-w-prose text-sm text-content-subtle">
     Open an asset to set its focal point and crop, and to see how it lands in every shape the site

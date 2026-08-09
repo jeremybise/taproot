@@ -1,0 +1,64 @@
+---
+/**
+ * Says so when a list is showing fewer rows than exist.
+ *
+ * **Truncation that says nothing is the failure to fear**, and the admin had it in several places at
+ * once. `listItemSummaries` and `listMedia` both return a `total` counted *before* the limit, and the
+ * screens were rendering that number in the header above a capped list — so the media library read
+ * "107 assets" over a grid of 100, and every content list would do the same at 200. The number was
+ * right, the rows were right, and together they said something false.
+ *
+ * It is the same bug the parent picker already names in its own comment: an item that exists, cannot
+ * be reached, and has nothing on screen explaining why. The picker surfaces it; these screens fetched
+ * the identical `total` and used it only to print a figure that contradicted them.
+ *
+ * Renders nothing when the list is complete, so a caller can place it unconditionally and screens
+ * under their cap — which is nearly all of them, nearly all the time — pay no visual cost.
+ *
+ * **This is the answer for a list nobody needs to page through, not a substitute for paging.** Where
+ * an editor genuinely has to reach the rows past the cap, that screen gets a `Pager` instead: media,
+ * because a library outgrows a hundred assets as a matter of course, and the audit log, because it
+ * grows forever. A notice is the right answer where the cap is generous and the way to find one row
+ * is to search for it — which is what the filters above these lists are for.
+ */
+interface Props {
+  /** How many rows are on screen. */
+  shown: number;
+  /** How many match the current filters in total, counted before the limit. */
+  total: number;
+  /** Singular. "item", "asset", "redirect". */
+  noun: string;
+  /**
+   * What to do about it. Defaults to pointing at the filters, which is true of every screen using
+   * this today — each has a search box and most have facets.
+   */
+  hint?: string;
+}
+
+const {
+  shown,
+  total,
+  noun,
+  hint = 'Narrow the list with the filters above to find a specific one.',
+} = Astro.props;
+
+const hidden = total - shown;
+---
+
+{
+  hidden > 0 && (
+    /*
+      `role="status"` rather than a bare paragraph: on a filtered list this appears and disappears as
+      the result count crosses the cap, and a change nobody is told about is a change a screen-reader
+      user has to go looking for. Not `alert` — this is information, and nothing is wrong.
+    */
+    <p
+      role="status"
+      class="mt-4 rounded-md border border-border bg-surface-sunken px-4 py-3 text-sm text-content-muted"
+    >
+      Showing the first <strong class="font-semibold text-content">{shown}</strong> of{' '}
+      <strong class="font-semibold text-content">{total}</strong> {noun}
+      {total === 1 ? '' : 's'}. {hint}
+    </p>
+  )
+}

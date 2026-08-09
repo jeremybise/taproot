@@ -1,0 +1,75 @@
+---
+/**
+ * Previous / next links for a list that is served a page at a time.
+ *
+ * Extracted from the accessibility report, which was the only screen in the admin that could reach
+ * past its own first page. Every other list simply stopped at its cap — and the media library was
+ * already over one, showing 100 of 107 assets with nothing on screen saying so.
+ *
+ * **Links, not buttons, and a real navigation.** The admin is server-rendered precisely so it works
+ * before hydration and so focus and announcements come from the platform; a pager built from
+ * `<button>` and `history.pushState` would need both hand-written. It also means a page of a list is
+ * addressable — somebody can send "page 3 of the audit log" to a colleague.
+ *
+ * **Numbered pages are deliberately absent.** Rendering 1…N needs a total *page* count, which needs
+ * the total row count on every screen that uses this; the audit log's is a `count(*)` over a table
+ * that grows forever. Previous/next needs only "is there another row after this page", which is one
+ * extra row fetched rather than one extra aggregate. Where a total is already on hand the caller
+ * puts it in the header, which is where a reader looks for it anyway.
+ */
+interface Props {
+  /** 1-based. */
+  page: number;
+  hasMore: boolean;
+  /**
+   * The current query string. Every filter is carried across and only `page` changes — a pager that
+   * dropped the filters would take somebody from page 2 of their search to page 3 of everything,
+   * which reads as the search having been forgotten.
+   */
+  params: URLSearchParams;
+  basePath: string;
+  /** Overrides "Next", for a screen where the act is worth naming — "Check the next 50". */
+  nextLabel?: string;
+}
+
+const { page, hasMore, params, basePath, nextLabel = 'Next' } = Astro.props;
+
+function href(target: number): string {
+  const next = new URLSearchParams(params);
+  /*
+   * Page 1 carries no parameter, so the first page of a list has one address rather than two. That
+   * keeps a shared link and a cached response pointing at the same thing.
+   */
+  if (target <= 1) next.delete('page');
+  else next.set('page', String(target));
+
+  const query = next.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+const LINK_CLASS =
+  'rounded-md border border-border-strong px-3 py-2 font-medium transition-colors hover:bg-surface-sunken';
+---
+
+{
+  (page > 1 || hasMore) && (
+    <nav aria-label="Pages" class="mt-6 flex items-center gap-3 text-sm">
+      {page > 1 && (
+        <a href={href(page - 1)} class={LINK_CLASS} rel="prev">
+          Previous
+        </a>
+      )}
+      {/*
+        Announced rather than merely drawn: without this a screen-reader user tabbing between two
+        unlabelled links has no way to tell which page they are on. `aria-current` is not right here
+        — there is no set of page links for this to be the current one *of*.
+      */}
+      <span class="text-content-subtle">Page {page}</span>
+      {hasMore && (
+        <a href={href(page + 1)} class={LINK_CLASS} rel="next">
+          {nextLabel}
+        </a>
+      )}
+    </nav>
+  )
+}

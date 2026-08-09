@@ -3,6 +3,7 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
 import PageHeader from '../../components/PageHeader.astro';
 import StatusBadge from '../../components/StatusBadge.astro';
 import Timestamp from '../../components/Timestamp.astro';
+import TruncationNotice from '../../components/TruncationNotice.astro';
 import {
   countItemsByStatus,
   dueForPublishing,
@@ -275,4 +276,6 @@ const filtered = Boolean(search || typeFilter || statusFilter || termFilter);
       </div>
     )
   }
+
+  <TruncationNotice shown={items.length} total={total} noun="item" />
 </AdminLayout>

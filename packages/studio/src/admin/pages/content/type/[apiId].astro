@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import PageHeader from '../../../components/PageHeader.astro';
+import TruncationNotice from '../../../components/TruncationNotice.astro';
 import StatusBadge from '../../../components/StatusBadge.astro';
 import Timestamp from '../../../components/Timestamp.astro';
 import {
@@ -390,4 +391,6 @@ const plural = contentType.name_plural.toLowerCase();
       </div>
     )
   }
+
+  <TruncationNotice shown={items.length} total={total} noun="item" />
 </AdminLayout>

@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import Timestamp from '../../components/Timestamp.astro';
+import TruncationNotice from '../../components/TruncationNotice.astro';
 import { listRedirects, redirectIsShadowed } from '@taprootcms/core';
 import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
 
@@ -324,11 +325,10 @@ const editingId = Astro.url.searchParams.get('edit');
     )
   }
 
-  {
-    total > redirects.length && (
-      <p class="mt-2 text-sm text-content-subtle">
-        Showing {redirects.length} of {total}. Search to narrow the list.
-      </p>
-    )
-  }
+  <TruncationNotice
+    shown={redirects.length}
+    total={total}
+    noun="redirect"
+    hint="Search to narrow the list."
+  />
 </AdminLayout>

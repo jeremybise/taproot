@@ -79,6 +79,29 @@ The status filter is faceted: `countItemsByStatus` applies every filter **except
 count answers "what would I get if I switched to this?" rather than restating the rows already on
 screen. `status` is excluded from its parameter type rather than by convention.
 
+**Every capped list either pages or says it is capped, and the split is by what the screen is for.**
+`listItemSummaries`, `listMedia`, `listRedirects` and `listAuditEntries` all return a `total` counted
+*before* the limit, and several screens rendered that number in a header above a truncated list —
+the media library read "107 assets" over a grid of 100, and every content list would do the same at
+200. The number was right, the rows were right, and together they said something false. It is the
+bug the parent picker already names in its own comment: an item that exists, cannot be reached, and
+has nothing on screen explaining why. Three things settle which answer a screen gets:
+- **`Pager` where an editor has to reach the rows, `TruncationNotice` where they have to *find* one.**
+  Media pages because a library outgrows a hundred assets as a matter of course and browsing is what
+  it is for; the audit log pages because it grows with the deployment's age rather than its content,
+  so it is the one table certain to exceed any cap — and "filter it down" is useless advice for an
+  older entry nobody can name. Content lists, redirects and releases get the notice, because their
+  caps are generous and the way to reach one row among hundreds is the search box above it.
+- **The notice renders nothing when the list is complete**, so it can be placed unconditionally and
+  costs nothing on the screens that are inside their cap, which is nearly all of them nearly always.
+- **A cap that *is* the feature gets neither.** Settings → Search asks for the top 50 terms; that is
+  a leaderboard, and a note saying it is showing 50 of 4,000 would be describing the point of the
+  screen as a shortcoming.
+
+Paging made two states reachable that could not happen before, and both had to be written: an empty
+page (`?page=99`), and an empty *search* — "No media uploaded yet" told somebody who had just
+searched that their library was gone.
+
 **A `page`'s parent need not share its content type, and the picker is the only thing that ever
 said otherwise.** Core has always allowed it — `createItem` looks the parent up by id and checks
 that it exists, and `resolveItemPath`, the breadcrumb walk and the cascading path rewrite are all
@@ -1246,6 +1269,14 @@ are about the audit scripts at the repo root rather than the admin itself:
 - **`scripts/a11y-audit.mjs` force-opens `dialog.taproot-sheet` *and* `[data-menu-panel]` before
   running axe**, because a closed one is `display: none` and axe skips it — a run would stay green
   while the account link, the theme buttons and sign-out quietly stopped being checked.
+- **A control that only exists on page two needs page two in `ROUTES`.** `Pager` renders only when
+  there is somewhere to go, so on a seeded database — comfortably inside every cap — auditing
+  `/admin/media` and `/admin/settings/audit` checks two screens whose navigation is not in the DOM
+  at all. `?page=2` is deliberately past the end of the seed data: `page > 1` is what puts the
+  Previous link and the "Page N" status on screen, and it renders the empty-page state paging newly
+  made reachable, so one route covers both. Same trap as the closed `<dialog>` and the collapsed
+  block panel, and it generalises — **markup that appears only in a state the seed never reaches is
+  markup the audit cannot see**, however many routes pass.
 - **The audit's dynamic routes must be chosen by what they exercise, not by what sorts first.** It
   picks the item editor by field count, because taking `items[0]` took the alphabetically-first path
   — the weather-banner singleton, three plain inputs — and left the densest screen in the admin the

@@ -86,6 +86,20 @@ const ROUTES = [
    */
   '/admin/settings/api-keys',
   '/admin/settings/audit',
+  /**
+   * Page two, because **the pager does not exist on page one** and page one is all this audited.
+   *
+   * `Pager` renders only when there is somewhere to go, so on a seeded database — comfortably inside
+   * every cap — auditing `/admin/media` and `/admin/settings/audit` alone checks two screens whose
+   * navigation is absent from the DOM. That is the closed-`<dialog>` trap one more time: the run
+   * stays green while the markup it was meant to cover is never in the tree.
+   *
+   * `?page=2` is past the end of the seeded data, which is the point — `page > 1` is what puts the
+   * "Previous" link and the "Page N" status on screen, and it also renders the empty-page state that
+   * paging newly made reachable. Both are audited by asking for a page that does not exist.
+   */
+  '/admin/media?page=2',
+  '/admin/settings/audit?page=2',
   /*
    * Worth auditing rather than assuming, because it is two data tables and a filter form — and the
    * seed gives it rows, so the audit sees the populated version rather than the empty state. An

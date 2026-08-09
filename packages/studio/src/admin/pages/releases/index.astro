@@ -2,6 +2,7 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import ReleaseBadge from '../../components/ReleaseBadge.astro';
 import Timestamp from '../../components/Timestamp.astro';
+import TruncationNotice from '../../components/TruncationNotice.astro';
 import { listReleases } from '@taprootcms/core';
 import {
   getTaproot,
@@ -206,4 +207,11 @@ const done = releases.filter((release) => release.status === 'published');
       </>
     )
   }
+
+  <TruncationNotice
+    shown={releases.length}
+    total={total}
+    noun="release"
+    hint="Older releases are not reachable from this screen yet."
+  />
 </AdminLayout>
