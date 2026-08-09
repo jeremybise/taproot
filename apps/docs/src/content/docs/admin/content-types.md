@@ -108,6 +108,29 @@ Each type can also be given a **sidebar icon** on its own settings screen. It is
 name is always beside it, and an icon is never the only thing telling two entries apart — but on a
 site with a dozen types it makes the sidebar scannable rather than a list to read.
 
+## What the list shows
+
+**List columns**, on the type's settings screen, chooses which columns the list of these items has —
+and the order it is sorted in.
+
+Tick the built-ins you want (path, status, updated, created) and any of the type's own fields. A
+photograph, a start date, a job title: whatever tells one row from the next. **Title is always
+shown**, because it carries the link to the editor.
+
+**Default order** sorts the list. Beyond the built-in orders, *Soonest first* and *Latest first* sort
+by one of the type's own fields — pick which underneath. An events list ordered by when the events
+happen is the case this exists for.
+
+Only fields the CMS indexes can be sorted by: text, number, yes/no, date and choice. A field added
+later becomes available with no further step.
+
+Two things are quietly forgiving here, because the columns are chosen on this screen and the fields
+are edited on the next one:
+
+- **Delete a field a column shows, and the column disappears** rather than becoming an empty stripe.
+- **Delete a field the list is sorted by, and the order falls back** to the site's own order rather
+  than the screen breaking.
+
 ## The summary line
 
 A content type can say how one of its items reads in one line: **Summary line**, on the type's

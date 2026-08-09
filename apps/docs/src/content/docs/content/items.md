@@ -7,6 +7,17 @@ A **content item** is one piece of content: a page, an event, a news story. Ever
 Taproot is one. It is called an item rather than a page because a page is only one of the kinds your
 site might have.
 
+## The list you land on
+
+Each content type has its own list, and what it shows is set per type — an events list can show
+start dates and be ordered by them, a staff list can show photographs. If a list would be more useful
+showing something else, that is **Settings → Content types → List columns**, and an administrator can
+change it.
+
+The list always shows at most 200 items. Use the search box and the filters above it to narrow
+rather than scrolling; the status filter's counts tell you what each choice would return.
+
+
 ## Creating one
 
 From a content type's list — **Pages**, **Events** — use **New**. Or use **All content → New** and
