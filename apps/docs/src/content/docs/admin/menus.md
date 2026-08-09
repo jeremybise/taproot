@@ -20,6 +20,15 @@ That is the entire point:
 - **Unpublish a page and it drops out of the public menu** on its own, and comes back when it is
   published again.
 
+## Adding an entry that points at a page
+
+The **Page** box is a search: type part of a title and it narrows. The title is what you read, with
+the path underneath it in smaller type — two pages can legitimately share a title, and the path is
+what tells `/admissions/apply` from `/financial-aid/apply`.
+
+It reaches every page on the site, however deep. Earlier versions offered a fixed list that stopped
+at the first two hundred pages, which on a large site meant newer pages could not be linked at all.
+
 ## Labels
 
 Leave an entry's label blank and it uses its target's own title, so renaming the page renames the

@@ -31,11 +31,19 @@ clicking one opens its editor directly.
 
 - **Media** — every image and file that has been uploaded.
 - **Reusable blocks** — pieces of content shared across several pages, edited in one place.
+- **Text snippets** — a single value, like this year's tuition, used in sentences across the site
+  and changed in one place. See [Text snippets](/content/snippets/).
 - **Taxonomies** — the tag and category vocabularies your site uses.
 - **Menus** — the site's navigation. Administrators only.
 
-**Settings** — administrators only. Content types, block types, branding, redirects, people, API
-keys, the audit log, and system information.
+**Settings** — administrators only, and grouped by the kind of decision each one is: the **content
+model** (content types, block types), the **site** (branding, redirects, search), **people and
+access** (users, API keys, the audit log), and the **deployment** itself.
+
+Each entry carries a small icon. They are decoration — the label always says what the thing is — so
+nothing is lost if you do not find a particular mark obvious. Your content types can each be given
+their own under **Settings → Content types**, which is worth doing once a site has more than a
+handful.
 
 ## Things that are the same on every screen
 
@@ -50,6 +58,16 @@ same thing everywhere. Learning them once is enough.
 year for anything older. Hover for the exact moment.
 
 **Breadcrumbs** at the top of a screen are links. They are the fastest way back up.
+
+**Anywhere you pick a page**, you get a search box rather than a long dropdown — choosing a parent
+page, or pointing a menu entry at a page. Type part of a title and it narrows. The title is what you
+read; the path sits underneath it in smaller type, because two pages can share a title and the path
+is what tells them apart.
+
+**Crowded rows keep their common actions visible and put the rest behind `⋯`.** On a block, moving
+it up and down stays on the row, because that is what you do repeatedly while composing; saving it to
+the library and removing it live in the menu. The rule is how often you need something, not how
+dangerous it is.
 
 **Delete is the bin icon** in the action bar, set apart from the icons beside it, and asks you to
 type something to confirm. It is kept slightly out of the way on purpose. If a delete would break

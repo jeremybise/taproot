@@ -76,6 +76,7 @@ export default defineConfig({
             { label: 'Rich text', slug: 'content/rich-text' },
             { label: 'Blocks', slug: 'content/blocks' },
             { label: 'Reusable blocks', slug: 'content/reusable-blocks' },
+            { label: 'Text snippets', slug: 'content/snippets' },
             { label: 'Images and files', slug: 'content/media' },
             { label: 'Tags and categories', slug: 'content/taxonomies' },
             { label: 'Search engines and social cards', slug: 'content/seo' },

@@ -100,9 +100,36 @@ can hide its closing time while the row above it shows one.
 If you delete or rename a field that something else depends on, the dependent field simply becomes
 visible again rather than disappearing.
 
-## Sidebar order
+## Sidebar order and icons
 
 **Settings → Content types** reorders the sidebar. Put what people touch daily at the top.
+
+Each type can also be given a **sidebar icon** on its own settings screen. It is decoration — the
+name is always beside it, and an icon is never the only thing telling two entries apart — but on a
+site with a dozen types it makes the sidebar scannable rather than a list to read.
+
+## The summary line
+
+A content type can say how one of its items reads in one line: **Summary line**, on the type's
+settings screen.
+
+Write `{{ field_api_id }}` where a value should go, and plain text between them:
+
+```
+{{ position }} — {{ email }}
+```
+
+A person in a list then reads "Registrar — m.okafor@example.edu" rather than just their name. The
+field ids you can use are listed under the box.
+
+Two rules worth knowing:
+
+- **An empty field takes its separator with it.** `{{ headline }} · {{ link }}` on an item with no
+  link reads "Apply now", not "Apply now ·".
+- **Leave it empty and items are labelled by their title**, which is right for most types.
+
+It matters most on **block types**, where it becomes the collapsed row's label — the difference
+between a page showing "Card 2 of 5" three times and one showing what each card actually says.
 
 ## Block types
 

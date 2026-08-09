@@ -11,8 +11,13 @@ your site.
 
 ## Adding one
 
-**Add block** lists what this field accepts. Pick a type and it appears at the bottom, expanded, for
-you to fill in.
+**Add block** opens a panel listing what this field accepts, with a search box once there are more
+than a handful. Pick a type and it appears at the bottom, expanded, for you to fill in.
+
+Anything in the [reusable block library](/content/reusable-blocks/) that fits this field is in the
+same panel, in its own section below the types. Placing one of those puts *shared* content on the
+page — editing it later changes every other page using it — which is why it sits apart rather than
+mixed in with the ordinary types.
 
 A field may cap how many blocks it takes. At the cap, **Add block** stops offering more.
 
@@ -24,13 +29,19 @@ a keyboard or a screen reader.
 
 ## Removing
 
-Each block has its own remove button. It takes that block's content with it and there is no undo
+Each block's `⋯` menu holds **Remove**, along with saving it to the library or detaching it from
+there. Moving a block up and down stays on the row itself, because that is the thing you do
+repeatedly while composing a page. It takes that block's content with it and there is no undo
 short of leaving without saving — or restoring an earlier revision after you have saved.
 
 ## Collapsing
 
 Blocks collapse to their heading so a long page stays manageable. Collapsing changes nothing about
 the content.
+
+A collapsed block shows what it *contains* when its type has been given a summary line — "Card ·
+Apply now" rather than "Card 2 of 5". If your blocks all read alike when collapsed, ask whoever
+manages your content types to set one: **Settings → Block types → Summary line**.
 
 ## Blocks inside blocks
 

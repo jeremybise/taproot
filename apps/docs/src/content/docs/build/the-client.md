@@ -85,6 +85,7 @@ Alongside the item:
 | `media` | Every image and file the content references, keyed by id |
 | `references` | Every content item a relation field points at, keyed by id |
 | `terms` | Every taxonomy term the content carries, keyed by id |
+| `snippets` | Every [text snippet](/content/snippets/) the content refers to, keyed by its token id |
 
 **`data` keeps ids; the maps resolve them.**
 
@@ -100,6 +101,30 @@ write.
 
 The maps also **respect visibility**. A relation pointing at a draft leaves the id in `data` and
 omits it from `references`, so you cannot accidentally render the title of something unpublished.
+
+### Snippets are the exception, and already substituted
+
+`snippets` is the one map whose values have **already been applied to `data`**. A `{{ tuition }}`
+token in a text or rich-text value arrives replaced — you do not call a helper, and a visitor can
+never see the braces because a site forgot one.
+
+The map is there because prose and data want different forms of the same value:
+
+```ts
+item.data.intro       // 'Tuition is $4,500 per year.'  — display form, substituted
+result.snippets.tuition
+// { kind: 'number', value: '4500', display: '$4,500' }
+```
+
+Read `value` when you need the fact — a chart's data point, a comparison, arithmetic — and let the
+substituted text handle sentences. A `snippet` **field** stores the token id, so
+`result.snippets[item.data.tuition_figure]` resolves one an editor picked from a dropdown.
+
+Only the snippets a page actually refers to are sent.
+
+This is the same exception rich text takes for internal links, for the same reason: a marker left in
+place ships to a visitor the moment a site forgets a helper, and delivery is read-only, so nothing
+round-trips it back.
 
 ## `items(options?)`
 

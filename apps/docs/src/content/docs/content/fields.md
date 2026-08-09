@@ -96,6 +96,19 @@ is useful and "Video" is not. The accessibility panel says so if you write the v
 There is no preview inside the field. Use the preview pane to see it in place on the real page, at
 the real width.
 
+## Snippet
+
+A dropdown of the site's [text snippets](/content/snippets/) — a shared value like this year's
+tuition, kept in one place.
+
+Use this where the value *is* the field: a figure in a statistics panel, a data point on a chart. To
+put a shared value in the middle of a sentence instead, you do not need a field at all — type its
+`{{ token }}` into any text or rich text box.
+
+The dropdown shows each snippet's name and what it currently reads as, so you can tell `$4,500` from
+`$4,900` without opening anything. A field may be narrowed to one kind, in which case only text, or
+only number, or only date snippets appear.
+
 ## Blocks
 
 A list you build a page out of, choosing from the block types your site offers. See
