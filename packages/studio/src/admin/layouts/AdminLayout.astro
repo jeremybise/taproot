@@ -3,6 +3,7 @@ import '../admin.css';
 import { listContentTypes, type User } from '@taprootcms/core';
 import { getTaproot, canEditContent, canManageSchema, canStageToRelease } from '../../runtime/guards.js';
 import UserMenu from '../components/UserMenu.astro';
+import Icon from '../components/Icon.astro';
 import BrandMark from '../components/BrandMark.astro';
 import BrandHead from '../components/BrandHead.astro';
 import { adminBranding } from '../branding.js';
@@ -72,6 +73,14 @@ interface NavItem {
   href: string;
   label: string;
   exact?: boolean;
+  /**
+   * A Lucide name from `iconPaths.ts`, decoration only.
+   *
+   * Never the accessible name: the label beside it always says what the link is, so an unknown or
+   * missing icon costs nothing but the mark. Fixed destinations get one here; a content type's comes
+   * from `content_types.icon`, which the type's own settings screen writes.
+   */
+  icon?: string;
 }
 
 interface NavGroup {
@@ -88,23 +97,34 @@ const groups: NavGroup[] = [
       ...listable.map((type) => ({
         href: `/admin/content/type/${type.api_id}`,
         label: type.name_plural,
+        /**
+         * The column existed, was validated, and was read by nothing at all until now.
+         *
+         * `file-text` is the fallback rather than "no icon", so a sidebar is never a ragged mix of
+         * marked and unmarked entries — which reads as breakage rather than as a default.
+         */
+        icon: type.icon ?? 'file-text',
       })),
       // Kept last: per-type lists are the way in, and searching across every type is the
       // occasional case rather than the default.
-      { href: '/admin/content', label: 'All content', exact: true },
+      { href: '/admin/content', label: 'All content', exact: true, icon: 'list' },
       /**
        * Under Content rather than Settings, because it reports on the site's content rather than
        * configuring anything. Editors and above: it lists items across every type, and a viewer
        * has nothing to do with a list of things to go and fix.
        */
-      ...(canEditContent(user) ? [{ href: '/admin/accessibility', label: 'Accessibility' }] : []),
+      ...(canEditContent(user)
+        ? [{ href: '/admin/accessibility', label: 'Accessibility', icon: 'accessibility' }]
+        : []),
       /**
        * Releases sits under Content rather than Settings because it *is* content — a batch of
        * pending versions — and a contributor can see it. Staging is not publishing: putting an item
        * in a release reaches nobody until an editor publishes it, which is the same shape as
        * submitting for review. A viewer sees nothing here.
        */
-      ...(canStageToRelease(user) ? [{ href: '/admin/releases', label: 'Releases' }] : []),
+      ...(canStageToRelease(user)
+        ? [{ href: '/admin/releases', label: 'Releases', icon: 'rocket' }]
+        : []),
     ],
   },
   ...(singletons.length > 0
@@ -115,6 +135,7 @@ const groups: NavGroup[] = [
           items: singletons.map((type) => ({
             href: `/admin/singleton/${type.api_id}`,
             label: type.name,
+            icon: type.icon ?? 'file-text',
           })),
         },
       ]
@@ -123,12 +144,14 @@ const groups: NavGroup[] = [
     id: 'nav-library',
     label: 'Library',
     items: [
-      { href: '/admin/media', label: 'Media' },
+      { href: '/admin/media', label: 'Media', icon: 'image' },
       // Content, not configuration — an office's contact details rather than a setting — so it
       // lives beside Media rather than under Settings with the block *types*.
-      { href: '/admin/blocks', label: 'Reusable blocks' },
-      { href: '/admin/taxonomies', label: 'Taxonomies' },
-      ...(canManageSchema(user) ? [{ href: '/admin/menus', label: 'Menus' }] : []),
+      { href: '/admin/blocks', label: 'Reusable blocks', icon: 'blocks' },
+      { href: '/admin/taxonomies', label: 'Taxonomies', icon: 'tags' },
+      ...(canManageSchema(user)
+        ? [{ href: '/admin/menus', label: 'Menus', icon: 'menu' }]
+        : []),
     ],
   },
 ];
@@ -138,7 +161,10 @@ const isCurrent = (item: NavItem) =>
 
 const navLinkClass = (current: boolean) =>
   [
-    'block rounded-md px-3 py-2 text-sm transition-colors',
+    // `flex` rather than `block`, so an icon can sit beside the label without changing the hit area.
+    // `min-w-0` on the label is what keeps a long content-type name truncating instead of widening
+    // the sidebar — the same rule the menus screen's forms needed.
+    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
     current
       ? 'bg-accent-subtle font-medium text-content'
       : 'text-content-muted hover:bg-surface-raised hover:text-content',
@@ -279,7 +305,8 @@ const navLinkClass = (current: boolean) =>
                   aria-current={path === '/admin' ? 'page' : undefined}
                   class={navLinkClass(path === '/admin')}
                 >
-                  Dashboard
+                  <Icon name="layout-dashboard" class="h-4 w-4 shrink-0" />
+                  <span class="min-w-0 truncate">Dashboard</span>
                 </a>
               </li>
             </ul>
@@ -303,7 +330,8 @@ const navLinkClass = (current: boolean) =>
                             aria-current={current ? 'page' : undefined}
                             class={navLinkClass(current)}
                           >
-                            {item.label}
+                            {item.icon && <Icon name={item.icon} class="h-4 w-4 shrink-0" />}
+                            <span class="min-w-0 truncate">{item.label}</span>
                           </a>
                         </li>
                       );
@@ -323,7 +351,8 @@ const navLinkClass = (current: boolean) =>
                   aria-current={path.startsWith('/admin/settings') ? 'page' : undefined}
                   class={navLinkClass(path.startsWith('/admin/settings'))}
                 >
-                  Settings
+                  <Icon name="settings" class="h-4 w-4 shrink-0" />
+                  <span class="min-w-0 truncate">Settings</span>
                 </a>
               </li>
             </ul>

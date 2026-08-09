@@ -1,5 +1,6 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
+import Icon from '../../components/Icon.astro';
 import { listBlockTypes, listContentTypes, loadBranding } from '@taprootcms/core';
 import {
   getTaproot,
@@ -62,26 +63,54 @@ const apiKeyCount = canManageUsers(user)
     )?.n
   : 0;
 
-const sections = [
+/**
+ * Grouped rather than one flat grid of nine cards.
+ *
+ * Nine equally-weighted tiles is a list to read rather than a place to navigate, and the ordering
+ * was an artefact of which permission check each card sat inside. The groups answer *what kind of
+ * decision is this* — the shape of your content, how the site behaves, who may do what, and what the
+ * deployment is doing — so somebody looking for API keys is not scanning past redirects to find them.
+ *
+ * Permission gating is unchanged: each card still appears inside the check it always had, including
+ * Search staying deliberately *outside* `canManageUsers` (see its own note below).
+ */
+interface SettingsCard {
+  href: string;
+  title: string;
+  description: string;
+  /** A Lucide name from `iconPaths.ts`. Decoration — the title is the accessible name. */
+  icon: string;
+  meta?: string;
+}
+
+const contentModel: SettingsCard[] = canManageSchema(user)
+  ? [
+      {
+        href: '/admin/settings/types',
+        title: 'Content types',
+        icon: 'shapes',
+        description:
+          'The shape of your content — types, their fields, and the order they appear in the sidebar.',
+        meta: `${typeCount} ${typeCount === 1 ? 'type' : 'types'}`,
+      },
+      {
+        href: '/admin/settings/blocks',
+        title: 'Block types',
+        icon: 'blocks',
+        description:
+          'The pieces a page is composed from. Same fields as a content type; lives inside a page rather than at its own URL.',
+        meta: `${blockCount} ${blockCount === 1 ? 'block' : 'blocks'}`,
+      },
+    ]
+  : [];
+
+const site: SettingsCard[] = [
   ...(canManageSchema(user)
     ? [
         {
-          href: '/admin/settings/types',
-          title: 'Content types',
-          description:
-            'The shape of your content — types, their fields, and the order they appear in the sidebar.',
-          meta: `${typeCount} ${typeCount === 1 ? 'type' : 'types'}`,
-        },
-        {
-          href: '/admin/settings/blocks',
-          title: 'Block types',
-          description:
-            'The pieces a page is composed from. Same fields as a content type; lives inside a page rather than at its own URL.',
-          meta: `${blockCount} ${blockCount === 1 ? 'block' : 'blocks'}`,
-        },
-        {
           href: '/admin/settings/branding',
           title: 'Branding',
+          icon: 'palette',
           description:
             'What the CMS calls itself for the people who sign in: name, logo, and accent colour. Nothing here reaches your website.',
           meta: branding.resolvedTitle,
@@ -91,53 +120,70 @@ const sections = [
   {
     href: '/admin/settings/redirects',
     title: 'Redirects',
-    description:
-      'Old paths pointing at new ones. Written automatically whenever content moves.',
+    icon: 'signpost',
+    description: 'Old paths pointing at new ones. Written automatically whenever content moves.',
     meta: `${Number(redirectCount ?? 0)} ${Number(redirectCount ?? 0) === 1 ? 'redirect' : 'redirects'}`,
   },
-  ...(canManageUsers(user)
-    ? [
-        {
-          href: '/admin/settings/users',
-          title: 'Users & access',
-          description: 'Who can sign in, and what each of them may do.',
-          meta: `${Number(userCount ?? 0)} ${Number(userCount ?? 0) === 1 ? 'user' : 'users'}`,
-        },
-        {
-          href: '/admin/settings/api-keys',
-          title: 'API keys',
-          description:
-            'How another deployment reads this site’s published content over HTTP. Not people — keys have scopes, not roles.',
-          meta: `${Number(apiKeyCount ?? 0)} active`,
-        },
-        {
-          href: '/admin/settings/audit',
-          title: 'Audit log',
-          description: 'Publishing, deletions, and changes to who can do what.',
-          meta: `${Number(auditCount ?? 0)} ${Number(auditCount ?? 0) === 1 ? 'entry' : 'entries'}`,
-        },
-      ]
-    : []),
   /**
-   * Outside the `canManageUsers` block above, deliberately.
+   * Outside the `canManageUsers` block below, deliberately.
    *
-   * The audit log beside it is admin-only because it names people. This names nothing but words
-   * visitors typed, and the person who can act on "eleven people searched for transfer credit and
-   * found nothing" is whoever writes the pages — so gating it to admins would show the report to
-   * the one group that cannot fix it.
+   * The audit log is admin-only because it names people. This names nothing but words visitors
+   * typed, and the person who can act on "eleven people searched for transfer credit and found
+   * nothing" is whoever writes the pages — so gating it to admins would show the report to the one
+   * group that cannot fix it.
    */
   {
     href: '/admin/settings/search',
     title: 'Search',
+    icon: 'search',
     description: 'What visitors searched for, and what the site failed to answer.',
   },
+];
+
+const access: SettingsCard[] = canManageUsers(user)
+  ? [
+      {
+        href: '/admin/settings/users',
+        title: 'Users & access',
+        icon: 'users',
+        description: 'Who can sign in, and what each of them may do.',
+        meta: `${Number(userCount ?? 0)} ${Number(userCount ?? 0) === 1 ? 'user' : 'users'}`,
+      },
+      {
+        href: '/admin/settings/api-keys',
+        title: 'API keys',
+        icon: 'key-round',
+        description:
+          'How another deployment reads this site’s published content over HTTP. Not people — keys have scopes, not roles.',
+        meta: `${Number(apiKeyCount ?? 0)} active`,
+      },
+      {
+        href: '/admin/settings/audit',
+        title: 'Audit log',
+        icon: 'scroll-text',
+        description: 'Publishing, deletions, and changes to who can do what.',
+        meta: `${Number(auditCount ?? 0)} ${Number(auditCount ?? 0) === 1 ? 'entry' : 'entries'}`,
+      },
+    ]
+  : [];
+
+const deployment: SettingsCard[] = [
   {
     href: '/admin/settings/system',
     title: 'System',
+    icon: 'server',
     description: 'Environment, database, storage, and your own account.',
     meta: taproot.db.driver,
   },
 ];
+
+/** Empty groups are dropped, so a contributor does not see three headings over one card. */
+const groups = [
+  { id: 'group-content-model', label: 'Content model', cards: contentModel },
+  { id: 'group-site', label: 'Site', cards: site },
+  { id: 'group-access', label: 'People & access', cards: access },
+  { id: 'group-deployment', label: 'Deployment', cards: deployment },
+].filter((group) => group.cards.length > 0);
 ---
 
 <AdminLayout title="Settings" user={user} breadcrumbs={[{ label: 'Settings' }]}>
@@ -148,22 +194,46 @@ const sections = [
     </p>
   </header>
 
-  <ul class="grid gap-4 sm:grid-cols-2">
-    {
-      sections.map((section) => (
-        <li>
-          <a
-            href={section.href}
-            class="block h-full rounded-lg border border-border bg-surface-raised px-5 py-4 transition-colors hover:border-border-strong"
-          >
-            <span class="flex items-baseline justify-between gap-3">
-              <span class="font-medium">{section.title}</span>
-              <span class="shrink-0 font-mono text-xs text-content-subtle">{section.meta}</span>
-            </span>
-            <span class="mt-1 block text-sm text-content-muted">{section.description}</span>
-          </a>
-        </li>
-      ))
-    }
-  </ul>
+  {
+    groups.map((group) => (
+      <section aria-labelledby={group.id} class="mb-8 last:mb-0">
+        <h2
+          id={group.id}
+          class="mb-3 text-xs font-semibold uppercase tracking-wide text-content-subtle"
+        >
+          {group.label}
+        </h2>
+
+        <ul class="grid gap-4 sm:grid-cols-2">
+          {group.cards.map((card) => (
+            <li class="min-w-0">
+              <a
+                href={card.href}
+                class="flex h-full min-w-0 gap-3.5 rounded-lg border border-border bg-surface-raised px-5 py-4 transition-colors hover:border-border-strong"
+              >
+                {/*
+                  Decoration beside the title, never instead of it. The card's accessible name is
+                  its heading text, so an unknown icon name costs the mark and nothing else.
+                */}
+                <span class="mt-0.5 shrink-0 text-content-muted">
+                  <Icon name={card.icon} class="h-5 w-5" />
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="flex items-baseline justify-between gap-3">
+                    <span class="font-medium">{card.title}</span>
+                    {card.meta && (
+                      <span class="shrink-0 truncate font-mono text-xs text-content-subtle">
+                        {card.meta}
+                      </span>
+                    )}
+                  </span>
+                  <span class="mt-1 block text-sm text-content-muted">{card.description}</span>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))
+  }
 </AdminLayout>

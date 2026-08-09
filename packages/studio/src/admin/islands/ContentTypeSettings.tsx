@@ -3,6 +3,8 @@ import type { ContentTypeRow, FieldRow } from '@taprootcms/core';
 
 import type { MediaOption } from '../mediaOptions.js';
 import { MediaField } from './media/MediaField.js';
+import { IconInline } from '../components/IconInline.js';
+import { contentTypeIcons } from '../contentTypeIcons.js';
 
 /**
  * Content type settings.
@@ -26,6 +28,7 @@ export default function ContentTypeSettings({
   const [namePlural, setNamePlural] = useState(contentType.name_plural);
   const [description, setDescription] = useState(contentType.description ?? '');
   const [titleField, setTitleField] = useState(contentType.title_field ?? '');
+  const [icon, setIcon] = useState(contentType.icon ?? '');
   const [urlPrefix, setUrlPrefix] = useState(contentType.url_prefix ?? '');
   const [previewPath, setPreviewPath] = useState(contentType.preview_path ?? '');
   const [itemPages, setItemPages] = useState(contentType.item_pages === 1);
@@ -48,6 +51,7 @@ export default function ContentTypeSettings({
           name_plural: namePlural.trim(),
           description: description.trim() || null,
           title_field: titleField || null,
+          icon: icon || null,
           default_og_image_id: ogImageId || null,
           ...(contentType.kind === 'collection'
             ? { url_prefix: urlPrefix.trim() || null, item_pages: itemPages }
@@ -164,6 +168,68 @@ export default function ContentTypeSettings({
               </option>
             ))}
         </select>
+      </div>
+
+      <div>
+        <span id="ct-icon-label" className="block text-sm font-medium">
+          Sidebar icon
+        </span>
+        <p id="ct-icon-hint" className="mt-0.5 text-xs text-content-subtle">
+          Shown beside this type in the sidebar. Decoration only — the name is always there too, so
+          the choice is never what tells one entry from another.
+        </p>
+        {/*
+          A radio group, not a `<select>` of names nobody can picture and not a grid of bare icon
+          buttons.
+
+          Radios give the platform's own roving focus and arrow-key movement for a single choice out
+          of a set, which is the same reason `LinkDialog`'s mode selector is a radio group drawn as
+          tabs. Each option carries its Lucide name as visible text beside the mark: it is what makes
+          the control usable without colour or shape recognition, and it is the string an author
+          would search for to ask why an icon looks the way it does.
+        */}
+        <div
+          role="radiogroup"
+          aria-labelledby="ct-icon-label"
+          aria-describedby="ct-icon-hint"
+          /*
+            Breakpoint columns rather than `repeat(auto-fill, minmax(9.5rem, 1fr))`.
+
+            The auto-fill version read better and `reflowHazards()` was right to refuse it: a
+            152px minimum track is a fixed track, and at a 305px viewport a single column of it
+            plus the panel's padding is the shape that overflows. One column on a phone is also
+            simply the correct answer — a two-up grid there truncates every name to "graduat…",
+            which defeats the point of showing the names at all.
+          */
+          className="mt-2 grid max-h-64 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-2 xl:grid-cols-3"
+        >
+          {[
+            { name: '', label: 'Default' },
+            ...contentTypeIcons.map((n) => ({ name: n as string, label: n as string })),
+          ].map(
+            (option) => (
+              <label
+                key={option.name || 'default'}
+                className={`flex min-w-0 cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                  icon === option.name
+                    ? 'border-accent bg-accent-subtle font-medium'
+                    : 'border-transparent hover:bg-surface-sunken'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="ct-icon"
+                  value={option.name}
+                  checked={icon === option.name}
+                  onChange={() => setIcon(option.name)}
+                  className="shrink-0"
+                />
+                <IconInline name={option.name || 'file-text'} className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 truncate">{option.label}</span>
+              </label>
+            ),
+          )}
+        </div>
       </div>
 
       <div>
