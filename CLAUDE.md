@@ -372,6 +372,54 @@ as delivered; retries pass **no `db`**, or each failure enqueues another row for
 is **read, not caught**, because these functions never throw and a `try`/`catch` would delete every
 row whether or not its purge landed.
 
+**A webhook queue is the second kind of deferred work, and it enqueues *before* it attempts —
+the opposite of the purge queue.** `0023_pending_purges` said a second kind appearing was the moment
+to reconsider a shared table; reconsidered, and they stay separate, because they differ on the one
+property a queue is for. A dropped purge costs staleness `s-maxage` already bounds, so attempting
+first and recording only failures is right. An event is a fact about a moment that nothing
+regenerates — a consumer never told "published" waits forever — so the row is committed before a
+single request leaves, and an isolate killed mid-send leaves work the sweep finds rather than an
+event that never existed. That durability is also what lets `INLINE_DISPATCH_LIMIT` exist: a release
+publishing fifty items sends what it can and abandons the rest to the sweep *safely*. Only the
+backoff ladder is shared (`retry.ts`), because "how many five-minute sweeps should this skip" is a
+fact about the sweep rather than about either kind of work. Six things follow:
+- **The event says what changed and never carries the content.** A payload of fields would be a
+  second read contract — no key, no scope check, no visibility rules, at whatever URL an admin
+  typed — and the delivery API is *the* read contract. It carries path, type and status so a
+  receiver can decide whether to bother, and `path` is **null wherever `typeHasItemPages` is false**,
+  or a rebuild fetches an address the site answers 404 at.
+- **The signing secret is the one secret stored recoverable, and that does not reverse the AI-key
+  rule.** An HMAC must be *produced*, not compared, so a hash cannot sign; and what made a provider
+  key inadmissible was that it is a credential on somebody's paid account, where this is minted by
+  Taproot, authenticates a message rather than authorising access, and rotates in one button. The
+  alternative — one master secret in the environment with per-endpoint keys derived from it — is
+  closed by the precedent that made `preview_tokens` a table: it needs a working default for
+  `npm run dev`, and a default signing secret is not a secret. Rotation has **no overlap window**,
+  since a grace period is a leaked secret staying valid for as long as the convenience is worth.
+- **The timestamp is inside the signed message, never merely beside it.** Signing the body alone and
+  sending `t=` next to it is the version that looks identical and is worthless — a captured request
+  replays with a fresh stamp, the tolerance check passes, the digest still verifies. Asserted by
+  mutation in `signature.test.ts`: making *both* halves sign the body alone fails exactly one test.
+  It also settles retries — the signature is computed per attempt, so an eight-hour backoff cannot
+  make Taproot's own retry look like an attack.
+- **`item.updated` and `item.published` both fire for one save, and publication is judged by
+  crossing the boundary.** They answer different questions and an endpoint subscribes to whichever it
+  acts on; deriving one from the other makes every receiver reimplement `publicationEvents`. That
+  function takes `from: ContentStatus | undefined` — spelled exactly as `canChangeStatus` spells a
+  create — and a call site asking `status === 'published'` instead calls `published → archived` an
+  archive rather than an unpublish, which is the mistake `canChangeStatus` exists because somebody
+  made three times.
+- **Redirects are a failure, and the body of a response is never read.** Following a 3xx re-sends a
+  signed body wherever the receiver points, turning an open redirect on their side into a way to aim
+  authenticated events at a third party — and it hides the ordinary apex-to-`www` misconfiguration
+  behind a doubled delivery that looks like it works. The response body is an arbitrary host's, so
+  reading it to store an error message is a memory limit somebody else controls.
+- **A delivered row is updated, not deleted, and that is the difference from `pending_purges`.**
+  Nothing ever asks about a purge that worked; the first question anybody asks about a webhook is
+  whether it arrived. `webhook_deliveries` is therefore the queue and the log in one table, swept by
+  age but **never while `pending`** — age is not settledness, and deleting a row inside its backoff
+  drops the event silently, which is the one failure the whole module exists to prevent.
+
 **Query plans are asserted, not assumed — `npm run query-count` and `queryPlans.test.ts` are why.**
 Nothing in the suite counted round trips, so an `await` inside a loop or an unconditional lookup
 passed every test, typecheck and build. Two real costs were found only by measuring: the five-minute

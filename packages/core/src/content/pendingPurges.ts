@@ -20,6 +20,7 @@ import type { Kysely } from 'kysely';
 import type { Database, PendingPurgeRow, PurgeTarget } from '../db/schema.js';
 import { now } from '../db/values.js';
 import { newId } from '../ids.js';
+import { RETRY_BACKOFF_MINUTES, nextRetryAt } from '../retry.js';
 
 /**
  * Re-exported so the server reaches them through the main barrel, exactly as `preview.ts` does for
@@ -37,14 +38,17 @@ export { PURGE_PATH, PURGE_SECRET_HEADER } from '../pure.js';
  * an unbounded stream of outbound requests. What a stuck row buys instead is a thing Settings →
  * System can *report*, which is the only way a silent failure becomes a fixable one.
  */
-export const MAX_PURGE_ATTEMPTS = 8;
+export const MAX_PURGE_ATTEMPTS = RETRY_BACKOFF_MINUTES.length;
 
-/** Backoff in minutes, indexed by attempts already made. The last entry repeats. */
-const BACKOFF_MINUTES = [0, 5, 15, 30, 60, 120, 240, 480];
-
+/**
+ * The schedule moved to `retry.ts` when the webhook queue needed the same one.
+ *
+ * Shared because both are timed against the same five-minute sweep, which is a fact about the sweep
+ * rather than about either kind of work. The ceiling stays local: it is a judgement about *this*
+ * work — how long a stale cache entry is worth chasing — and the two queues are free to disagree.
+ */
 function nextAttemptAt(attempts: number): string {
-  const minutes = BACKOFF_MINUTES[Math.min(attempts, BACKOFF_MINUTES.length - 1)]!;
-  return new Date(Date.now() + minutes * 60_000).toISOString();
+  return nextRetryAt(attempts);
 }
 
 /**

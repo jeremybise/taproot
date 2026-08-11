@@ -70,6 +70,18 @@ const apiKeyCount = canManageUsers(user)
     )?.n
   : 0;
 
+// Active only, matching the key count above: a paused endpoint is configuration rather than
+// something this deployment is currently talking to.
+const webhookCount = canManageUsers(user)
+  ? (
+      await taproot.db.db
+        .selectFrom('webhook_endpoints')
+        .select((eb) => eb.fn.countAll<number>().as('n'))
+        .where('active', '=', 1)
+        .executeTakeFirst()
+    )?.n
+  : 0;
+
 /**
  * Grouped rather than one flat grid of nine cards.
  *
@@ -175,6 +187,20 @@ const access: SettingsCard[] = canManageUsers(user)
         description:
           'How another deployment reads this site’s published content over HTTP. Not people — keys have scopes, not roles.',
         meta: `${Number(apiKeyCount ?? 0)} active`,
+      },
+      /**
+       * Beside API keys, because the two are the same surface from opposite directions: a key is
+       * how another system *reads* this one, and a webhook is how it *hears* about a change. Somebody
+       * connecting a deployment is looking for both, and putting them in different groups would send
+       * them hunting.
+       */
+      {
+        href: '/admin/settings/webhooks',
+        title: 'Webhooks',
+        icon: 'webhook',
+        description:
+          'Tell another system when content changes — a rebuild, a search index, a chat channel. Signed, retried, and logged.',
+        meta: `${Number(webhookCount ?? 0)} active`,
       },
       {
         href: '/admin/settings/audit',

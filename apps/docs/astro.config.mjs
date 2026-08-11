@@ -124,6 +124,9 @@ export default defineConfig({
             { label: 'Branding', slug: 'admin/branding' },
             { label: 'People and access', slug: 'admin/users' },
             { label: 'API keys', slug: 'admin/api-keys' },
+            // Beside API keys: one is how another system reads this one, the other is how it hears
+            // about a change. Somebody connecting a deployment is looking for both.
+            { label: 'Webhooks', slug: 'admin/webhooks' },
             { label: 'Two-factor authentication', slug: 'admin/two-factor' },
             { label: 'The search report', slug: 'admin/search-log' },
             { label: 'The audit log', slug: 'admin/audit-log' },

@@ -3,6 +3,7 @@ import {
   SESSION_COOKIE_NAME,
   bearerToken,
   buildSessionCookie,
+  dispatchWebhookEvents,
   touchApiKey,
   validateSession,
   verifyApiKey,
@@ -121,13 +122,36 @@ export const onRequest = defineMiddleware(async (context, next) => {
    * through `readRuntimeEnv`. One source, so a deployment cannot be configured in a way only half
    * the code can see.
    */
+  const cfContext = (
+    context.locals as { cfContext?: { waitUntil?: (p: Promise<unknown>) => void } }
+  ).cfContext;
+
   const site = sitePurgeConfig(env);
   if (site && taproot.invalidated.size > 0) {
     const sending = purgeSite(site, taproot.invalidated, { db: taproot.db.db });
-    const ctx = (context.locals as { cfContext?: { waitUntil?: (p: Promise<unknown>) => void } })
-      .cfContext;
 
-    if (ctx?.waitUntil) ctx.waitUntil(sending);
+    if (cfContext?.waitUntil) cfContext.waitUntil(sending);
+    else await sending;
+  }
+
+  /**
+   * And the webhooks, after everything a receiver might come back and read.
+   *
+   * Last on purpose, and the ordering is the point rather than tidiness. A receiver's usual response
+   * to `item.published` is to fetch the page it names, so telling it before the purge above has
+   * cleared the old copy means it fetches — and caches — exactly the version the purge was for. The
+   * write, then the caches, then the notification: each step only tells somebody about state that is
+   * already true.
+   *
+   * `waitUntil` where there is one, for the reason the purge uses it: an editor pressing Save must
+   * not wait on HTTP round trips to somebody else's origin. Being cut short is safe here in a way it
+   * is not for a purge — every event is a committed row before a single request goes out, so
+   * whatever this does not finish the five-minute sweep picks up.
+   */
+  if (taproot.emitted.length > 0) {
+    const sending = dispatchWebhookEvents(taproot.db.db, taproot.emitted);
+
+    if (cfContext?.waitUntil) cfContext.waitUntil(sending);
     else await sending;
   }
 

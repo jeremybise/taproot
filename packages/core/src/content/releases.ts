@@ -2,6 +2,7 @@ import type { Kysely } from 'kysely';
 
 import type { TaprootDb } from '../db/client.js';
 import type {
+  ContentStatus,
   Database,
   ReleaseItemRow,
   ReleaseRow,
@@ -848,7 +849,16 @@ export interface ReleasePublishResult {
   ok: boolean;
   /** Why nothing was written. Empty when pre-flight passed. */
   problems: ReleaseProblem[];
-  published: { id: string; title: string; path: string }[];
+  /**
+   * `from` is the status each item held before the release applied its staged version.
+   *
+   * Carried because it is knowable only inside the loop — the rows all read `published` by the time
+   * this returns — and because a release does not publish everything it touches: a copy edit staged
+   * against an already-live page goes `published → published`, which is a change to tell an
+   * integration about but not a publication. Without it a caller has to guess, and the plausible
+   * guess is the wrong one.
+   */
+  published: { id: string; title: string; path: string; from: ContentStatus }[];
   /** Items that failed *after* pre-flight passed — a genuinely unexpected write failure. */
   failed: { id: string; title: string; reason: string }[];
 }
@@ -933,7 +943,12 @@ export async function publishRelease(
         },
       });
 
-      published.push({ id: updated.id, title: updated.title, path: updated.path });
+      published.push({
+        id: updated.id,
+        title: updated.title,
+        path: updated.path,
+        from: item.status,
+      });
     } catch (error) {
       failed.push({
         id: row.content_item_id,

@@ -1952,6 +1952,111 @@ if (Number(existingSearches?.n ?? 0) > 0) {
   console.log(`  search log (created, ${history.length} searches)`);
 }
 
+// --- An example webhook endpoint --------------------------------------------
+//
+// **Paused, and that is the whole reason it can be seeded at all.** `matchesEvent` requires
+// `active === 1`, so nothing this deployment does will ever send to it — which matters, because a
+// fresh clone would otherwise POST to a URL nobody owns on every save and fill its own delivery log
+// with failures before anybody had opened the screen.
+//
+// It exists because an empty screen demonstrates nothing and, more concretely, because markup that
+// appears only in a state the seed never reaches is markup `npm run a11y` cannot see: the endpoint
+// detail page is a form, a table and a danger zone that would all go unaudited without a row to
+// render them from.
+//
+// The two delivery rows are the same argument one level down. One delivered and one failed, so both
+// badge colours and the error line are on screen in a run — and so somebody looking at the feature
+// for the first time can see what the log is *for* rather than an empty state.
+
+const existingHook = await handle.db
+  .selectFrom('webhook_endpoints')
+  .select('id')
+  .executeTakeFirst();
+
+if (existingHook) {
+  console.log('  webhook endpoint (existing)');
+} else {
+  const hookId = newId();
+  const hookTimestamp = now();
+
+  await handle.db
+    .insertInto('webhook_endpoints')
+    .values({
+      id: hookId,
+      label: 'Example rebuild hook',
+      // `example.com` is reserved by RFC 2606 precisely so it can be written down without naming
+      // somebody's real host. Paused, so it is never called either way.
+      url: 'https://example.com/taproot/events',
+      // Written directly rather than through `createWebhookEndpoint` so the seed does not mint a
+      // credential it then has nowhere to show. Anybody using this for real rotates it first, which
+      // is the button the detail screen leads with.
+      secret: 'whsec_seeded_example_rotate_before_use',
+      events: 'item.published,release.published',
+      active: 0,
+      created_by: admin.id,
+      created_at: hookTimestamp,
+      updated_at: hookTimestamp,
+    })
+    .execute();
+
+  const hoursAgo = (hours: number): string =>
+    new Date(Date.now() - hours * 3_600_000).toISOString();
+
+  await handle.db
+    .insertInto('webhook_deliveries')
+    .values([
+      {
+        id: newId(),
+        endpoint_id: hookId,
+        event: 'item.published',
+        payload: JSON.stringify({
+          id: 'seeded-delivery-1',
+          event: 'item.published',
+          createdAt: hoursAgo(3),
+          subject: {
+            kind: 'item',
+            id: 'seeded',
+            title: 'Visit',
+            path: '/visit',
+            slug: 'visit',
+            status: 'published',
+            contentType: 'page',
+          },
+        }),
+        status: 'delivered',
+        attempts: 1,
+        response_status: 204,
+        last_error: null,
+        next_attempt_at: null,
+        delivered_at: hoursAgo(3),
+        created_at: hoursAgo(3),
+      },
+      {
+        id: newId(),
+        endpoint_id: hookId,
+        event: 'release.published',
+        payload: JSON.stringify({
+          id: 'seeded-delivery-2',
+          event: 'release.published',
+          createdAt: hoursAgo(26),
+          subject: { kind: 'release', id: 'seeded', name: 'Autumn refresh', itemCount: 3 },
+        }),
+        status: 'failed',
+        attempts: 8,
+        response_status: 401,
+        // The failure worth showing: two visually identical secrets that disagree is the one this
+        // screen was built to make findable.
+        last_error: 'Endpoint answered 401.',
+        next_attempt_at: null,
+        delivered_at: null,
+        created_at: hoursAgo(26),
+      },
+    ])
+    .execute();
+
+  console.log('  webhook endpoint (created, paused, with an example delivery log)');
+}
+
 const counts = await handle.db
   .selectFrom('content_items')
   .select((eb) => eb.fn.countAll<number>().as('n'))

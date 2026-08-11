@@ -3,8 +3,10 @@ import {
   getContentType,
   isContentTypeKind,
   isItemSort,
+  itemWebhookSubject,
   itemWriteTags,
   listItems,
+  publicationEvents,
   termIdsForBranch,
   type ContentTypeKind,
 } from '@taprootcms/core';
@@ -154,6 +156,21 @@ export const POST = handle(
      * that existed before this one did.
      */
     taproot.invalidate(itemWriteTags(item.id, contentType.api_id));
+
+    /**
+     * Two events for one create, when the create is also a publish.
+     *
+     * `item.created` is the fact that a row exists and is what an inventory or a search index acts
+     * on; `item.published` is the fact that visitors can see it, which an editor with the role for
+     * it can do in the same request. An endpoint subscribes to whichever it is for, and neither is
+     * derivable from the other — `item.created` carrying `status: 'published'` would make every
+     * receiver reimplement `publicationEvents`.
+     */
+    taproot.emit({ event: 'item.created', subject: itemWebhookSubject(item, contentType) });
+
+    for (const event of publicationEvents(undefined, item.status)) {
+      taproot.emit({ event, subject: itemWebhookSubject(item, contentType) });
+    }
 
     return json({ item }, { status: 201 });
   },

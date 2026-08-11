@@ -2,7 +2,9 @@ import {
   deleteItem,
   getContentType,
   getItem,
+  itemWebhookSubject,
   itemWriteTags,
+  publicationEvents,
   recordAuditEntry,
   updateItem,
 } from '@taprootcms/core';
@@ -86,6 +88,22 @@ export const PATCH = handle(
 
     taproot.invalidate(itemWriteTags(item.id, contentType.api_id));
 
+    /**
+     * `item.updated` on every save; the publication events only when the boundary was crossed.
+     *
+     * Unlike the audit log above, which deliberately records status changes and not saves, this
+     * fires for an ordinary edit — the two answer different questions. An audit entry exists so a
+     * person can reconstruct who put something in front of the public, and every save already has a
+     * revision with an author; a search index or a static build has to hear about the save, because
+     * a typo fix nobody logged still changes the page it serves.
+     */
+    const subject = itemWebhookSubject(item, contentType, existing.status);
+    taproot.emit({ event: 'item.updated', subject });
+
+    for (const event of publicationEvents(existing.status, item.status)) {
+      taproot.emit({ event, subject });
+    }
+
     return json({ item });
   },
   { role: 'contributor' },
@@ -140,7 +158,17 @@ export const POST = handle(
     const contentType = await getContentType(taproot.db.db, item.content_type_id);
     const destination = contentType ? `/admin/content/type/${contentType.api_id}` : '/admin/content';
 
-    if (contentType) taproot.invalidate(itemWriteTags(id, contentType.api_id));
+    if (contentType) {
+      taproot.invalidate(itemWriteTags(id, contentType.api_id));
+      /**
+       * Built from the row read *before* the delete, which is the only moment it can be.
+       *
+       * Same rule the tags above already follow and the audit log follows with `subject_label`:
+       * what a record needs about a deleted thing is taken while it still exists. A receiver told
+       * only an id has nothing to act on — it cannot look the item up, because it is gone.
+       */
+      taproot.emit({ event: 'item.deleted', subject: itemWebhookSubject(item, contentType) });
+    }
 
     return context.redirect(
       `${destination}?${new URLSearchParams({ deleted: item.title })}`,
@@ -176,6 +204,7 @@ export const DELETE = handle(
 
     if (doomed && contentType) {
       taproot.invalidate(itemWriteTags(doomed.id, contentType.api_id));
+      taproot.emit({ event: 'item.deleted', subject: itemWebhookSubject(doomed, contentType) });
     }
 
     return noContent();

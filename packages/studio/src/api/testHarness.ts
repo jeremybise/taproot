@@ -13,6 +13,7 @@ import {
   type StorageAdapter,
   type TaprootDb,
   type User,
+  type WebhookEventInput,
 } from '@taprootcms/core';
 
 import type { TaprootContext } from '../runtime/context.js';
@@ -188,6 +189,15 @@ export async function createHarness(): Promise<Harness> {
        */
       const invalidated = new Set<string>();
 
+      /**
+       * Same arrangement for events, and the same reason.
+       *
+       * Nothing is dispatched — the middleware is what does that, and a test calls a route directly
+       * — so this is where a test reads what a write *declared*. That is the half worth asserting:
+       * an event nobody emits cannot be delivered by any amount of queue.
+       */
+      const emitted: WebhookEventInput[] = [];
+
       const taproot: TaprootContext = {
         db,
         storage,
@@ -202,6 +212,10 @@ export async function createHarness(): Promise<Harness> {
         invalidated,
         invalidate(tags) {
           for (const tag of tags) invalidated.add(tag);
+        },
+        emitted,
+        emit(event) {
+          emitted.push(event);
         },
         user: current,
         principal: current

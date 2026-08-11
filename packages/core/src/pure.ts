@@ -80,6 +80,20 @@ export * from './content/searchTerms.js';
  * Importless, so it costs a consumer nothing but the function.
  */
 export * from './content/snippetTokens.js';
+/**
+ * Webhook signing, and the payload a receiver is handed.
+ *
+ * The sharpest instance of the rule the four above follow. The CMS signs through the main barrel and
+ * a site verifies through `/pure`, and a verifier that is subtly different from the signer does not
+ * receive wrong events — it receives **none**, answering 401 in a log nobody watches, while the CMS
+ * reports every delivery as failed and the endpoint that looks broken is the one that is correct.
+ * `crypto.subtle` is in both runtimes, so the same function genuinely runs on both sides.
+ *
+ * `events.js` rides along for the types: a consumer's handler switches on `WebhookEvent` and reads
+ * `WebhookEventPayload`, both erased at build.
+ */
+export * from './webhooks/signature.js';
+export * from './webhooks/events.js';
 export type { ItemSort } from './content/itemSort.js';
 export type { SnippetKind } from './db/schema.js';
 export type { ResolvedSnippet } from './content/snippets.js';

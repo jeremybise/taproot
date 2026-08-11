@@ -1,7 +1,12 @@
 import {
   SITE_TAG,
+  attemptWebhookDelivery,
   deferPurge,
+  dispatchWebhookEvents,
+  dueWebhookDeliveries,
   duePurges,
+  itemWebhookSubjects,
+  publicationEvents,
   publishDueItems,
   publishDueReleases,
   purgeExpiredLogs,
@@ -9,12 +14,14 @@ import {
   purgeExpiredPreviewTokens,
   purgeExpiredPurgeQueue,
   purgeExpiredSessions,
+  purgeExpiredWebhookDeliveries,
   purgeStaleResetTokens,
   resolveLogRetention,
   resolvePurge,
+  scheduledPublishEvents,
 } from '@taprootcms/core';
 import type { Kysely } from 'kysely';
-import type { Database } from '@taprootcms/core';
+import type { Database, WebhookEventInput } from '@taprootcms/core';
 
 import { createContext, readRuntimeEnv } from './context.js';
 import { purgeFromExecutionContext } from './purge.js';
@@ -66,6 +73,33 @@ async function drainPurgeQueue(
   }
 
   await purgeExpiredPurgeQueue(db);
+}
+
+/**
+ * Replay the webhook deliveries that have not landed, and drop the ones old enough to be noise.
+ *
+ * Lives in `runScheduledTasks` rather than in the `scheduled` handler, which is where the purge
+ * drain had to go — the split is over the `ExecutionContext`, and a webhook needs none of it. So
+ * this runs from the Cloudflare cron *and* from `POST /api/taproot/scheduler/run`, which is the
+ * only sweep a deployment off Cloudflare has.
+ *
+ * Sequential and bounded by `dueWebhookDeliveries`' own limit, following `drainPurgeQueue`. The
+ * outcome is read rather than caught, because `attemptWebhookDelivery` never throws — a
+ * `try`/`catch` here would be dead code that settled every row whether or not it arrived.
+ */
+async function drainWebhookQueue(
+  db: Kysely<Database>,
+): Promise<{ delivered: number; failed: number; removed: number }> {
+  let delivered = 0;
+  let failed = 0;
+
+  for (const pending of await dueWebhookDeliveries(db)) {
+    const outcome = await attemptWebhookDelivery(db, pending);
+    if (outcome.ok) delivered += 1;
+    else failed += 1;
+  }
+
+  return { delivered, failed, removed: await purgeExpiredWebhookDeliveries(db) };
 }
 
 /**
@@ -124,6 +158,13 @@ export interface ScheduledRunResult {
    * so a run reporting zero here is the normal state, not a failure.
    */
   purgedLogs: { searchQueries: number; auditEntries: number; moreToRemove: boolean };
+  /**
+   * Webhook deliveries this run retried, and settled rows it aged out.
+   *
+   * Zero on a deployment with no endpoints, which is most of them — reported anyway so a run is
+   * never silently a no-op, exactly as the housekeeping counts above are.
+   */
+  webhooks: { delivered: number; failed: number; removed: number };
 }
 
 /**
@@ -181,6 +222,68 @@ export async function runScheduledTasks(): Promise<ScheduledRunResult> {
    */
   const purgedLogs = await purgeExpiredLogs(db, resolveLogRetention(env));
 
+  /**
+   * Tell the integrations what the sweep just did, before retrying anything older.
+   *
+   * A scheduled publish is the event most worth sending and the one no request can produce: nothing
+   * calls `taproot.emit` here, because there is no route and no `locals` — the cron reaches
+   * `worker.ts` directly. Without this, "publish at 9am" reaches visitors and reaches no integration.
+   *
+   * `scheduledPublishEvents` costs one indexed query and only runs when something published, so a
+   * deployment with nothing scheduled pays nothing for it.
+   */
+  const events: WebhookEventInput[] = [
+    ...(published.length > 0
+      ? await scheduledPublishEvents(db, published.map((item) => item.id))
+      : []),
+  ];
+
+  /**
+   * A scheduled release produces the same events its route does, from the data the sweep carried.
+   *
+   * `ReleaseSweepResult.items` exists for this: there is no request here, so an event not built in
+   * this function is one no integration will ever hear. Written out rather than shared with the
+   * route because the two differ in what they have in hand — the route holds a `ReleasePublishResult`
+   * and this holds a sweep result — and the shared part, the rule about which statuses count as a
+   * publication, is `publicationEvents` in both.
+   */
+  for (const release of releases.published) {
+    const subjects = await itemWebhookSubjects(db, release.items.map((item) => item.id));
+
+    for (const item of release.items) {
+      const subject = subjects.get(item.id);
+      if (!subject) continue;
+
+      const withPrevious = { ...subject, previousStatus: item.from };
+      events.push({ event: 'item.updated', subject: withPrevious });
+
+      for (const event of publicationEvents(item.from, 'published')) {
+        events.push({ event, subject: withPrevious });
+      }
+    }
+
+    events.push({
+      event: 'release.published',
+      subject: {
+        kind: 'release',
+        id: release.id,
+        name: release.name,
+        itemCount: release.itemCount,
+      },
+    });
+  }
+
+  if (events.length > 0) await dispatchWebhookEvents(db, events);
+
+  /**
+   * Then the queue, which is what bounds a delivery that did not land.
+   *
+   * After this run's own events for `drainPurgeQueue`'s reason: if the sends above have just failed
+   * because the receiver is down, the older ones will too, and doing them second means this tick's
+   * rows are written before the sweep spends its budget on the backlog.
+   */
+  const webhooks = await drainWebhookQueue(db);
+
   return {
     db,
     published,
@@ -190,6 +293,7 @@ export async function runScheduledTasks(): Promise<ScheduledRunResult> {
     purgedResetTokens,
     purgedLoginAttempts,
     purgedLogs,
+    webhooks,
   };
 }
 

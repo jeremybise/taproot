@@ -26,8 +26,13 @@ what breaks if you revoke it.
 **Expiry is optional and blank is the safer default.** A key that lapses on its own takes a website
 down at a moment nobody chose.
 
-The only scope today is `content:read`: read published content through the delivery API. Drafts are
-never included, whatever the key holds.
+There are two scopes. `content:read` reads published content through the delivery API — drafts are
+never included, whatever the key holds. `search:write` lets a site report what visitors searched for,
+and admits appending one row to that log and nothing else: it cannot read the log back and carries no
+access to content. A site that does not report searches should not be given it.
+
+A key created before `search:write` existed does not have it. An empty search report beside a working
+search box is nearly always that.
 
 ## The key is shown exactly once
 

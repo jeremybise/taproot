@@ -1,0 +1,262 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import Timestamp from '../../../components/Timestamp.astro';
+import { WEBHOOK_EVENTS, listWebhookEndpoints, webhookEndpointStats } from '@taprootcms/core';
+import { getTaproot, loginRedirect, canManageUsers } from '../../../../runtime/guards.js';
+import { EVENT_DESCRIPTIONS } from './eventCopy.js';
+import {
+  WEBHOOK_REVEAL_COOKIE,
+  clearRevealCookie,
+  readRevealedSecret,
+} from '../../../../api/webhooks/revealCookie.js';
+
+/**
+ * Webhooks — how another system finds out that content changed.
+ *
+ * Admin-only in both directions, matching API keys: creating one points a stream of events at a URL
+ * somebody typed, and the list is an inventory of what this deployment talks to.
+ *
+ * Two screens rather than one. This is the inventory and the create form; everything about a single
+ * endpoint — its events, its secret, its delivery log — is on its own page, because a delivery log
+ * is a table that pages and five of them stacked on one screen is a page nobody can read.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageUsers(user)) return Astro.redirect('/admin/settings');
+
+const endpoints = await listWebhookEndpoints(taproot.db.db);
+const stats = await webhookEndpointStats(taproot.db.db);
+
+/**
+ * Read the freshly minted secret, then clear it in this same response.
+ *
+ * One render, and only the one immediately after it was created or rotated. A cookie that survived
+ * would leave a live signing secret in the browser for whoever opened the screen next.
+ */
+const revealed = readRevealedSecret(Astro.cookies.get(WEBHOOK_REVEAL_COOKIE)?.value);
+if (revealed) {
+  Astro.response.headers.append(
+    'set-cookie',
+    clearRevealCookie({ secure: taproot.auth.secureCookies }),
+  );
+  // A page showing a credential must not be stored by anything between here and the browser.
+  Astro.response.headers.set('cache-control', 'no-store');
+}
+
+const params = Astro.url.searchParams;
+const error = params.get('error');
+
+const flash = error
+  ? error
+  : params.get('deleted')
+    ? `Deleted “${params.get('deleted')}”. Its delivery history went with it.`
+    : params.get('paused')
+      ? `Paused “${params.get('paused')}”. Nothing will be sent until you switch it back on.`
+      : params.get('resumed')
+        ? `“${params.get('resumed')}” is sending again.`
+        : params.get('tested')
+          ? `Test delivered to “${params.get('tested')}” — it answered ${params.get('status')}.`
+          : null;
+
+const live = endpoints.filter((endpoint) => endpoint.active === 1);
+const paused = endpoints.filter((endpoint) => endpoint.active !== 1);
+---
+
+<AdminLayout
+  title="Webhooks"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'Webhooks' }]}
+  flash={flash}
+>
+  <PageHeader
+    title="Webhooks"
+    meta={`${live.length} active${paused.length ? `, ${paused.length} paused` : ''}`}
+  />
+
+  <p class="mb-6 max-w-prose text-sm text-content-muted">
+    Taproot can tell another system when content changes — to rebuild a site, update a search index,
+    or post to a channel. Every request is signed, retried if it does not land, and recorded so you
+    can see what happened. Events say <em>what changed</em> and never carry the content itself: a
+    receiver reads through the delivery API, which is the one read contract there is.
+  </p>
+
+  {
+    /*
+      The one moment the secret is on screen. At the top, before anything else, because the next page
+      load will not have it — and because the receiver cannot verify a single request without it.
+    */
+    revealed && (
+      <section
+        aria-labelledby="revealed-heading"
+        class="mb-8 rounded-lg border border-accent bg-accent-subtle px-4 py-4"
+      >
+        <h2 id="revealed-heading" class="text-sm font-semibold">
+          Copy the signing secret for “{revealed.label}” now
+        </h2>
+        <p class="mt-1 max-w-prose text-sm">
+          {revealed.rotated
+            ? 'The old secret stopped working the moment this one was made. Anything still verifying with it will reject every event until you paste this in.'
+            : 'This is the only time Taproot will show it to you. Your receiver needs it to check that an event really came from here.'}
+        </p>
+
+        <label for="revealed-secret" class="mt-3 block text-sm font-medium">The secret</label>
+        <input
+          id="revealed-secret"
+          readonly
+          value={revealed.secret}
+          onfocus="this.select()"
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
+        />
+        <p class="mt-1.5 text-xs text-content-muted">
+          Store it wherever the receiving deployment keeps its secrets. Lose it and the answer is
+          Rotate, not a lookup.
+        </p>
+      </section>
+    )
+  }
+
+  <form
+    method="post"
+    action="/api/taproot/webhooks"
+    class="mb-8 rounded-lg border border-border bg-surface-raised p-4"
+  >
+    <h2 class="text-sm font-semibold">Add an endpoint</h2>
+
+    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+      <div class="min-w-0">
+        <label for="label" class="block text-sm font-medium">Name</label>
+        <input
+          id="label"
+          name="label"
+          required
+          maxlength="200"
+          placeholder="Website rebuild"
+          aria-describedby="label-hint"
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+        <p id="label-hint" class="mt-1.5 text-xs text-content-subtle">
+          Name the system that will receive it, so you know what stops working if you pause it.
+        </p>
+      </div>
+
+      <div class="min-w-0">
+        <label for="url" class="block text-sm font-medium">URL</label>
+        <input
+          id="url"
+          name="url"
+          type="url"
+          required
+          placeholder="https://example.edu/hooks/taproot"
+          aria-describedby="url-hint"
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+        {/*
+          Said here rather than left to a rejection, because the rule is not guessable and the
+          browser's own message for a `type="url"` names neither the rule nor the character that
+          broke it — the lesson the `url_prefix` inputs already learned one screen along.
+        */}
+        <p id="url-hint" class="mt-1.5 text-xs text-content-subtle">
+          Must be https, unless it is localhost. Events name unpublished pages by title.
+        </p>
+      </div>
+    </div>
+
+    {/*
+      A fieldset with a legend, not a label pointing at the group: `<label for>` must target a
+      labelable element, and a `div` of checkboxes is not one. The audit checks exactly this.
+    */}
+    <fieldset class="mt-4 min-w-0 border-0 p-0">
+      <legend class="text-sm font-medium">What to send</legend>
+      <ul class="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+        {
+          WEBHOOK_EVENTS.map((event) => (
+            <li class="flex items-start gap-2">
+              <input id={`event-${event}`} type="checkbox" name="events" value={event} class="mt-1" />
+              <label for={`event-${event}`} class="text-sm">
+                <code class="font-mono text-xs">{event}</code>
+                <span class="block text-xs text-content-subtle">{EVENT_DESCRIPTIONS[event]}</span>
+              </label>
+            </li>
+          ))
+        }
+      </ul>
+    </fieldset>
+
+    <button
+      type="submit"
+      class="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+    >
+      Add endpoint
+    </button>
+  </form>
+
+  <section aria-labelledby="endpoints-heading">
+    <h2 id="endpoints-heading" class="text-base font-semibold">Endpoints</h2>
+
+    {
+      endpoints.length === 0 ? (
+        <p class="mt-2 rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-content-muted">
+          Nothing is listening. Content changes here reach visitors through the delivery API either
+          way — an endpoint is for systems that need to be told rather than to ask.
+        </p>
+      ) : (
+        <ul class="mt-3 space-y-2">
+          {endpoints.map((endpoint) => {
+            const counts = stats.get(endpoint.id);
+
+            return (
+              <li class="rounded-lg border border-border bg-surface-raised px-4 py-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <a
+                    href={`/admin/settings/webhooks/${endpoint.id}`}
+                    class="font-medium underline-offset-2 hover:underline"
+                  >
+                    {endpoint.label}
+                  </a>
+                  {endpoint.active !== 1 && (
+                    <span class="rounded-full border border-status-draft bg-status-draft-subtle px-2 py-0.5 text-xs font-medium">
+                      Paused
+                    </span>
+                  )}
+                  {/*
+                    Colour is never the only signal — the word is always there, which is what keeps
+                    these clear of WCAG 1.4.1, exactly as the status badges do.
+                  */}
+                  {counts && counts.failed > 0 && (
+                    <span class="rounded-full border border-danger bg-danger-subtle px-2 py-0.5 text-xs font-medium">
+                      {counts.failed} failed
+                    </span>
+                  )}
+                </div>
+
+                <p class="mt-1 truncate font-mono text-xs text-content-subtle">{endpoint.url}</p>
+
+                <p class="mt-1 text-xs text-content-subtle">
+                  {endpoint.events.length}{' '}
+                  {endpoint.events.length === 1 ? 'event' : 'events'}
+                  {' · '}
+                  {counts ? (
+                    <>
+                      {counts.delivered} delivered
+                      {counts.pending > 0 && `, ${counts.pending} waiting`}
+                      {counts.lastAt && (
+                        <>
+                          {' · last '}
+                          <Timestamp value={counts.lastAt} />
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    'nothing sent yet'
+                  )}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )
+    }
+  </section>
+</AdminLayout>

@@ -25,7 +25,8 @@ export type AuditSubjectType =
   | 'reusable_block'
   | 'redirect'
   | 'release'
-  | 'api_key';
+  | 'api_key'
+  | 'webhook';
 
 export interface AuditEntryInput {
   /** Dotted verb: `item.published`, `user.two_factor_cleared`. Past tense — it already happened. */

@@ -3,11 +3,13 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
 import Timestamp from '../../components/Timestamp.astro';
 import {
   getConfiguredProviders,
+  listWebhookEndpoints,
   purgeQueueStatus,
   resolveLogRetention,
   schedulerStatus,
   searchIndexStatus,
   twoFactorStatus,
+  webhookQueueStatus,
 } from '@taprootcms/core';
 import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
 
@@ -19,6 +21,17 @@ const providers = getConfiguredProviders(taproot.auth);
 const scheduler = await schedulerStatus(taproot.db.db);
 const searchIndex = await searchIndexStatus(taproot.db.db);
 const purgeQueue = await purgeQueueStatus(taproot.db.db);
+
+/**
+ * Gated on an endpoint existing, not on a delivery existing.
+ *
+ * "0 waiting, 0 failed" on every deployment that has never configured a webhook is a permanent row
+ * of zeroes, and a screen with one teaches an operator to stop reading it — which is exactly when
+ * the row that matters appears. Unlike cache purges, which every deployment performs whether or not
+ * anybody set anything up, this is opt-in, so its absence is a state rather than a problem.
+ */
+const webhookEndpoints = await listWebhookEndpoints(taproot.db.db);
+const webhookQueue = await webhookQueueStatus(taproot.db.db);
 
 /**
  * Retention, and the evidence for whether it is working.
@@ -380,6 +393,53 @@ const account = [
       )
     }
   </section>
+
+  {
+    webhookEndpoints.length > 0 && (
+      <section aria-labelledby="webhook-heading" class="mb-10">
+        <h2 id="webhook-heading" class="mb-3 text-base font-semibold">
+          Webhook deliveries
+        </h2>
+
+        <p class="mb-3 max-w-prose text-sm text-content-muted">
+          Content changes are announced to the endpoints under{' '}
+          <a href="/admin/settings/webhooks" class="underline underline-offset-2">
+            Settings → Webhooks
+          </a>
+          . A delivery that does not land is queued and retried by the same sweep, because a save is
+          never failed over a notification — which again means a delivery that never lands would
+          otherwise go unmentioned.
+        </p>
+
+        <dl class="divide-y divide-border overflow-hidden rounded-lg border border-border">
+          <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+            <dt class="text-content-muted">Waiting to retry</dt>
+            <dd class="font-mono text-xs">{webhookQueue.pending}</dd>
+          </div>
+          <div class="flex flex-wrap justify-between gap-2 bg-surface-raised px-4 py-2.5 text-sm">
+            <dt class="text-content-muted">Given up on</dt>
+            <dd class="font-mono text-xs">{webhookQueue.failed}</dd>
+          </div>
+        </dl>
+
+        {webhookQueue.failed > 0 && (
+          <p class="mt-3 max-w-prose rounded-md border border-status-scheduled bg-status-scheduled-subtle px-4 py-3 text-sm">
+            {webhookQueue.failed}{' '}
+            {webhookQueue.failed === 1 ? 'delivery has' : 'deliveries have'} failed repeatedly and{' '}
+            {webhookQueue.failed === 1 ? 'is' : 'are'} no longer being retried, so whatever was
+            listening has not been told. Each endpoint's own page shows which events and why.
+            {webhookQueue.lastError && (
+              <>
+                {' '}
+                The last error was{' '}
+                <code class="font-mono text-xs">{webhookQueue.lastError}</code>.
+              </>
+            )}
+          </p>
+        )}
+      </section>
+    )
+  }
 
   <section aria-labelledby="account-heading">
     <h2 id="account-heading" class="mb-3 text-base font-semibold">Your account</h2>

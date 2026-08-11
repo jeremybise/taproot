@@ -3,7 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 5 complete, including 5.5 through 5.9.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 5 complete, including 5.5 through 5.9; Phase 6 under way.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
@@ -382,9 +382,46 @@ npm test
 
 ## What's next
 
-**Phase 5 is under way** — editing, querying, and assistance, in seven parts. Integrations moved to
-Phase 6 and the form builder to Phase 10; see [SCOPE.md](SCOPE.md) for the whole band and why it is
-ordered the way it is.
+**Phase 6 is under way** — integrations: webhooks, a tracking script manager, an MCP server, and
+workflow notifications, grouped because they share the outbound-HTTP layer and the API-key scope
+layer. Everything below it, through Phase 5.9, is done; see [SCOPE.md](SCOPE.md) for the whole band
+and why it is ordered the way it is.
+
+**Webhooks are done.** Taproot can now tell another system that content changed — a page went live,
+a release published, an item was deleted — so a site rebuild, a search index, or a chat channel
+finds out without polling. **Settings → Webhooks**, administrators only.
+
+An event says *what changed* and never carries the content. The receiver reads through the delivery
+API like any other reader, which is the point: a payload full of fields would be a second read
+contract with no key, no scopes, and no visibility rules, arriving at whatever URL somebody typed
+into a form. What it does carry — path, type, status — is enough to decide whether to bother.
+
+Six events, and the two that look redundant are not. `item.updated` fires on every save and
+`item.published` only when something becomes visible, because "the content changed" and "the content
+became public" are different questions: a search index wants the first, a site rebuild wants the
+second and must not fire on every draft keystroke. Publication is judged by *crossing* the line
+rather than by the destination status, so moving a live page to archived is an unpublish.
+
+Every request is signed with a per-endpoint secret, shown once. The timestamp is inside the signed
+message rather than beside it — the version that looks identical and lets a captured request be
+replayed forever. `@taprootcms/astro` ships `createTaprootWebhookHandler`, which verifies it,
+compares in constant time, reads the raw body rather than a re-serialised one, and answers only
+after your handler finishes; each of those is a way to get it wrong that fails silently.
+
+The delivery is where this differs from every other outbound path in Taproot, which attempts first
+and records only failures. **The row is written before the request goes out.** A dropped cache purge
+costs staleness the TTL already bounds; a dropped event is gone, and nothing regenerates it — so an
+isolate killed mid-send leaves work the five-minute sweep finds rather than an event that never
+existed. Failures retry on a widening schedule, stop after eight attempts, and show up on the
+endpoint's own page with the reason and on Settings → System when they have been given up on.
+
+**If you are upgrading, run `npm run db:migrate`** for `0033_webhooks`. Nothing to backfill; with no
+endpoint configured, nothing changes anywhere — the dispatcher's whole cost is one indexed miss.
+
+One repair came out of building it: **restoring a revision cleared no cache**. It changes the title,
+the body and possibly the status of a live page and declared no tags at all, so the delivery JSON
+kept the restored-over version for its full day. Exactly the shape of the media-write bug in 5.9 —
+the write path was working, which is where "my restore did not take" sends you first.
 
 **5A — expand and collapse — is done.** Blocks have collapsed to a summary row since Phase 2 and
 repeater entries never did, so a staff list of thirty rows buried every field below it. Both now

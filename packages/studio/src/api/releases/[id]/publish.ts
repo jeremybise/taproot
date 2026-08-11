@@ -1,4 +1,10 @@
-import { SITE_TAG, getRelease, publishRelease } from '@taprootcms/core';
+import {
+  SITE_TAG,
+  getRelease,
+  itemWebhookSubjects,
+  publicationEvents,
+  publishRelease,
+} from '@taprootcms/core';
 
 import { apiError, handle, json } from '../../_shared.js';
 
@@ -43,6 +49,49 @@ export const POST = handle(
      * bought with an error message.
      */
     if (result.published.length > 0) taproot.invalidate([SITE_TAG]);
+
+    /**
+     * Per item *and* for the release, which is not two spellings of one fact.
+     *
+     * A static build wants one signal for a launch of twelve pages; a search index wants twelve. So
+     * both go out, and an endpoint subscribes to whichever it can act on. `release.published` is
+     * emitted only when every staged version applied — a partial publish is a state somebody has to
+     * look at, and announcing it as a completed release would be the CMS asserting something it has
+     * just recorded as untrue.
+     *
+     * Precision is affordable here where the *purge* above stays coarse, and the difference is what
+     * each costs: the tags would need a second query per item, while the subjects are one query for
+     * the batch — and an event names the item it is about, so a receiver cannot use "assume all of
+     * them" the way a cache can.
+     */
+    const subjects = await itemWebhookSubjects(
+      taproot.db.db,
+      result.published.map((entry) => entry.id),
+    );
+
+    for (const entry of result.published) {
+      const subject = subjects.get(entry.id);
+      if (!subject) continue;
+
+      const withPrevious = { ...subject, previousStatus: entry.from };
+      taproot.emit({ event: 'item.updated', subject: withPrevious });
+
+      for (const event of publicationEvents(entry.from, 'published')) {
+        taproot.emit({ event, subject: withPrevious });
+      }
+    }
+
+    if (result.ok && result.published.length > 0) {
+      taproot.emit({
+        event: 'release.published',
+        subject: {
+          kind: 'release',
+          id: release.id,
+          name: release.name,
+          itemCount: result.published.length,
+        },
+      });
+    }
 
     if (isForm) {
       const params = new URLSearchParams();

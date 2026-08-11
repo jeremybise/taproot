@@ -860,6 +860,56 @@ export interface PendingPurgesTable {
 /** Which cache a queued purge is replaying against. */
 export type PurgeTarget = 'self' | 'site';
 
+/**
+ * Where content events are sent, and the secret each one is signed with.
+ *
+ * See `0033_webhooks` for why the secret is stored recoverable when every other credential-shaped
+ * column in this file is a hash — an HMAC has to be *produced*, not compared.
+ */
+export interface WebhookEndpointsTable {
+  id: string;
+  label: string;
+  url: string;
+  secret: string;
+  /** Comma-separated `WebhookEvent`s. Empty subscribes to nothing — never to everything. */
+  events: string;
+  /** 0 pauses it, keeping the URL, the secret and the history. */
+  active: number;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type WebhookEndpointRow = Selectable<WebhookEndpointsTable>;
+
+/** Where a delivery has got to. `pending` is the only state the sweep will pick up. */
+export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'failed';
+
+/**
+ * Every attempt to send an event, which is both the retry queue and the log a screen reads.
+ *
+ * One table rather than two because they are one fact: "what happened to this event" is what a
+ * retry updates and what an operator opens the screen to see. Splitting them would mean a row
+ * moving between tables on success, and a log that is missing everything still in flight.
+ */
+export interface WebhookDeliveriesTable {
+  id: string;
+  endpoint_id: string;
+  event: string;
+  /** The exact signed bytes. Kept rather than rebuilt — see `0033_webhooks`. */
+  payload: string;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  response_status: number | null;
+  last_error: string | null;
+  /** Null once settled, which is what keeps a delivered row out of the due query. */
+  next_attempt_at: string | null;
+  delivered_at: string | null;
+  created_at: Timestamp;
+}
+
+export type WebhookDeliveryRow = Selectable<WebhookDeliveriesTable>;
+
 // Database
 // ---------------------------------------------------------------------------
 
@@ -933,6 +983,8 @@ export interface Database {
   settings: SettingsTable;
   pending_purges: PendingPurgesTable;
   search_queries: SearchQueriesTable;
+  webhook_endpoints: WebhookEndpointsTable;
+  webhook_deliveries: WebhookDeliveriesTable;
 }
 
 export type User = Selectable<UsersTable>;

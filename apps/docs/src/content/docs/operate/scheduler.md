@@ -29,6 +29,10 @@ the one scheduling feature that genuinely depends on it, and it is worth confirm
 relies on a timed launch.
 :::
 
+**Retries need it too.** A [webhook](/admin/webhooks/) that does not land is queued and retried by
+the same sweep, as is a cache purge that could not be delivered. Both get one immediate attempt
+whatever your setup; without a sweep, that attempt is the only one they get.
+
 ## On Cloudflare
 
 Nothing to set up. The sweep is a cron trigger on the same Worker that serves the CMS — the

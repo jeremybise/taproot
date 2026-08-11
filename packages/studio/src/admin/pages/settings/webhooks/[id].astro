@@ -1,0 +1,299 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import Pager from '../../../components/Pager.astro';
+import Timestamp from '../../../components/Timestamp.astro';
+import DangerZone from '../../../components/DangerZone.astro';
+import {
+  WEBHOOK_EVENTS,
+  getWebhookEndpoint,
+  listWebhookDeliveries,
+  type WebhookDeliveryStatus,
+} from '@taprootcms/core';
+import { getTaproot, loginRedirect, canManageUsers } from '../../../../runtime/guards.js';
+import { EVENT_DESCRIPTIONS } from './eventCopy.js';
+
+/**
+ * One endpoint: what it sends, what happened, and how to turn it off.
+ *
+ * The delivery log is the reason this is a screen of its own. "Never throws" is the rule every
+ * outbound path here follows, and it also means "never tells anybody" — which is affordable for a
+ * cache purge bounded by a TTL and is not affordable for an event nothing regenerates. This table
+ * is where that silence is paid off, the same job Settings → System does for the purge queue.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canManageUsers(user)) return Astro.redirect('/admin/settings');
+
+const endpoint = await getWebhookEndpoint(taproot.db.db, Astro.params.id!);
+if (!endpoint) return Astro.redirect('/admin/settings/webhooks?error=No+such+endpoint.');
+
+const PAGE_SIZE = 25;
+const params = Astro.url.searchParams;
+const page = Math.max(1, Number(params.get('page') ?? 1) || 1);
+
+const { deliveries, total } = await listWebhookDeliveries(taproot.db.db, {
+  endpointId: endpoint.id,
+  limit: PAGE_SIZE,
+  offset: (page - 1) * PAGE_SIZE,
+});
+
+const error = params.get('error');
+const flash = error
+  ? error
+  : params.get('saved')
+    ? 'Saved. New events take effect on the next change.'
+    : params.get('tested')
+      ? `Test delivered — it answered ${params.get('status')}.`
+      : null;
+
+/**
+ * Colour and a word, never colour alone — WCAG 1.4.1, the rule the status badges are built on.
+ *
+ * The tokens are the content-status ones rather than new colours, deliberately: a new token or a
+ * new *pairing* is unchecked until it has an entry in `a11y-contrast.mjs`, and these three pairs are
+ * already there against `surface-raised`.
+ */
+const DELIVERY_BADGE: Record<WebhookDeliveryStatus, { label: string; classes: string }> = {
+  delivered: {
+    label: 'Delivered',
+    classes: 'border-status-published bg-status-published-subtle',
+  },
+  pending: { label: 'Waiting', classes: 'border-status-review bg-status-review-subtle' },
+  failed: { label: 'Failed', classes: 'border-danger bg-danger-subtle' },
+};
+
+const action = `/api/taproot/webhooks/${endpoint.id}`;
+---
+
+<AdminLayout
+  title={endpoint.label}
+  user={user}
+  breadcrumbs={[
+    { label: 'Settings', href: '/admin/settings' },
+    { label: 'Webhooks', href: '/admin/settings/webhooks' },
+    { label: endpoint.label },
+  ]}
+  flash={flash}
+>
+  <PageHeader
+    title={endpoint.label}
+    meta={endpoint.active === 1 ? 'Active' : 'Paused — nothing is being sent'}
+  >
+    <div slot="actions" class="flex flex-wrap items-center gap-2">
+      {/*
+        Three separate one-button forms rather than one form with three submit buttons. A form
+        with several submits sends whichever one was pressed, which works — and stops working the
+        moment somebody presses Enter in a text field, where the browser picks the first. These
+        are destructive-adjacent enough that "whichever the browser chose" is not good enough.
+      */}
+      <form method="post" action={action}>
+        <input type="hidden" name="_method" value="test" />
+        <button
+          type="submit"
+          class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+        >
+          Send a test
+        </button>
+      </form>
+
+      <form method="post" action={action}>
+        <input
+          type="hidden"
+          name="_method"
+          value={endpoint.active === 1 ? 'pause' : 'resume'}
+        />
+        <button
+          type="submit"
+          class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+        >
+          {endpoint.active === 1 ? 'Pause' : 'Resume'}
+        </button>
+      </form>
+    </div>
+  </PageHeader>
+
+  <form method="post" action={action} class="rounded-lg border border-border bg-surface-raised p-4">
+    <input type="hidden" name="_method" value="update" />
+    <h2 class="text-sm font-semibold">What this endpoint receives</h2>
+
+    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+      <div class="min-w-0">
+        <label for="label" class="block text-sm font-medium">Name</label>
+        <input
+          id="label"
+          name="label"
+          required
+          maxlength="200"
+          value={endpoint.label}
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div class="min-w-0">
+        <label for="url" class="block text-sm font-medium">URL</label>
+        <input
+          id="url"
+          name="url"
+          type="url"
+          required
+          value={endpoint.url}
+          aria-describedby="url-hint"
+          class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+        <p id="url-hint" class="mt-1.5 text-xs text-content-subtle">
+          Must be https, unless it is localhost.
+        </p>
+      </div>
+    </div>
+
+    <fieldset class="mt-4 min-w-0 border-0 p-0">
+      <legend class="text-sm font-medium">Events</legend>
+      <ul class="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+        {
+          WEBHOOK_EVENTS.map((event) => (
+            <li class="flex items-start gap-2">
+              <input
+                id={`event-${event}`}
+                type="checkbox"
+                name="events"
+                value={event}
+                checked={endpoint.events.includes(event)}
+                class="mt-1"
+              />
+              <label for={`event-${event}`} class="text-sm">
+                <code class="font-mono text-xs">{event}</code>
+                <span class="block text-xs text-content-subtle">{EVENT_DESCRIPTIONS[event]}</span>
+              </label>
+            </li>
+          ))
+        }
+      </ul>
+    </fieldset>
+
+    <button
+      type="submit"
+      class="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+    >
+      Save
+    </button>
+  </form>
+
+  <section aria-labelledby="secret-heading" class="mt-8">
+    <h2 id="secret-heading" class="text-base font-semibold">Signing secret</h2>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      Every request carries an <code class="font-mono text-xs">x-taproot-signature</code> header your
+      receiver checks against this secret. Taproot showed it to you once, when this endpoint was
+      created, and does not show it again — a page that can reveal a credential is one an unattended
+      session can reveal it from. If you have lost it, make a new one.
+    </p>
+
+    <form method="post" action={action} class="mt-3">
+      <input type="hidden" name="_method" value="rotate" />
+      <button
+        type="submit"
+        class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken"
+      >
+        Rotate the secret
+      </button>
+      <p class="mt-1.5 max-w-prose text-xs text-content-subtle">
+        The old one stops working immediately — there is no overlap, deliberately, since a grace
+        period is a leaked secret staying valid for exactly as long as the convenience is worth.
+        Paste the new one into your receiver before the next change is saved.
+      </p>
+    </form>
+  </section>
+
+  <section aria-labelledby="log-heading" class="mt-8">
+    <h2 id="log-heading" class="text-base font-semibold">Deliveries</h2>
+    <p class="mt-1 max-w-prose text-sm text-content-muted">
+      Every attempt, newest first. A failure is retried on a widening schedule by the five-minute
+      sweep and given up on after eight tries; settled rows are cleared out after 30 days.
+    </p>
+
+    {
+      deliveries.length === 0 ? (
+        <p class="mt-3 rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-content-muted">
+          Nothing has been sent yet. “Send a test” above is the quickest way to find out whether the
+          URL and the secret are right.
+        </p>
+      ) : (
+        <>
+          <div class="mt-3 overflow-x-auto">
+            <table class="w-full min-w-[40rem] border-collapse text-sm">
+              <thead>
+                <tr class="border-b border-border text-left">
+                  <th scope="col" class="px-3 py-2 font-medium">Event</th>
+                  <th scope="col" class="px-3 py-2 font-medium">Outcome</th>
+                  <th scope="col" class="px-3 py-2 font-medium">Attempts</th>
+                  <th scope="col" class="px-3 py-2 font-medium">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deliveries.map((delivery) => {
+                  const badge = DELIVERY_BADGE[delivery.status];
+
+                  return (
+                    <tr class="border-b border-border align-top">
+                      <td class="px-3 py-2">
+                        <code class="font-mono text-xs">{delivery.event}</code>
+                      </td>
+                      <td class="px-3 py-2">
+                        <span
+                          class={`inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${badge.classes}`}
+                        >
+                          {badge.label}
+                          {delivery.response_status ? ` ${delivery.response_status}` : ''}
+                        </span>
+                        {/*
+                          The reason, where there is one. This is the whole point of the table:
+                          "failed" alone sends somebody to look at their receiver's logs, and the
+                          usual answer — a 401 from a secret that drifted, or a redirect nobody
+                          meant — is already known here.
+                        */}
+                        {delivery.last_error && (
+                          <span class="mt-1 block max-w-md text-xs text-content-subtle">
+                            {delivery.last_error}
+                          </span>
+                        )}
+                      </td>
+                      <td class="px-3 py-2 tabular-nums">{delivery.attempts}</td>
+                      <td class="px-3 py-2 whitespace-nowrap">
+                        <Timestamp value={delivery.created_at} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/*
+            A pager rather than a truncation notice, and the split is the one the content lists
+            settled: this table grows with the deployment's age rather than its content, like the
+            audit log, and "filter it down" is useless advice for a delivery from last Tuesday.
+          */}
+          <Pager
+            page={page}
+            hasMore={page * PAGE_SIZE < total}
+            params={params}
+            basePath={`/admin/settings/webhooks/${endpoint.id}`}
+          />
+        </>
+      )
+    }
+  </section>
+
+  <DangerZone
+    noun="endpoint"
+    confirmToken={endpoint.label}
+    action={action}
+    blockers={[]}
+    allowedIntro="Deleting this endpoint stops the events and removes its delivery history. Nothing about your content changes."
+    warnings={[
+      'The delivery log below goes with it, including any failures nobody has looked at yet.',
+      'If you only want to stop the events for a while, Pause keeps the URL, the secret and the history.',
+    ]}
+  />
+</AdminLayout>

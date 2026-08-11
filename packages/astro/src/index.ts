@@ -589,6 +589,12 @@ export {
 } from './searchLog.js';
 
 export {
+  createTaprootWebhookHandler,
+  verifyWebhookSignature,
+  type TaprootWebhookHandlerOptions,
+} from './webhook.js';
+
+export {
   PURGE_PATH,
   PREVIEW_PARAM,
   PREVIEW_MESSAGE,
@@ -635,6 +641,17 @@ export type {
   DeliveryTermRef,
   ItemSort,
   MenuLink,
+  /**
+   * What a webhook receiver is handed.
+   *
+   * The union is what makes `switch (event.event)` exhaustive on a site's side, which is the point
+   * of shipping the names rather than letting each consumer type its handler against strings.
+   */
+  WebhookEvent,
+  WebhookEventPayload,
+  WebhookItemSubject,
+  WebhookReleaseSubject,
+  WebhookSubject,
   /**
    * One entry of `DeliveryResult.snippets`.
    *

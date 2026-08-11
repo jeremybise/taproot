@@ -87,6 +87,7 @@ const ICONS = [
   'key-round',
   'scroll-text',
   'server',
+  'webhook',
 
   // Offered to content types as their sidebar mark.
   'file-text',

@@ -378,6 +378,12 @@ it does not.
 The sweep also clears expired sessions, spent reset links, and aged-out sign-in attempts, so those
 tables stop growing on their own.
 
+**It is what retries a webhook, too.** A delivery that does not land gets one immediate attempt and
+then belongs to the sweep — after 5 minutes, 15, 30, an hour, and so on, up to eight tries. With
+nothing running it, an endpoint that was briefly unreachable never hears about that change again.
+The same is true of a cache purge that could not be delivered. Both are reported on **Settings →
+System**.
+
 ### Anywhere else
 
 Without Cloudflare's cron there is no in-process timer, so point an external scheduler at the
@@ -524,6 +530,14 @@ TAPROOT_API_KEY=tpr_...
 
 Create the key in the admin under **Settings → API keys**, with the `content:read` scope. It is
 shown exactly once — `id` is its hash, so there is nothing to read it back from.
+
+**Webhooks add nothing to the CMS's configuration**, which is worth stating because everything else
+in this file does. An endpoint's URL and its signing secret live in the database, created under
+**Settings → Webhooks**, so there is no variable to set and no deploy to do. What the *site* needs,
+if it mounts a receiver, is that secret — as `TAPROOT_WEBHOOK_SECRET` or whatever you call it, since
+only your own handler reads it. Same `global_fetch_strictly_public` caveat as the purge callback
+below: two Workers on one account cannot reach each other without it, and the symptom is a 404 from
+a URL that answers correctly to `curl`.
 
 Then, on the **CMS**, set `TAPROOT_SITE_URL` to the site's origin. That is what preview links are
 built from, and what the item editor's live preview pane frames; without it an editor opening a

@@ -1,4 +1,12 @@
-import { getContentType, getItem, getRevision, restoreRevision } from '@taprootcms/core';
+import {
+  getContentType,
+  getItem,
+  getRevision,
+  itemWebhookSubject,
+  itemWriteTags,
+  publicationEvents,
+  restoreRevision,
+} from '@taprootcms/core';
 
 import { apiError, handle, json } from '../../../../_shared.js';
 import { canChangeStatus } from '../../../../../runtime/guards.js';
@@ -47,6 +55,30 @@ export const POST = handle(
       revisionId,
       user.id,
     );
+
+    /**
+     * A restore is a write like any other, and this route was declaring nothing.
+     *
+     * It changes the title, the body and possibly the status of a live page, and it emitted no tags
+     * — so the delivery JSON kept the restored-over version for its full day of `s-maxage` and the
+     * consumer's HTML was never flushed. Exactly the shape of the media-write bug in 5.9: the write
+     * path was working, and "my restore did not take" sends you to look at it.
+     */
+    taproot.invalidate(itemWriteTags(restored.id, contentType.api_id));
+
+    /**
+     * And the same two events a PATCH produces, for the same reason.
+     *
+     * A restore can cross the publication boundary in **both** directions — the guard above says so
+     * in as many words — so deriving the event from the restored status alone would call an
+     * unpublish a publish.
+     */
+    const subject = itemWebhookSubject(restored, contentType, item.status);
+    taproot.emit({ event: 'item.updated', subject });
+
+    for (const event of publicationEvents(item.status, restored.status)) {
+      taproot.emit({ event, subject });
+    }
 
     // The history panel posts a plain HTML form, so a browser follows this back to the editor
     // rather than being left looking at raw JSON. Programmatic callers still get the item.

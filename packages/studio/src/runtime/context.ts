@@ -13,6 +13,7 @@ import {
   type StorageAdapter,
   type TaprootDb,
   type User,
+  type WebhookEventInput,
 } from '@taprootcms/core';
 
 import type { Principal } from './guards.js';
@@ -75,6 +76,21 @@ export interface TaprootContext {
   invalidate(tags: Iterable<string>): void;
   /** What `invalidate` has collected. Read by the middleware; not for routes. */
   readonly invalidated: Set<string>;
+  /**
+   * Declare that a write produced something an integration asked to hear about.
+   *
+   * Deliberately the same shape as `invalidate`, and for the same two reasons. The dispatch has to
+   * happen **after** the write has committed — a receiver told "published" while the old row is
+   * still the committed one will fetch the previous version, which is the exact race purging inside
+   * a write path already loses. And a request that changes several things sends one batch, which is
+   * one endpoint lookup rather than one per event.
+   *
+   * A route calling this does not mean anything is sent: whether an event has a subscriber is a
+   * question for the dispatcher, and nearly always the answer is no.
+   */
+  emit(event: WebhookEventInput): void;
+  /** What `emit` has collected. Read by the middleware; not for routes. */
+  readonly emitted: WebhookEventInput[];
 }
 
 export interface RuntimeBindings {
@@ -124,6 +140,7 @@ export async function createContext(
   bindings: RuntimeBindings,
 ): Promise<TaprootContext> {
   const invalidated = new Set<string>();
+  const emitted: WebhookEventInput[] = [];
 
   return {
     db: await resolveDb(env, bindings),
@@ -141,6 +158,10 @@ export async function createContext(
     invalidated,
     invalidate(tags) {
       for (const tag of tags) invalidated.add(tag);
+    },
+    emitted,
+    emit(event) {
+      emitted.push(event);
     },
   };
 }

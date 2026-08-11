@@ -85,6 +85,13 @@ const ROUTES = [
    * once a key does. Auditing the empty version would pass and check nothing.
    */
   '/admin/settings/api-keys',
+  /**
+   * The inventory. Its detail screen is added below, from the endpoint the seed creates.
+   *
+   * The seeded endpoint is **paused**, which is what makes seeding one safe at all — nothing is ever
+   * sent to it — and it is also what puts the "Paused" badge and the Resume control in this run.
+   */
+  '/admin/settings/webhooks',
   '/admin/settings/audit',
   /**
    * Page two, because **the pager does not exist on page one** and page one is all this audited.
@@ -343,6 +350,21 @@ if (taxonomies?.[0]) ROUTES.push(`/admin/taxonomies/${taxonomies[0].id}`);
 const menusResponse = await fetch(`${base}/api/taproot/menus`, { headers: { cookie } });
 const { menus } = await menusResponse.json();
 if (menus?.[0]) ROUTES.push(`/admin/menus/${menus[0].id}`);
+
+/**
+ * One webhook endpoint's own screen, which is where all of that feature's markup actually lives.
+ *
+ * The inventory above is a create form and a list of links; this is an edit form with a checkbox
+ * fieldset, three single-button action forms, a data table of deliveries, and a danger zone. Every
+ * one of those is absent from the list screen, so auditing only the list would report zero for a
+ * feature that had never been checked — the same trap as auditing a closed `<dialog>`.
+ *
+ * The seed's endpoint carries two delivery rows on purpose, one delivered and one failed, so the
+ * table is rendered with both badge states rather than showing its empty state.
+ */
+const webhooksResponse = await fetch(`${base}/api/taproot/webhooks`, { headers: { cookie } });
+const { endpoints: webhookEndpoints } = await webhooksResponse.json();
+if (webhookEndpoints?.[0]) ROUTES.push(`/admin/settings/webhooks/${webhookEndpoints[0].id}`);
 
 /**
  * A release with content in it, and the item editor opened in release mode.

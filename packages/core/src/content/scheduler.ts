@@ -1,7 +1,7 @@
 import type { Kysely } from 'kysely';
 
 import type { TaprootDb } from '../db/client.js';
-import type { Database, ReleaseRow } from '../db/schema.js';
+import type { ContentStatus, Database, ReleaseRow } from '../db/schema.js';
 import type { ContentItem } from './items.js';
 import { now } from '../db/values.js';
 import { hydrateItem } from './items.js';
@@ -222,7 +222,20 @@ export async function publishDueItems(
 // ---------------------------------------------------------------------------
 
 export interface ReleaseSweepResult {
-  published: { id: string; name: string; itemCount: number }[];
+  published: {
+    id: string;
+    name: string;
+    itemCount: number;
+    /**
+     * The items that went live, and the status each came from.
+     *
+     * Carried because the sweep is the one publish with no request behind it — nothing calls
+     * `taproot.emit`, so whatever this does not report cannot be told to an integration at all. The
+     * `from` is knowable only inside `publishRelease`'s loop, and it is what separates a page that
+     * became public from a copy edit to one that already was.
+     */
+    items: { id: string; from: ContentStatus }[];
+  }[];
   /** Releases the sweep reached and refused, with the reasons it refused them. */
   blocked: { id: string; name: string; problems: ReleaseProblem[] }[];
 }
@@ -292,6 +305,7 @@ export async function publishDueReleases(
         id: release.id,
         name: release.name,
         itemCount: result.published.length,
+        items: result.published.map((entry) => ({ id: entry.id, from: entry.from })),
       });
       continue;
     }
