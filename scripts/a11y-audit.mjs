@@ -109,6 +109,18 @@ const ROUTES = [
   '/admin/account',
   '/admin/settings/system',
   '/admin/media',
+  /*
+   * The bulk describe grid, which the seed reaches because it deliberately leaves one asset
+   * without alt text — the same reason the library's "missing alt text" warning is visible there.
+   * Audited with no `ids`, which is the accessibility report's way in and the one that renders the
+   * form; the upload route's way in carries ids and produces the same markup from the same
+   * component, so one route covers both.
+   *
+   * If the seed ever describes every asset, this renders its empty state and silently stops
+   * checking a text input, a checkbox and a label per row while the run still reports zero — the
+   * trap the `?page=2` entries above exist for, one screen along.
+   */
+  '/admin/media/describe',
   '/admin/blocks',
   '/admin/snippets',
   '/admin/snippets/new',
@@ -116,6 +128,13 @@ const ROUTES = [
   '/admin/menus',
   '/admin/settings/redirects',
   '/admin/settings/branding',
+  /*
+   * Audited with AI switched off, which is the seeded state and the one every fresh clone has: the
+   * screen still renders its radio group, the model field, both checkboxes, and the key table. The
+   * Generate buttons it controls live in islands and are audited by their own jsdom tests — the
+   * audit cannot see a control that only exists once a provider key is in the environment.
+   */
+  '/admin/settings/ai',
   '/admin/releases',
   '/admin/settings',
 ];

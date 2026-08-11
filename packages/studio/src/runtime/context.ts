@@ -3,6 +3,7 @@ import {
   dbConfigFromEnv,
   resolveAuthConfig,
   resolveMailer,
+  type AiEnv,
   storageFromEnv,
   type AuthConfig,
   type D1DatabaseLike,
@@ -36,6 +37,15 @@ export interface TaprootContext {
   auth: AuthConfig;
   /** How mail leaves, or that it does not. See `resolveMailer`. */
   mail: Mailer;
+  /**
+   * The AI provider keys, and only the keys.
+   *
+   * Carried here for the reason `images` is — nothing below this interface reaches for the
+   * environment itself. Deliberately *not* a resolved `Assistant`: that needs the settings row, and
+   * building one per request would put a query on every page view to answer a question only a
+   * handful of screens ask. `assistantFor` in `ai.ts` is the pairing, called where it is needed.
+   */
+  aiEnv: AiEnv;
   /** The signed-in user, if any. Populated by the middleware. */
   user?: User;
   /**
@@ -121,6 +131,13 @@ export async function createContext(
     images: bindings.IMAGES,
     auth: resolveAuthConfig(env),
     mail: resolveMailer(env),
+    // Only the three keys, picked out explicitly rather than passing `env` through — so the shape of
+    // what AI can see is readable here instead of implied by whatever the adapters happen to read.
+    aiEnv: {
+      TAPROOT_ANTHROPIC_API_KEY: env.TAPROOT_ANTHROPIC_API_KEY,
+      TAPROOT_OPENAI_API_KEY: env.TAPROOT_OPENAI_API_KEY,
+      TAPROOT_GEMINI_API_KEY: env.TAPROOT_GEMINI_API_KEY,
+    },
     invalidated,
     invalidate(tags) {
       for (const tag of tags) invalidated.add(tag);

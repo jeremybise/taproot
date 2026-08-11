@@ -1,8 +1,10 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import PageHeader from '../../components/PageHeader.astro';
+import AltTextSuggest from '../../islands/media/AltTextSuggest.tsx';
 import { listMedia } from '@taprootcms/core';
 import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
+import { assistantFor } from '../../../runtime/ai.js';
 
 /**
  * Describe several images at once.
@@ -60,6 +62,10 @@ const withUrls = images.map((asset) => ({
   ...asset,
   url: taproot.storage.publicUrl(asset.storage_key),
 }));
+
+// Resolved server-side: it needs the settings row and the provider keys, neither of which the island
+// can see. False keeps the buttons off the screen entirely rather than rendering them disabled.
+const aiAltText = (await assistantFor(taproot)).altText;
 
 const fromUpload = idParam.length > 0;
 const rejected = Astro.url.searchParams.get('rejected');
@@ -201,6 +207,15 @@ const remaining = Math.max(0, total - images.length);
             </li>
           ))}
         </ul>
+
+        {
+          aiAltText && (
+            <AltTextSuggest
+              client:load
+              rows={withUrls.map((asset) => ({ id: asset.id, filename: asset.filename }))}
+            />
+          )
+        }
 
         {
           remaining > 0 && (

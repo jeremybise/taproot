@@ -38,6 +38,15 @@ import EditorActionIcons, { writePreviewPaneState } from './EditorActionIcons.js
 
 interface Props {
   itemId?: string;
+  /**
+   * Whether the SEO panel may offer a Generate button.
+   *
+   * Resolved on the server — it needs the settings row and the provider keys, neither of which an
+   * island can see. Passed as one boolean rather than the provider name because the panel has no
+   * business knowing which provider is configured; it only needs to know whether to offer the
+   * control.
+   */
+  aiSeo?: boolean;
   contentTypeId: string;
   contentTypeName: string;
   fields: FieldRow[];
@@ -174,6 +183,7 @@ function groupByType(parents: ParentOption[]): { typeName: string; parents: Pare
 
 export default function ItemEditor({
   itemId,
+  aiSeo = false,
   contentTypeId,
   contentTypeName,
   fields,
@@ -959,6 +969,8 @@ export default function ItemEditor({
           origin={origin}
           images={media}
           defaultOgImage={defaultOgImage}
+          itemId={itemId ?? null}
+          aiSeo={aiSeo}
         />
       </aside>
         </div>

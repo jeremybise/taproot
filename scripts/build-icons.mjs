@@ -51,6 +51,10 @@ const ICONS = [
   'trash-2',
   'x',
 
+  // Settings → AI assist. `sparkles` is the conventional mark for a generated suggestion, which is
+  // what this screen configures — not an automation, not a robot.
+  'sparkles',
+
   // Fixed navigation destinations.
   'layout-dashboard',
   'search',

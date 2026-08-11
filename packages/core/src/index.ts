@@ -3,6 +3,7 @@ export * from './auth/index.js';
 export * from './branding/index.js';
 export * from './content/index.js';
 export * from './mail/index.js';
+export * from './ai/index.js';
 export * from './storage/index.js';
 export * from './validation/index.js';
 export * from './ids.js';

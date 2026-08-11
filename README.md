@@ -3,7 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 4.6 complete, Phase 5A–5D, and Phase 5.5.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 5 complete, including 5.5 through 5.9.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
@@ -531,8 +531,81 @@ A column rather than a fourth kind — `kind` answers how instances are *address
 addressed exactly as a collection is; only whether the address is public changes. The path stays, so
 turning it back on restores the pages rather than minting new ones.
 
-**Next in the band:** media multi-upload (5E), menu link-picking (5F) and AI-assisted alt text (5G),
-all independent of each other.
+**5F — menus — is done.** Its underlying defect went first: the page `<select>` was capped at 200, so
+a site with 300 pages had a hundred that could not be put in a menu at all, with nothing on screen
+saying why. You now search for a page instead of scrolling to it, in menus and in the parent picker
+both, and the cap has become the size of a first page rather than a ceiling.
+
+Then the two link settings. **Open in a new tab** had existed in the database since menus shipped and
+had never been given a checkbox; **nofollow** is new. Both are on the add forms and on every row.
+
+The interesting part is what Taproot now sends your site. A menu entry used to hand over "opens in a
+new tab" as a bare yes/no and leave the markup to you — which makes protecting the visitor something
+every site has to remember, and **both sites built on Taproot so far forgot the same half of it**,
+writing `rel="noopener"` without `noreferrer`. Not a wrong `rel`; a nearly right one that looks
+deliberate. The CMS now composes the whole string and sends it, so a template renders what it is
+given. There is deliberately no checkbox for the protective pair: it is not a preference, and a
+control for it is a control somebody can untick.
+
+Worth recording because the plan said otherwise: this was expected to be the one place the band
+**gave up working without JavaScript**, and it did not. The picker server-renders a plain `<select>`
+and upgrades once it hydrates, so the no-JS path is intact and the cap is still gone. The sacrifice
+had been assumed from the shape of the intended solution rather than from what was actually needed.
+The planned "fourth panel" for linking to a term was likewise already there — the plan had miscounted
+the forms.
+
+**If you are upgrading, run `npm run db:migrate`** for `0031_menu_no_follow`. Nothing to backfill;
+every existing entry keeps behaving exactly as it did.
+
+**5E — multi-upload and bulk alt text — is done.** The media library takes up to ten files at once,
+and then asks you to describe them.
+
+The upload form's single alt box is gone, and that is the feature rather than a loss: one description
+cannot serve ten images, so a box beside a multi-file input is a control that quietly applies to the
+first file or to none. Every upload now lands on a **describe screen** carrying exactly the files you
+just added — a thumbnail, a description box and a "Decorative" tick per row — so the question is
+asked once per image instead of once per request. The picker's own inline alt box stays, because that
+one really is a single image being chosen for a single field.
+
+The same screen is the answer to a backlog. **Settings → Accessibility** could only link undescribed
+images out one at a time, so clearing forty meant forty page loads; it now offers "Describe them
+together" and works in screenfuls.
+
+Three states, and the middle one is the whole point. A description is a description. **Decorative**
+means the image carries no information of its own, and a screen reader skips it. A row you leave
+blank stays an open question — it is *not* marked decorative, because describing three of twelve
+images and saving must not silently declare the other nine finished by somebody who never looked at
+them. If you type a description over a leftover Decorative tick, the description wins.
+
+A file that is too big does not sink the rest of the batch: the others upload and the screen names
+what did not. Asking for more than ten files, or more than 60 MB at once, is refused outright rather
+than quietly truncated.
+
+**5G — AI assist — is done.** With a provider key set, Taproot can propose alt text for an image and
+a meta title and description for a page. **Anthropic, OpenAI and Google Gemini** are supported; you
+pick one under **Settings → AI**.
+
+**Nothing it proposes is ever saved for you**, and that is the shape of the feature rather than a
+promise about it — the endpoints have no path to the columns at all. A suggestion fills a box; you
+read it, edit it, or clear it, and Save is still the only thing that writes. The reason is specific:
+a machine writing *empty* alt text would mark an image **decorative**, which claims it carries no
+information and makes a screen reader skip it. No amount of care makes that safe to automate.
+
+Keys live in your environment, never in the database — Settings reports each provider as configured
+or not and never shows a value, the same treatment the cron secret gets. Two separate switches, for
+alt text and for metadata, because they are different decisions: one describes a picture the model
+can actually see, the other is a claim about what a page is *for*. Both are off until you turn them
+on, so upgrading cannot start spending your credit on a key you had lying around.
+
+On the describe screen you get a Suggest button per image plus one for every row you have left blank
+— it works through them one at a time and skips anything you have already written. In an item's SEO
+panel, Generate works from the page's own text; an item that has never been indexed says so rather
+than inventing a description of a page it was shown nothing of.
+
+**If you are upgrading, run `npm run db:migrate`** for `0032_ai_assist`. It adds four columns to your
+settings row and nothing else; with no key configured, nothing changes anywhere.
+
+**Phase 5 is complete.** See [SCOPE.md](SCOPE.md) for what comes next.
 
 **Phase 5.5 — performance and caching — is done.** The caching SCOPE deferred until there was a
 boundary to invalidate against, now that Phase 3.75 has provided one.
@@ -630,6 +703,76 @@ a page for a day — where no purge can reach it.
 no reindex. To get prompt invalidation, set `TAPROOT_SITE_PURGE_URL` and `TAPROOT_SITE_PURGE_SECRET`
 on the studio and mount the purge route on your site; without them the CMS still purges its own cache
 and your site's HTML waits out its TTL, exactly as before.
+
+**Phase 5.8 — reuse, and the admin's own usability — is done.** Unplanned, and it exists for the
+reason Phase 5 does: things noticed from using the CMS. The difference is that this band was noticed
+from building a **real site** on it rather than from browsing the demo. A demo has six pages and one
+editor; a college has hundreds of each, and most of what follows is invisible until it does.
+
+**Snippets** are a value written once and used in prose everywhere. Type `{{ tuition }}` into any
+text or rich-text field and the site renders the current figure — change it in one place and every
+page that quotes it changes with it. A snippet knows whether it is a number, a date or a plain
+string, so it can be formatted for a sentence while a chart still plots the bare value, and there is
+a `snippet` field so a chart and a paragraph can point at the same one. A token nobody recognises is
+left exactly as you typed it rather than blanked, because "Tuition is  per year" is a page that has
+silently lost a word while still looking fine — which also means ordinary prose with braces in it
+needs no escaping.
+
+**A content type can say how one of its items reads in one line.** Lists used to show the title and
+nothing else that distinguished one row from the next, and a collapsed block could only ever say its
+*type* — three "Card"s in a row telling you nothing about which card is which. A summary template
+like `{{ headline }} · {{ link }}` fixes both, and a token that resolves to nothing takes its
+separators with it, so half your rows do not end in a dangling `·`.
+
+**A content type also chooses what its list shows and in what order.** The same five columns are
+right for a page and say nothing useful about an event or a person; you can now put a start date, a
+job title or a photograph in the list instead. Existing lists are unchanged unless you change them.
+
+Then the ordinary friction: adding a block is one control rather than a wall of choices, a block's
+rarer actions sit behind a menu with reordering still on the row, each content type gets an icon,
+and the field builder asks what *kind* of field it is before asking what to call it.
+
+**Every capped list now either pages or tells you it is capped.** Several screens showed a count
+above a truncated list — the media library read "107 assets" over a grid of 100. The number was
+right and the rows were right, and together they said something false. The media library and the
+audit log page; content lists, redirects and releases say what they are not showing and point at the
+search box, because that is how you find one row among hundreds. Settings → Search gets neither: it
+asks for the top 50 terms on purpose, and a note calling that a shortcoming would be describing the
+point of the screen.
+
+**Phase 5.9 — image delivery repair — is done.** Four bugs in the pipeline 5.6 built, every one the
+same shape — correct picture, wrong weight, nothing thrown, nothing in a log, and **only weighing
+bytes finds any of them.** `OUTPUT_QUALITY` had already taught that lesson once and it had not been
+generalised.
+
+The worst: **a resize that did not also name an output format silently did nothing.** The image
+binding rejects a request with no format, resizing fails safe by serving the stored file, so every
+variant that asked only to be made smaller returned the full-size original. Measured on production,
+`?w=320` returned 170 KB of untouched JPEG where `?w=320&f=jpeg` returned 8.7 KB. A test for
+width-only resizing already existed and passed throughout, because the test double accepted a
+request the real binding refuses.
+
+The rest: the width ladder offered a top rung that was **byte-identical to the one below it** on any
+image bigger than 1920px — 62 of one real library's 107 images — wasting a cache entry and telling
+the browser a width that was not true. A server-cropped image was served `immutable` for a year
+while its crop came from **columns an editor can change**, so moving a focal point left the old crop
+on the page with no way to clear it; the crop now forms part of the URL, so a changed focal point is
+simply a different address. And **media edits purged nothing at all** — alt text, a hotspot or a crop
+updated the row and cleared no cache, which presents as "my edit did not save" and sends you to the
+one part that was working.
+
+Two things that are additions rather than repairs. `TaprootImage` can now be used **without a
+ratio**, for a band that is as tall as the text over it — both such places had reached for a plain
+`<img>` to escape the ratio and given up the resizing on the way out. And AVIF is offered through
+`<picture>`, which is 22–25% smaller than WebP where a browser supports it and falls back where it
+does not.
+
+**If you are upgrading, run `npm run db:migrate`** for `0027`–`0030`. `0030` repairs a URL prefix
+Taproot generated and then refused to accept: creating a collection with a multi-word name and a
+blank URL prefix stored the API id, which uses underscores where a URL prefix requires hyphens — and
+the content type's settings screen could then never be saved again, for any change at all, because
+the browser blocked on a field nobody had touched. Existing item URLs are left exactly as they are;
+only newly created items use the repaired prefix.
 
 **Phase 4.6 — the admin UI pass — is done.** Part A: one sticky action bar per screen, status
 transitions behind a promoted action plus a menu, add-to-release moved into the Publishing panel

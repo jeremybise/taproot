@@ -134,6 +134,7 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/settings/blocks/new', 'settings/blocks/new'],
           ['/settings/blocks/[id]', 'settings/blocks/[id]'],
           ['/settings/branding', 'settings/branding'],
+          ['/settings/ai', 'settings/ai'],
           ['/settings/redirects', 'settings/redirects'],
           ['/settings/users', 'settings/users'],
           ['/settings/api-keys', 'settings/api-keys'],
@@ -193,6 +194,9 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/media/describe', 'media/describe'],
           ['/media/[id]', 'media/[id]'],
           ['/media/[id]/details', 'media/[id]/details'],
+          // Suggestions only. Neither writes a row — see the docblock on each.
+          ['/ai/alt-text', 'ai/alt-text'],
+          ['/ai/seo', 'ai/seo'],
           ['/media/file/[...key]', 'media/file/[...key]'],
           ['/taxonomies', 'taxonomies/index'],
           ['/taxonomies/[id]', 'taxonomies/[id]'],

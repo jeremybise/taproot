@@ -1,7 +1,13 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import Icon from '../../components/Icon.astro';
-import { listBlockTypes, listContentTypes, loadBranding } from '@taprootcms/core';
+import {
+  aiKeysPresent,
+  getAiSettings,
+  listBlockTypes,
+  listContentTypes,
+  loadBranding,
+} from '@taprootcms/core';
 import {
   getTaproot,
   loginRedirect,
@@ -22,6 +28,7 @@ if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
 const user = taproot.user;
 
 const branding = await loadBranding(taproot.db.db);
+const aiSettings = await getAiSettings(taproot.db.db);
 
 const typeCount = canManageSchema(user) ? (await listContentTypes(taproot.db.db)).length : 0;
 const blockCount = canManageSchema(user) ? (await listBlockTypes(taproot.db.db)).length : 0;
@@ -114,6 +121,18 @@ const site: SettingsCard[] = [
           description:
             'What the CMS calls itself for the people who sign in: name, logo, and accent colour. Nothing here reaches your website.',
           meta: branding.resolvedTitle,
+        },
+        {
+          href: '/admin/settings/ai',
+          title: 'AI assist',
+          icon: 'sparkles',
+          description:
+            'Suggested alt text and page metadata, from a provider you configure. Every suggestion lands in a box for somebody to accept — nothing is written for you.',
+          meta: aiSettings.provider
+            ? aiKeysPresent(taproot.aiEnv)[aiSettings.provider]
+              ? aiSettings.provider
+              : 'key missing'
+            : 'Off',
         },
       ]
     : []),

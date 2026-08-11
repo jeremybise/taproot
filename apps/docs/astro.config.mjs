@@ -120,6 +120,7 @@ export default defineConfig({
             { label: 'Content types', slug: 'admin/content-types' },
             { label: 'Block types', slug: 'admin/block-types' },
             { label: 'Menus', slug: 'admin/menus' },
+            { label: 'AI assist', slug: 'admin/ai-assist' },
             { label: 'Branding', slug: 'admin/branding' },
             { label: 'People and access', slug: 'admin/users' },
             { label: 'API keys', slug: 'admin/api-keys' },

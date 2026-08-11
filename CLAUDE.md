@@ -1230,6 +1230,46 @@ under `dist/`: that file does not exist until after a build, and naming it makes
 before it starts. `POST /api/taproot/scheduler/run` and `TAPROOT_CRON_SECRET` remain for platforms
 with no cron of their own; nothing on Cloudflare needs either.
 
+**AI assist is suggestions only, and `available` is the whole safety model.** `ai/` holds three
+`fetch` adapters — Anthropic, OpenAI, Gemini — behind one `AiProvider`, and `resolveAssistant` pairs
+the environment's keys with the `settings` row. Seven things hold it up:
+- **Nothing generated is written to a row, structurally rather than by policy.** Both routes return a
+  string; neither has a path to `media.alt_text` or `content_items.seo`. A machine writing `''` would
+  mark an image **decorative** — a claim that it carries no information, which makes a screen reader
+  skip it — and that is exactly the state the three-state alt-text rule exists to protect. No prompt
+  care makes an empty completion safe to store.
+- **`available` is the mailer's `delivers` again.** True only when a provider is chosen, its key is in
+  the environment, **and** that feature's toggle is on. A Generate button that 500s because nobody set
+  a key is the same failure as a forgot-password form whose success message is a lie, so every
+  affordance gates in the template rather than discovering it on submit. The two features have
+  separate toggles because they are different decisions: alt text describes an image the model can
+  see, a meta description is a claim about what a page is *for*.
+- **Adapters, not a webhook — the opposite of mail, for a stated reason.** Mail had a generic shape
+  available, so a webhook reached every sender in five lines. There is no generic shape for "describe
+  this image": bytes, a different auth header, and the reply at a different path in each response. A
+  webhook here would mean every operator writing this file badly. No SDKs, because three vendor
+  dependency trees in `core` is three things reaching a Workers bundle.
+- **Keys in the environment, provider and model in `settings`.** A key column would be the first
+  secret at rest, which needs encryption, which needs a key, which needs a working `npm run dev`
+  default — and a default encryption key is not a secret. Provider is *not* derived from whichever key
+  is present: that would pick for an operator with several set, and would make "configured but
+  deliberately off" unsayable.
+- **Alt text takes bytes through the storage adapter, never a URL.** A provider fetching `publicUrl`
+  is a request from *its* network to ours, which fails for reasons this deployment cannot see — a
+  private bucket, a host that only answers inside the zone. Reading the object is the one path that
+  works wherever the CMS runs.
+- **The SEO input is `content_item_text`, not a fresh walk.** That row already holds the item's prose
+  with blocks and repeater rows flattened, rebuilt in the item's write batch — so what the model reads
+  is what search matches, with no second walk to drift. Capped at `MAX_PROSE` because a long page is
+  thousands of tokens per button press. A **missing** row is reported as "not indexed yet" rather than
+  summarised as empty, which is the state a database sits in before `npm run db:reindex`.
+- **A parse failure throws rather than falling back.** The two-line `TITLE:`/`DESCRIPTION:` format is
+  the plainest shape all three providers hit, and what makes it safe is that an unparseable reply is
+  an error — putting the whole blob in the title field would look like the feature working. Same
+  reason `describeImage` checks Anthropic's `stop_reason: 'refusal'` before reading `content`: a
+  refusal is a **200** with empty content, so indexing `content[0].text` yields `undefined` and a
+  caller that stored it would mark the image decorative.
+
 **Taproot sends one email, and works with none.** The standing constraint used to read "nothing
 sends any email" — right in instinct, one step too far in statement. What has to hold is that
 `npm run dev` needs no external service, and self-service password reset has no non-email form, so
@@ -1351,6 +1391,37 @@ many), *Block*, *Reusable Block*, *Content Type*.
   safe because the catch-all resolves an item before it consults the redirect table.
 - **Content type `kind`** is `page` (nests under a parent), `collection` (flat, `url_prefix`-based),
   or `singleton` (exactly one item, no create/delete, optional `preview_path`).
+- **`api_id` and `url_prefix` accept disjoint character sets, so one may never fill the other
+  unslugified.** `api_id` is `^[a-z][a-z0-9_]*$` — `_` separates words and `-` is forbidden;
+  `url_prefix` is validated with `isValidSlug`'s `^[a-z0-9]+(?:-[a-z0-9]+)*$`, the exact inverse.
+  They agree only while a name is one word, which is why `createContentType`'s bare
+  `?? input.api_id` survived: the test covering it used `event`, the one input that cannot fail.
+  Every multi-word type created with a blank prefix stored a value `contentTypeInputSchema` then
+  **rejected** — `alum_profile` — and the consequence was not a bad URL, since a stored `path`
+  resolves whatever it contains. It was that the content type settings form round-trips every field,
+  so the screen could never be submitted again *for any change at all*: unticking "Items have their
+  own pages" failed on a URL prefix input nobody had touched, reporting the browser's opaque "please
+  match the requested format". Four things follow:
+  - **This is "never leave a deployment in a state its own UI cannot reach" reached from the one
+    direction care at the input cannot cover.** The bad value was machine-written, so no validation
+    on the form, no `pattern`, and no amount of user care would have prevented it. When code derives
+    one validated column from another, the derivation is a write path and owes the same guarantee.
+  - **The fix is the fallback, never the validator.** A `url_prefix` sits directly in front of item
+    slugs; admitting `_` would allow `/alum_profile/jane-doe`, two separators in one URL, with a
+    prefix `slugify` can never produce for the segment after it.
+  - **`0030_url_prefix_slug` freezes its own repair rather than importing `slugify`**, so a
+    deployment migrating later cannot get a different answer, and it collapses runs and trims edges
+    rather than replacing character for character — `alum__profile` and `alum_` are both legal
+    `api_id`s whose naive replacement is still invalid. It does **not** rewrite existing item paths:
+    `url_prefix` is read at creation and never again, so old items keep their URLs while new ones
+    land under the repaired prefix. Rewriting them is the cascading path move plus redirects, which
+    is `updateItem`'s job and out of a raw migration's reach.
+  - **The two screens have to say which convention they want.** Both offer an `api_id` box and a
+    URL prefix box a few inches apart, with opposite rules and, before this, no hint on the create
+    form at all — and the settings hint rendered `/{urlPrefix}/` as a statement of fact, so it
+    displayed `/alum_profile/` beside the field refusing that exact string. `title` on the input is
+    what replaces the browser's message, which names neither the rule nor the character that broke
+    it.
 - **Richtext is sanitised on write, inside `validateItemData`.** It is stored as HTML and rendered
   with `set:html`, so an unsanitised value is stored XSS against every visitor and every editor.
   **The editor is not the boundary — the REST API is**, because it accepts richtext from any client
@@ -1403,6 +1474,30 @@ many), *Block*, *Reusable Block*, *Content Type*.
   keeps its place in the navigation and an unpublished one leaves it, with no menu edit. A deleted
   target nulls the reference rather than cascading, so the broken entry stays visible in the admin
   instead of silently editing the site's navigation. Public rendering skips it either way.
+- **`rel` is composed in core and travels as a string, because two consumers independently got it
+  wrong.** `rel.ts` holds `ALLOWED_REL`, `NEW_TAB_REL` and `menuRel`; `sanitizeHtml.ts` imports the
+  first two rather than keeping its own copy. A menu entry stored `open_in_new_tab` as a bare
+  boolean and left the markup to the site — which makes the protection a rule every consumer has to
+  know rather than one Taproot keeps, and both that exist wrote `rel="noopener"` with no
+  `noreferrer`. Not a wrong `rel`; a *nearly* right one that looks deliberate. Five things follow:
+  - **The flags travel too, and that is not redundancy.** `openInNewTab`/`noFollow` are what the
+    admin edits and what round-trips into a write; `rel` is what goes in the markup and carries one
+    pair no flag corresponds to. A site wanting to style external links differently should not have
+    to parse a token list, and one rendering an `<a>` should not have to assemble one.
+  - **`noopener noreferrer` gets no column and no checkbox**, deliberately. It is not a decision an
+    editor makes, and a control for it is a control somebody can untick. `nofollow` is genuinely
+    editorial, which is why it is the only one stored.
+  - **Two columns rather than a free-text `rel`.** The vocabulary is short and security-relevant, so
+    a text column admits whatever a future form posts — the same argument that makes `ALLOWED_REL`
+    an allowlist. A third token is a third column, which is more honest than an input pretending to
+    an openness it does not have.
+  - **`MenuLink` carries it to the last step.** `applyTermHrefs` builds the shape a template
+    actually renders from, so dropping `rel` there would send every site back to assembling it.
+  - **A checkbox on a PATCH needs a presence marker** — `patchFlag` in
+    `api/menu-items/[itemId].ts`. An unticked box is simply not posted, so on a *create* presence is
+    the value and `!== null` is right, while on a patch "absent" means either "unticked" or "this
+    form does not offer the control". Those collapsed here for a whole phase, latent only because
+    nothing rendered a form against that route yet.
 - **Terms have no materialised path**, unlike content items. Content items need one because a
   request URL must resolve in one indexed lookup on the hot path; terms have no public URL, and
   their only tree query is a recursive CTE off `parent_id`. Adding a path would mean a second
@@ -1566,6 +1661,42 @@ many), *Block*, *Reusable Block*, *Content Type*.
     back that up.
   - **Upload-in-place asks for alt text.** That is the moment someone knows what the image is for,
     and an upload path that never asks is how a library fills with images nobody can describe.
+  - **One POST carries several files, and the count cap is what keeps the form plain.** `getAll('file')`,
+    so a batch of one and a batch of ten take the same path — `MAX_UPLOAD_FILES` is 10 and
+    `MAX_BATCH_BYTES` 60 MB, deliberately *not* count × per-file, which would be 250 MB for a Worker
+    to buffer. The obvious alternative is N client-side POSTs with a progress bar, and it forks the
+    no-JS path permanently: two upload implementations that must agree on the byte cap and on the
+    alt-text state machine, which is precisely where a silent divergence would live. Five rules:
+    - **The two batch caps refuse the whole request; a per-file failure does not.** A cap describes
+      the request, so no subset of it is valid and keeping the first ten of thirty is the truncation
+      bug the content lists just removed, with somebody's files in it. One oversized file among nine
+      good ones is the opposite case — a browser cannot reselect a partial file list, so sinking the
+      batch costs the editor every other file. They are collected and named on the next screen.
+    - **A multi-file batch is written with `alt_text: null`, whatever the request carried.** One
+      description cannot serve twenty images; writing the same sentence onto all of them looks done
+      and is wrong about nineteen. The library's form therefore has no alt box at all, and the
+      picker's single-file form keeps its inline one, because that genuinely is one image chosen for
+      one field.
+    - **The question moved to the next screen rather than disappearing.** `/admin/media/describe`
+      carries `?ids=` — the batch just written — so "upload-in-place asks for alt text" survives N
+      files. The ids matter: re-querying for undescribed images would open a grid of fifty-two
+      strangers when three were uploaded into a library holding fifty.
+    - **Blank means `null`, and only the Decorative checkbox writes `''`.** The grid's whole risk is
+      here. Reading blank as decorative marks every untouched row as decided by somebody who never
+      looked at it, which empties the accessibility report of exactly the images still needing work;
+      reading it as a description writes `''` where `null` belongs. Neither errors, neither looks
+      wrong, and only the report would have caught it. A **typed description beats a leftover tick**,
+      because nobody types a description they did not mean while a tick can survive from a row that
+      arrived already marked.
+    - **A row whose field is absent is skipped, not nulled.** That is a truncated post rather than an
+      editor clearing a description, and the two are distinguished by `form.has` before `formValue`
+      can collapse them.
+  - **`MediaFilters.undescribed` is the shared predicate, and the report reads it too.** `alt_text is
+    null` **and not** `= ''`, narrowed to `image/` — the three-state rule as one clause. It lives in
+    `applyMediaFilters` because two screens ask it, the report's count and the grid that count links
+    to, and a grid disagreeing with the number that sent somebody to it is the faceted-count bug one
+    feature along. Ask through `undescribed`, never a hand-written `!alt_text`, which is also true of
+    `''` and drags every divider and icon back into a list an editor has finished with.
 - **A media field's stored shape follows its own config** — an array when it allows several files,
   a bare id when it does not. `MediaField` works in ordered arrays either way and `FieldControl`
   converts, rather than the control learning two shapes. Order is the stored order, which for a

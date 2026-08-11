@@ -29,6 +29,7 @@ import {
   renderSnippet,
 } from '@taprootcms/core';
 import { resolvePreviewPane, PREVIEW_PANE_COOKIE_NAME } from '../../previewPane.js';
+import { assistantFor } from '../../../runtime/ai.js';
 import {
   getTaproot,
   loginRedirect,
@@ -117,6 +118,13 @@ const relationTargets = await relationTargetsForFields(
 // narrows to images through the picker's accept list rather than by getting a narrower query.
 const media = await mediaOptions(taproot.db.db, taproot.storage);
 const defaultOgImage = findImage(media, contentType.default_og_image_id);
+
+/*
+ * Resolved here because it needs the settings row and the provider keys, and an island can see
+ * neither. One boolean crosses the boundary rather than the provider name: the panel decides whether
+ * to offer a control, not which service answers it.
+ */
+const aiSeo = (await assistantFor(taproot)).seo;
 
 // For the accessibility panel: the staged data in release mode, matching `relationTargets` above —
 // the version being edited is the version whose images should be checked.
@@ -314,6 +322,7 @@ const snippetOptions = (await listSnippets(taproot.db.db)).map((snippet) => ({
   }
 
   <ItemEditor
+    aiSeo={aiSeo}
     client:load
     itemId={item.id}
     contentTypeId={contentType.id}

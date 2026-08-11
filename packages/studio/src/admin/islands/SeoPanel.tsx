@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { SEO_GUIDANCE, resolveSeo, truncateForPreview, type SeoData } from '@taprootcms/core';
 
 import type { MediaOption } from '../mediaOptions.js';
@@ -28,6 +28,16 @@ interface Props {
   images: MediaOption[];
   /** The content type's default social image, inherited when the item sets none. */
   defaultOgImage: MediaOption | null;
+  /**
+   * The item's id, or null while it is being created.
+   *
+   * Null is what disables the Generate button on a new item, and the reason is not permissions: the
+   * suggestion is built from the item's indexed prose, and an unsaved item has none. Offering the
+   * button there would be offering an action that can only fail.
+   */
+  itemId?: string | null;
+  /** Whether Settings → AI has SEO suggestions on *and* a provider key. Gates the button entirely. */
+  aiSeo?: boolean;
 }
 
 export default function SeoPanel({
@@ -38,8 +48,46 @@ export default function SeoPanel({
   origin,
   images,
   defaultOgImage,
+  itemId = null,
+  aiSeo = false,
 }: Props) {
   const id = useId();
+  const [generating, setGenerating] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  /**
+   * Fill both boxes from the page's own prose. Never saves.
+   *
+   * The answer lands in the two inputs and the editor decides — which is the rule the whole feature
+   * rests on, and the reason this calls `set()` rather than anything that writes. It also overwrites
+   * whatever was there, deliberately: a Generate button that refused to replace existing text would
+   * be useless on the second press, and Save is still the only thing that commits.
+   */
+  async function generateSeo() {
+    if (!itemId) return;
+    setGenerating(true);
+    setAiError(null);
+    try {
+      const response = await fetch('/api/taproot/ai/seo', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ itemId }),
+      });
+      const body = (await response.json().catch(() => null)) as
+        | { title?: string; description?: string; error?: string }
+        | null;
+
+      if (!response.ok) {
+        setAiError(body?.error ?? `Could not generate a suggestion (${response.status}).`);
+        return;
+      }
+      set({ metaTitle: body?.title ?? '', metaDescription: body?.description ?? '' });
+    } catch {
+      setAiError('Could not reach the server.');
+    } finally {
+      setGenerating(false);
+    }
+  }
   const set = (patch: Partial<SeoData>) => onChange({ ...seo, ...patch });
 
   // The content type is reduced to the one field resolveSeo reads, so this component does not need
@@ -72,6 +120,34 @@ export default function SeoPanel({
         How this page looks in search results and when someone shares it. Leave a field blank to
         use the page's own title.
       </p>
+
+      {/*
+        Offered only when Settings → AI has the feature on and a key present, and only on a saved
+        item. Absent rather than disabled: a disabled control invites a hunt for what would enable
+        it, and on an unsaved item the answer is "save first", which the panel cannot usefully say
+        beside a greyed-out button.
+      */}
+      {aiSeo && itemId && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={generateSeo}
+            disabled={generating}
+            className="rounded-md border border-border-strong px-3 py-1.5 text-xs font-medium transition-colors hover:bg-surface-sunken disabled:opacity-60"
+          >
+            {generating ? 'Generating…' : 'Generate from page content'}
+          </button>
+          <p className="mt-1 text-xs text-content-subtle">
+            Fills both boxes from this page's text. Read them before saving — they are a suggestion,
+            not a decision.
+          </p>
+          {aiError && (
+            <p role="status" className="mt-1 text-xs text-danger">
+              {aiError}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Fields ---------------------------------------------------------- */}
       <div className="mt-4">

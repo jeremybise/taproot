@@ -1,0 +1,261 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import {
+  AI_PROVIDERS,
+  aiKeysPresent,
+  defaultAiModel,
+  getAiSettings,
+  isAiProvider,
+  updateAiSettings,
+} from '@taprootcms/core';
+import { getTaproot, loginRedirect, canManageSchema } from '../../../runtime/guards.js';
+
+/**
+ * AI assist: which provider, which model, and which features are on.
+ *
+ * **No key is entered here, and the screen says so in words.** Keys come from the environment, so
+ * this page reports each provider as configured or not and never shows or accepts a value — the same
+ * treatment Settings → System gives the cron secret. An operator looking for a paste box needs to be
+ * told where to put it instead, or they will conclude the feature is broken.
+ *
+ * Admin only, matching Branding: it decides what everybody who signs in is offered, and it spends
+ * the deployment's API credit.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+if (!canManageSchema(user)) {
+  return new Response('AI settings are administrator-only.', { status: 403 });
+}
+
+let error: string | null = null;
+
+// A plain form post, like every other settings screen: there is no interactive state here worth
+// shipping JavaScript for, and it keeps working if hydration fails.
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const chosen = String(form.get('provider') ?? '');
+
+  try {
+    await updateAiSettings(
+      taproot.db.db,
+      {
+        // Empty means "none chosen", which is how the feature is switched off entirely.
+        provider: isAiProvider(chosen) ? chosen : null,
+        model: String(form.get('model') ?? ''),
+        // Checkboxes, so presence is the value — safe here because the form sets every field at once.
+        altText: form.get('altText') !== null,
+        seo: form.get('seo') !== null,
+      },
+      user.id,
+    );
+    return Astro.redirect('/admin/settings/ai?saved=1');
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : 'Those settings could not be saved.';
+  }
+}
+
+const settings = await getAiSettings(taproot.db.db);
+const keys = aiKeysPresent(taproot.aiEnv);
+const saved = Astro.url.searchParams.get('saved') === '1';
+
+/*
+ * "Chosen, but its key is missing" is the state worth naming.
+ *
+ * An operator reaches it in two clicks — pick a provider, forget the secret — and every Generate
+ * button then silently does not appear. Reporting it here is the difference between a feature that
+ * looks broken and one that tells you what it needs.
+ */
+const chosenKeyMissing = settings.provider !== null && !keys[settings.provider];
+
+const labels: Record<string, string> = {
+  anthropic: 'Anthropic (Claude)',
+  openai: 'OpenAI',
+  gemini: 'Google Gemini',
+};
+
+const envVar: Record<string, string> = {
+  anthropic: 'TAPROOT_ANTHROPIC_API_KEY',
+  openai: 'TAPROOT_OPENAI_API_KEY',
+  gemini: 'TAPROOT_GEMINI_API_KEY',
+};
+
+const inputClass =
+  'mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm';
+---
+
+<AdminLayout
+  title="AI assist"
+  user={user}
+  breadcrumbs={[{ label: 'Settings', href: '/admin/settings' }, { label: 'AI assist' }]}
+  flash={saved ? 'AI settings saved.' : null}
+>
+  <PageHeader title="AI assist" meta="Suggestions an editor accepts — nothing is written for you" />
+
+  <p class="mb-6 max-w-prose text-sm text-content-muted">
+    With a provider configured, Taproot can propose alt text for an image and a meta title and
+    description for a page. Everything it proposes lands in a box for somebody to read, edit, or
+    ignore — nothing is ever saved on your behalf. Turning this on spends your provider's API credit
+    each time somebody presses a Generate button.
+  </p>
+
+  {
+    error && (
+      <p class="mb-6 rounded-md border border-danger-border bg-danger-subtle px-4 py-3 text-sm text-danger-strong">
+        {error}
+      </p>
+    )
+  }
+
+  <section aria-labelledby="keys-heading" class="mb-8 max-w-xl">
+    <h2 id="keys-heading" class="text-base font-semibold">Provider keys</h2>
+    <p class="mt-1 text-sm text-content-muted">
+      Keys are read from the environment and are never stored in the database or shown here. Set the
+      variable for the provider you want and restart, or add it as a secret on your deployment.
+    </p>
+
+    <ul class="mt-3 space-y-2">
+      {
+        AI_PROVIDERS.map((provider) => (
+          <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-md border border-border bg-surface-raised px-4 py-3">
+            <div class="min-w-0">
+              <span class="text-sm font-medium">{labels[provider]}</span>
+              <code class="ml-2 font-mono text-xs text-content-subtle">{envVar[provider]}</code>
+            </div>
+            {keys[provider] ? (
+              <span class="text-xs text-success-strong">Configured</span>
+            ) : (
+              <span class="text-xs text-content-subtle">Not set</span>
+            )}
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  {
+    chosenKeyMissing && (
+      <p class="mb-6 max-w-xl rounded-md border border-warning-border bg-warning-subtle px-4 py-3 text-sm text-warning-strong">
+        {labels[settings.provider!]} is selected below, but <code class="font-mono">
+          {envVar[settings.provider!]}
+        </code> is not set — so no Generate button will appear anywhere until it is.
+      </p>
+    )
+  }
+
+  <form method="post" class="max-w-xl space-y-6">
+    <fieldset>
+      <legend class="text-base font-semibold">Provider</legend>
+      <p id="provider-hint" class="mt-1 text-sm text-content-muted">
+        Which service to call. Choosing none switches AI assist off entirely.
+      </p>
+
+      <div class="mt-3 space-y-2">
+        <label for="provider-none" class="flex items-start gap-2 text-sm">
+          <input
+            id="provider-none"
+            type="radio"
+            name="provider"
+            value=""
+            checked={settings.provider === null}
+            aria-describedby="provider-hint"
+            class="mt-0.5"
+          />
+          None
+        </label>
+
+        {
+          AI_PROVIDERS.map((provider) => (
+            <label for={`provider-${provider}`} class="flex items-start gap-2 text-sm">
+              <input
+                id={`provider-${provider}`}
+                type="radio"
+                name="provider"
+                value={provider}
+                checked={settings.provider === provider}
+                class="mt-0.5"
+              />
+              {labels[provider]}
+              {!keys[provider] && (
+                <span class="text-xs text-content-subtle">(no key set)</span>
+              )}
+            </label>
+          ))
+        }
+      </div>
+    </fieldset>
+
+    <div>
+      <label for="model" class="block text-sm font-medium">
+        Model <span class="font-normal text-content-subtle">(optional)</span>
+      </label>
+      <p id="model-hint" class="mt-0.5 text-xs text-content-subtle">
+        Leave blank to use each provider's default — currently
+        <code class="font-mono">
+          {settings.provider ? defaultAiModel(settings.provider) : defaultAiModel('anthropic')}
+        </code> for the selected provider. Set it to pin a specific model or move to a newer one
+        without redeploying.
+      </p>
+      <input
+        id="model"
+        name="model"
+        value={settings.model ?? ''}
+        maxlength="120"
+        aria-describedby="model-hint"
+        class={`${inputClass} font-mono`}
+      />
+    </div>
+
+    <fieldset>
+      <legend class="text-base font-semibold">Features</legend>
+      {/*
+        Two toggles rather than one, because they are different decisions with different risks: alt
+        text describes an image the model can actually see, while a meta description is a claim about
+        what a page is *for*. Wanting the first and not the second is reasonable, and one switch
+        makes it unexpressible.
+      */}
+
+      <label for="alt-text" class="mt-3 flex items-start gap-2 text-sm font-medium">
+        <input
+          id="alt-text"
+          name="altText"
+          type="checkbox"
+          checked={settings.altText}
+          aria-describedby="alt-text-hint"
+          class="mt-0.5"
+        />
+        Suggest alt text for images
+      </label>
+      <p id="alt-text-hint" class="mt-0.5 ml-5 text-xs text-content-subtle">
+        Adds a Generate button beside each image on the describe screen. It fills the box; you decide
+        whether the sentence is right, and marking an image decorative stays your decision alone.
+      </p>
+
+      <label for="seo" class="mt-3 flex items-start gap-2 text-sm font-medium">
+        <input
+          id="seo"
+          name="seo"
+          type="checkbox"
+          checked={settings.seo}
+          aria-describedby="seo-hint"
+          class="mt-0.5"
+        />
+        Suggest meta titles and descriptions
+      </label>
+      <p id="seo-hint" class="mt-0.5 ml-5 text-xs text-content-subtle">
+        Adds a Generate button to an item's SEO panel, working from the page's own text. Items that
+        have never been indexed have no text to read — save the item once, or run
+        <code class="font-mono">npm run db:reindex</code>.
+      </p>
+    </fieldset>
+
+    <button
+      type="submit"
+      class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+    >
+      Save AI settings
+    </button>
+  </form>
+</AdminLayout>

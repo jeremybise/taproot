@@ -39,6 +39,12 @@ export const ICON_PATHS = {
     { tag: 'path', attrs: { 'd': 'M18 6 6 18' } },
     { tag: 'path', attrs: { 'd': 'm6 6 12 12' } },
   ],
+  'sparkles': [
+    { tag: 'path', attrs: { 'd': 'M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z' } },
+    { tag: 'path', attrs: { 'd': 'M20 2v4' } },
+    { tag: 'path', attrs: { 'd': 'M22 4h-4' } },
+    { tag: 'circle', attrs: { 'cx': '4', 'cy': '20', 'r': '2' } },
+  ],
   'layout-dashboard': [
     { tag: 'rect', attrs: { 'x': '3', 'y': '3', 'width': '7', 'height': '9', 'rx': '1' } },
     { tag: 'rect', attrs: { 'x': '14', 'y': '3', 'width': '7', 'height': '5', 'rx': '1' } },
