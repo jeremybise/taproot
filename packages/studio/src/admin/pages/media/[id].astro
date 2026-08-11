@@ -1,10 +1,12 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import HotspotEditor from '../../islands/HotspotEditor.tsx';
+import AltTextSuggestButton from '../../islands/media/AltTextSuggestButton.tsx';
 import Timestamp from '../../components/Timestamp.astro';
 import DangerZone from '../../components/DangerZone.astro';
 import { cropOf, hotspotOf, mediaDeleteImpact } from '@taprootcms/core';
 import { getTaproot, loginRedirect, canUploadMedia, hasRole } from '../../../runtime/guards.js';
+import { assistantFor } from '../../../runtime/ai.js';
 
 /**
  * One media asset: its metadata, and the focal point and crop editor.
@@ -35,6 +37,9 @@ const deleteImpact = canDelete
   ? await mediaDeleteImpact(taproot.db.db, asset.id)
   : { blockers: [], warnings: [] };
 
+// Resolved server-side; the island cannot see the settings row or the provider keys.
+const aiAltText = (await assistantFor(taproot)).altText;
+
 const saved = Astro.url.searchParams.get('saved') === '1';
 const error = Astro.url.searchParams.get('error');
 ---
@@ -55,41 +60,7 @@ const error = Astro.url.searchParams.get('error');
     </p>
   </header>
 
-  {
-    !isImage ? (
-      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
-        This asset is not an image, so it has no focal point or crop.{' '}
-        <a href={url} class="underline">
-          Open the file
-        </a>
-        .
-      </p>
-    ) : (
-      <>
-        {!asset.width && (
-          <p class="mb-6 rounded-md border border-warning bg-warning-subtle px-4 py-3 text-sm">
-            <strong class="font-semibold">Dimensions unknown.</strong> This file was uploaded before
-            Taproot read image dimensions, or its format is not recognised. The focal point still
-            works; the shape previews are approximate until it is re-uploaded.
-          </p>
-        )}
-
-        <HotspotEditor
-          client:load
-          mediaId={asset.id}
-          url={url}
-          altText={asset.alt_text}
-          width={asset.width}
-          height={asset.height}
-          initialHotspot={hotspotOf(asset)}
-          initialCrop={cropOf(asset)}
-          canEdit={canEdit}
-        />
-      </>
-    )
-  }
-
-  <section aria-labelledby="asset-meta" class="mt-10 max-w-xl">
+  <section aria-labelledby="asset-meta" class="max-w-xl">
     <h2 id="asset-meta" class="text-base font-semibold">Description</h2>
 
     {/*
@@ -110,6 +81,23 @@ const error = Astro.url.searchParams.get('error');
           disabled={!canEdit}
           class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
         />
+
+        {/*
+          Only for an image, only when the feature is on, and only for somebody who may edit — the
+          same three conditions the input above already answers. `canEdit` matters here rather than
+          being belt-and-braces: filling a box nobody can save is offering work that gets thrown away.
+        */}
+        {isImage && canEdit && aiAltText && (
+          <div class="mt-2">
+            <AltTextSuggestButton
+              client:load
+              mediaId={asset.id}
+              filename={asset.filename}
+              inputId="alt"
+              decorativeId="decorative"
+            />
+          </div>
+        )}
       </div>
 
       {/*
@@ -169,6 +157,44 @@ const error = Astro.url.searchParams.get('error');
       }
     </form>
   </section>
+
+  <section aria-labelledby="asset-crop" class="mt-10">
+    <h2 id="asset-crop" class="mb-3 text-base font-semibold">Focal point &amp; crop</h2>
+  {
+    !isImage ? (
+      <p class="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-content-muted">
+        This asset is not an image, so it has no focal point or crop.{' '}
+        <a href={url} class="underline">
+          Open the file
+        </a>
+        .
+      </p>
+    ) : (
+      <>
+        {!asset.width && (
+          <p class="mb-6 rounded-md border border-warning bg-warning-subtle px-4 py-3 text-sm">
+            <strong class="font-semibold">Dimensions unknown.</strong> This file was uploaded before
+            Taproot read image dimensions, or its format is not recognised. The focal point still
+            works; the shape previews are approximate until it is re-uploaded.
+          </p>
+        )}
+
+        <HotspotEditor
+          client:load
+          mediaId={asset.id}
+          url={url}
+          altText={asset.alt_text}
+          width={asset.width}
+          height={asset.height}
+          initialHotspot={hotspotOf(asset)}
+          initialCrop={cropOf(asset)}
+          canEdit={canEdit}
+        />
+      </>
+    )
+  }
+  </section>
+
 
   {
     canDelete && (

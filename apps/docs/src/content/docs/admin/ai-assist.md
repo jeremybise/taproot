@@ -45,10 +45,12 @@ Each press of a Generate button spends your provider's API credit.
 
 ## Alt text
 
-On the [describe screen](/content/media/#describing-several-images-at-once) each image gets a
-**Suggest** button, and there is one at the bottom for every row you have left blank. That one works
-through them a few seconds apart and **skips anything you have already written** — it will not
-overwrite your words.
+On the [describe screen](/content/media/#describing-several-images-at-once) each image has its own
+**Suggest** button, beside the box it fills, and there is one above the whole list for every row you
+have left blank. That one works through them one at a time and **skips anything you have already
+written** — it will not overwrite your words.
+
+An individual asset has the same button under its alt text box, on the asset's own page.
 
 Read each sentence before saving. The model can see the picture but not why you chose it, so it
 tends to describe what is in the frame rather than what the image is doing on your page. Those are

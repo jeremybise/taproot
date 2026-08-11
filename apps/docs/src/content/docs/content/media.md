@@ -25,6 +25,9 @@ row per image instead: one description cannot serve ten pictures.
 The describe screen gives each image a thumbnail, a description box and a **Decorative** tick. Fill
 in what you can and press save.
 
+An asset's own page has the same description controls, above the focal point and crop editor —
+describing an image comes before deciding how it is framed.
+
 **A row you leave blank stays an open question.** It is not marked decorative — describing three of
 twelve images must not quietly declare the other nine finished. Come back to the rest whenever you
 like; the [accessibility report](/content/accessibility/) keeps listing them until they are done, and

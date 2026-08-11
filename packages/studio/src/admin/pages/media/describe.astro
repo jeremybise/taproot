@@ -1,7 +1,8 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import PageHeader from '../../components/PageHeader.astro';
-import AltTextSuggest from '../../islands/media/AltTextSuggest.tsx';
+import AltTextSuggestAll from '../../islands/media/AltTextSuggestAll.tsx';
+import AltTextSuggestButton from '../../islands/media/AltTextSuggestButton.tsx';
 import { listMedia } from '@taprootcms/core';
 import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
 import { assistantFor } from '../../../runtime/ai.js';
@@ -138,6 +139,20 @@ const remaining = Math.max(0, total - images.length);
           a screen reader will skip it. Leaving a row untouched leaves it undescribed.
         </p>
 
+        {
+          aiAltText && (
+            <AltTextSuggestAll
+              client:load
+              rows={withUrls.map((asset) => ({
+                mediaId: asset.id,
+                filename: asset.filename,
+                inputId: `alt-${asset.id}`,
+                decorativeId: `decorative-${asset.id}`,
+              }))}
+            />
+          )
+        }
+
         <ul class="space-y-4">
           {withUrls.map((asset, index) => (
             <li class="flex flex-wrap items-start gap-4 rounded-lg border border-border bg-surface-raised p-4 sm:flex-nowrap">
@@ -194,6 +209,21 @@ const remaining = Math.max(0, total - images.length);
                   Decorative — it carries no information
                 </label>
 
+                {
+                  aiAltText && (
+                    <div class="mt-2">
+                      <AltTextSuggestButton
+                        client:load
+                        mediaId={asset.id}
+                        filename={asset.filename}
+                        inputId={`alt-${asset.id}`}
+                        decorativeId={`decorative-${asset.id}`}
+                        nameRow
+                      />
+                    </div>
+                  )
+                }
+
                 <p id={`alt-hint-${asset.id}`} class="mt-1 text-xs text-content-subtle">
                   {asset.width && asset.height
                     ? `${asset.width}×${asset.height}`
@@ -207,15 +237,6 @@ const remaining = Math.max(0, total - images.length);
             </li>
           ))}
         </ul>
-
-        {
-          aiAltText && (
-            <AltTextSuggest
-              client:load
-              rows={withUrls.map((asset) => ({ id: asset.id, filename: asset.filename }))}
-            />
-          )
-        }
 
         {
           remaining > 0 && (
