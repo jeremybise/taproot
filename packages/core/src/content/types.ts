@@ -5,6 +5,7 @@ import type { ContentTypeRow, Database, FieldRow } from '../db/schema.js';
 import { fromBool, now, stringifyJson } from '../db/values.js';
 import { newId } from '../ids.js';
 import { parseFieldConfig, type ContentTypeInput, type FieldInput } from '../validation/fields.js';
+import { slugify } from './paths.js';
 
 /**
  * Content types and their fields.
@@ -182,8 +183,22 @@ export async function createContentType(
     description: input.description ?? null,
     kind: input.kind,
     icon: input.icon ?? null,
-    // Only collection types are type-prefixed; page and singleton types have no prefix.
-    url_prefix: input.kind === 'collection' ? (input.url_prefix ?? input.api_id) : null,
+    /**
+     * Only collection types are type-prefixed; page and singleton types have no prefix.
+     *
+     * **The fallback is slugified, because `api_id` and `url_prefix` accept disjoint character
+     * sets.** An `api_id` separates words with `_` and forbids `-`; a `url_prefix` is validated with
+     * `isValidSlug`'s regex, which is the exact inverse. So for every multi-word name the bare
+     * `?? input.api_id` this used to be stored a value `contentTypeInputSchema` then refused —
+     * `alum_profile` went in, and the content type settings screen could never be submitted again,
+     * for any change at all, because the browser blocked on a URL prefix field nobody had touched.
+     * The invalid value was machine-generated, so no care at the input could have prevented it.
+     *
+     * Slugified rather than widening the validator: a `url_prefix` sits directly in front of item
+     * slugs, and admitting `_` would allow `/alum_profile/jane-doe` — two separators in one URL, and
+     * a prefix `slugify` can never produce for the segment after it.
+     */
+    url_prefix: input.kind === 'collection' ? (input.url_prefix ?? slugify(input.api_id)) : null,
     // Only a singleton can have one — every other kind derives its address from the item, and
     // `previewPathFor` never reads the column for them. Nulled here rather than trusted from the
     // input, matching `url_prefix`, so the column means one thing whatever the API was sent.
@@ -259,9 +274,12 @@ export async function updateContentType(
     description: input.description === undefined ? existing.description : (input.description ?? null),
     kind,
     icon: input.icon === undefined ? existing.icon : (input.icon ?? null),
+    // Slugified for the reason `createContentType`'s fallback is: `api_id`'s character set and
+    // `url_prefix`'s are disjoint, so reaching for the one to fill the other stores a value this
+    // type's own schema rejects. Reached when a page or singleton is switched to a collection.
     url_prefix:
       kind === 'collection'
-        ? (input.url_prefix ?? existing.url_prefix ?? existing.api_id)
+        ? (input.url_prefix ?? existing.url_prefix ?? slugify(existing.api_id))
         : null,
     /**
      * `undefined` keeps it, `null` clears it — the distinction `publish_at` already turns on.

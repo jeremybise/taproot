@@ -506,12 +506,21 @@ export default function ContentTypeSettings({
           </label>
           <p id="ct-url-prefix-hint" className="mt-0.5 text-xs text-content-subtle">
             Items of this type live under <code className="font-mono">/{urlPrefix || '…'}/</code>.
-            Changing it does not move existing items — that lands with bulk operations.
+            Lowercase letters, numbers and hyphens — <strong>not</strong> underscores, unlike the API
+            id. Changing it does not move existing items — that lands with bulk operations.
           </p>
+          {/*
+           * `title` is what a browser shows on a pattern mismatch, in place of "please match the
+           * requested format" — which names neither the field's rule nor the character that broke
+           * it. Worth having even though the value can no longer arrive invalid on its own: this
+           * form round-trips every field, so a prefix rejected here blocks every unrelated edit on
+           * the screen, and the message is the only thing on offer explaining why.
+           */}
           <input
             id="ct-url-prefix"
             value={urlPrefix}
             pattern="[a-z0-9]+(-[a-z0-9]+)*"
+            title="Lowercase letters, numbers and hyphens, with no underscores — for example alum-profile."
             aria-describedby="ct-url-prefix-hint"
             onChange={(e) => setUrlPrefix(e.target.value)}
             className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"

@@ -157,11 +157,17 @@ const kinds = [
       <label for="url_prefix" class="block text-sm font-medium">
         URL prefix <span class="font-normal text-content-subtle">(collections only)</span>
       </label>
+      <p id="url-prefix-hint" class="mt-0.5 text-xs text-content-subtle">
+        The segment items of this type live under, such as <code class="font-mono">alum-profile</code>.
+        Lowercase letters, numbers and hyphens — <strong>not</strong> underscores, unlike the API id.
+        Derived from the name if left blank.
+      </p>
       <input
         id="url_prefix"
         name="url_prefix"
         pattern="[a-z0-9]+(-[a-z0-9]+)*"
         placeholder="events"
+        aria-describedby="url-prefix-hint"
         class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm"
       />
     </div>

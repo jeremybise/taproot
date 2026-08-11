@@ -236,6 +236,48 @@ describe('content types', () => {
     expect(type.url_prefix).toBe('event');
   });
 
+  /*
+   * The single-word case above is the one input that cannot fail, which is why this went unnoticed:
+   * `api_id` separates words with `_` and `url_prefix` forbids it, so the two agree only while the
+   * name is one word. Asserted against the schema rather than against a literal, because the defect
+   * was precisely that the generated value did not satisfy the validator applied to a typed one.
+   */
+  it('slugifies a multi-word api_id into a url_prefix its own schema accepts', async () => {
+    const type = await createContentType(handle.db, {
+      api_id: 'alum_profile',
+      name: 'Alum Profile',
+      name_plural: 'Alum Profiles',
+      kind: 'collection',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      summary_template: null,
+    });
+
+    expect(type.url_prefix).toBe('alum-profile');
+    expect(
+      contentTypeInputSchema.shape.url_prefix.safeParse(type.url_prefix).success,
+    ).toBe(true);
+  });
+
+  it('slugifies the api_id fallback when a page is switched to a collection', async () => {
+    const type = await createContentType(handle.db, {
+      api_id: 'alum_profile',
+      name: 'Alum Profile',
+      name_plural: 'Alum Profiles',
+      kind: 'page',
+      description: null,
+      icon: null,
+      url_prefix: null,
+      summary_template: null,
+    });
+    // A page stores no prefix, so the update path falls through to the api_id exactly as create did.
+    expect(type.url_prefix).toBeNull();
+
+    const updated = await updateContentType(handle.db, type.id, { kind: 'collection' });
+    expect(updated.url_prefix).toBe('alum-profile');
+  });
+
   it('refuses to delete a type that still has items', async () => {
     const { type, fields } = await seedPageType();
     await createItem(handle, type, fields, { contentTypeId: type.id, title: 'Home' });

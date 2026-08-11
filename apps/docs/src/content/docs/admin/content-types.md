@@ -25,6 +25,19 @@ creation**. Pick carefully: `event`, `staff_profile`.
 - **Singleton** — exactly one item, ever. No create, no delete, just edit. For a homepage assembled
   from blocks, a site-wide announcement banner, or footer details.
 
+**URL prefix** appears for collections and is the segment their items sit under — `events` puts an
+item at `/events/spring-open-house`. Leave it blank and it is worked out from the name.
+
+It follows the rules of a web address rather than the rules of an API ID, and the two differ in one
+place that catches people out: **a URL prefix separates words with hyphens and will not accept
+underscores**, while an API ID is the reverse. A type whose API ID is `alum_profile` gets the prefix
+`alum-profile`. That is the ordinary convention for a readable URL, and it is what search engines
+expect.
+
+Changing the prefix later does not move items that already exist — their addresses are fixed at the
+point they are created, so an existing item keeps the URL people have already linked to, and only
+items made afterwards use the new prefix.
+
 **Items have their own pages** appears for collections, and is on unless you turn it off. On, each
 item is a page on your site at its own URL — an event at `/events/spring-open-house`. Off, the items
 still exist and still have every field they had; they are simply not published as pages.
