@@ -78,6 +78,18 @@ export interface ContextInit {
   json?: unknown;
   /** Sent as a form body, which several routes branch on. */
   form?: Record<string, string>;
+  /**
+   * A prebuilt `FormData`, for the two things `form` cannot express: files, and a repeated key.
+   *
+   * The media upload reads `getAll('file')`, so a batch is a repeated key carrying `File`s — and
+   * `Record<string, string>` can hold neither. Kept as a separate option rather than widening
+   * `form`, because `form`'s URL-encoded body is what most routes are actually posted and a test
+   * asserting form-vs-JSON behaviour should keep exercising that path.
+   *
+   * The content-type header is left to `Request`, which sets `multipart/form-data` with the
+   * boundary. Setting it by hand produces a body no parser can read.
+   */
+  formData?: FormData;
   headers?: Record<string, string>;
 }
 
@@ -150,11 +162,15 @@ export async function createHarness(): Promise<Harness> {
       const url = new URL(init.url ?? '/api/taproot/test', ORIGIN);
 
       const headers: Record<string, string> = { ...(init.headers ?? {}) };
-      let body: string | undefined;
+      let body: string | FormData | undefined;
 
       if (init.json !== undefined) {
         headers['content-type'] = 'application/json';
         body = JSON.stringify(init.json);
+      } else if (init.formData) {
+        // No content-type here on purpose — `Request` derives `multipart/form-data` and the
+        // boundary from the body, and one written by hand cannot match it.
+        body = init.formData;
       } else if (init.form) {
         headers['content-type'] = 'application/x-www-form-urlencoded';
         body = new URLSearchParams(init.form).toString();
@@ -177,6 +193,12 @@ export async function createHarness(): Promise<Harness> {
         storage,
         auth,
         mail,
+        /*
+         * No keys, so every assistant a test resolves is unconfigured unless the test overrides this.
+         * That is the right default in both directions: it exercises the gated path by default, and
+         * a suite that accidentally reaches a real provider is a suite that bills somebody.
+         */
+        aiEnv: {},
         invalidated,
         invalidate(tags) {
           for (const tag of tags) invalidated.add(tag);

@@ -11,7 +11,7 @@ import {
   type A11yRule,
 } from './accessibility.js';
 import { listItems, type ContentItem, type ItemFilters } from './items.js';
-import { listMedia } from './media.js';
+import { applyMediaFilters, listMedia } from './media.js';
 import { listReusableBlocks } from './reusableBlocks.js';
 import { blockTypeRegistry, listContentTypes } from './types.js';
 
@@ -225,10 +225,10 @@ export async function undescribedImages(
   db: Kysely<Database>,
   options: { limit?: number } = {},
 ): Promise<{ images: UndescribedImage[]; total: number }> {
-  const query = db
-    .selectFrom('media')
-    .where('alt_text', 'is', null)
-    .where('mime_type', 'like', 'image/%');
+  // Through the shared predicate, so this count and the bulk describe grid it links to can never
+  // answer different questions. The select list stays three columns — the grid needs whole rows and
+  // this needs filenames, which is why it is the predicate that is shared rather than the query.
+  const query = applyMediaFilters(db.selectFrom('media'), { undescribed: true });
 
   const [countRow, rows] = await Promise.all([
     query.select((eb) => eb.fn.countAll<number>().as('count')).executeTakeFirst(),

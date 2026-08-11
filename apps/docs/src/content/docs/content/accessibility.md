@@ -56,6 +56,11 @@ The report lists undescribed images separately from the pages, and that list inc
 have uploaded but not yet used anywhere. Those are worth doing now — the alternative is describing
 them later, on somebody else's deadline.
 
+**Describe them together** opens one screen with a row per image — thumbnail, description box,
+Decorative tick — which is how you clear a backlog of forty without forty page loads. See
+[describing several images at once](/content/media/#describing-several-images-at-once). Each filename
+still links to its own asset, which is where you go when an image also needs a focal point set.
+
 ### Heading order
 
 Headings must not skip a level, and a rich text field starts at level 2.

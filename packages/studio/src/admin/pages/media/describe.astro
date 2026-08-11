@@ -1,0 +1,230 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import { listMedia } from '@taprootcms/core';
+import { getTaproot, loginRedirect, canUploadMedia } from '../../../runtime/guards.js';
+
+/**
+ * Describe several images at once.
+ *
+ * Two ways in, and they are the same screen because they are the same job:
+ *
+ * - **After an upload**, carrying `?ids=` — the batch just written, in the order it was written.
+ *   This is where "upload-in-place asks for alt text" went once the library form took several
+ *   files: one alt box cannot describe twenty images, so the question moved to the step right
+ *   after rather than disappearing.
+ * - **From the accessibility report**, with no ids — every image nobody has described and nobody
+ *   has marked decorative. That is the half SCOPE called the higher-value one and it was not in
+ *   the original ask: the report could only ever link images out one at a time, so clearing a
+ *   backlog of forty meant forty screens, each a full page load away from the list.
+ *
+ * The ids form is deliberately **not** re-queried as "undescribed". Uploading three images into a
+ * library that already holds fifty undescribed ones must not open a grid of fifty-three strangers,
+ * and a batch where somebody typed a description for one of the three has to keep showing all
+ * three while they finish.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+if (!canUploadMedia(user)) return Astro.redirect('/admin/media');
+
+const idParam = (Astro.url.searchParams.get('ids') ?? '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+/**
+ * A cap, because this screen renders a full-size thumbnail and two controls per row.
+ *
+ * It is `TruncationNotice`'s situation rather than `Pager`'s: the way to reach the rest is to
+ * describe these and come back, which the count below says outright. Paging a queue that shrinks
+ * as you work it would renumber the pages under the editor between saves.
+ */
+const BATCH_LIMIT = 24;
+
+const { media, total } = await listMedia(taproot.db.db, {
+  ids: idParam.length > 0 ? idParam : undefined,
+  undescribed: idParam.length === 0,
+  limit: BATCH_LIMIT,
+});
+
+/*
+ * Only images. A batch can carry a PDF and a spreadsheet, and alt text is not a question about
+ * either — `needsAltText`'s narrowing, applied here so the grid never shows a row whose control
+ * would mean nothing. A batch of nothing but documents therefore lands on an empty state rather
+ * than on a form, which is correct and is why the empty case below distinguishes the two ways in.
+ */
+const images = media.filter((asset) => asset.mime_type.startsWith('image/'));
+
+const withUrls = images.map((asset) => ({
+  ...asset,
+  url: taproot.storage.publicUrl(asset.storage_key),
+}));
+
+const fromUpload = idParam.length > 0;
+const rejected = Astro.url.searchParams.get('rejected');
+const saved = Astro.url.searchParams.get('saved');
+const error = Astro.url.searchParams.get('error');
+const remaining = Math.max(0, total - images.length);
+---
+
+<AdminLayout
+  title="Describe images"
+  user={user}
+  breadcrumbs={[{ label: 'Media', href: '/admin/media' }, { label: 'Describe images' }]}
+  flash={saved ? `Saved ${saved} ${saved === '1' ? 'description' : 'descriptions'}.` : null}
+>
+  <PageHeader
+    title="Describe images"
+    meta={fromUpload
+      ? `${images.length} just uploaded`
+      : `${total} ${total === 1 ? 'image needs' : 'images need'} a description`}
+  />
+
+  {
+    rejected && (
+      <p class="mb-6 rounded-md border border-warning-border bg-warning-subtle px-4 py-3 text-sm text-warning-strong">
+        {/*
+          A partial success has to name what did not land. The rest of the batch uploaded, so this
+          is not an error state — but leaving it unsaid means somebody counts the grid, finds one
+          missing, and has no idea which or why.
+        */}
+        Some files were not uploaded: {rejected}
+      </p>
+    )
+  }
+
+  {
+    saved && (
+      <p class="mb-6 rounded-md border border-success-border bg-success-subtle px-4 py-3 text-sm text-success-strong">
+        Saved {saved} {saved === '1' ? 'description' : 'descriptions'}.
+      </p>
+    )
+  }
+
+  {
+    error && (
+      <p class="mb-6 rounded-md border border-danger-border bg-danger-subtle px-4 py-3 text-sm text-danger-strong">
+        {error}
+      </p>
+    )
+  }
+
+  {
+    withUrls.length === 0 ? (
+      <div class="rounded-lg border border-dashed border-border px-4 py-10 text-center">
+        <p class="text-sm text-content-muted">
+          {fromUpload
+            ? 'Nothing here needs describing — the files you uploaded are not images.'
+            : 'Every image in the library is either described or marked decorative.'}
+        </p>
+        <a href="/admin/media" class="mt-3 inline-block text-sm underline underline-offset-2">
+          Back to the library
+        </a>
+      </div>
+    ) : (
+      <form method="post" action="/api/taproot/media/describe" class="max-w-3xl">
+        <input type="hidden" name="ids" value={withUrls.map((asset) => asset.id).join(',')} />
+
+        <p class="mb-6 max-w-prose text-sm text-content-muted">
+          Describe what each image conveys, in the context it will be used. If an image carries no
+          information of its own — a divider, a decorative flourish — mark it decorative instead, and
+          a screen reader will skip it. Leaving a row untouched leaves it undescribed.
+        </p>
+
+        <ul class="space-y-4">
+          {withUrls.map((asset, index) => (
+            <li class="flex flex-wrap items-start gap-4 rounded-lg border border-border bg-surface-raised p-4 sm:flex-nowrap">
+              {/*
+                `alt=""` on the thumbnail, deliberately and permanently. It is the image being
+                described, so the only honest description available is the filename beside it —
+                and repeating that would have a screen reader announce the same words twice for
+                every row. The label below is what names this control.
+              */}
+              <img
+                src={`${asset.url}?w=160&ar=1&f=webp`}
+                alt=""
+                width="80"
+                height="80"
+                loading="lazy"
+                class="h-20 w-20 shrink-0 rounded-md border border-border object-cover"
+              />
+
+              <div class="min-w-0 flex-1">
+                <label
+                  for={`alt-${asset.id}`}
+                  class="block truncate text-sm font-medium"
+                  title={asset.filename}
+                >
+                  {asset.filename}
+                </label>
+
+                <input
+                  id={`alt-${asset.id}`}
+                  name={`alt-${asset.id}`}
+                  value={asset.alt_text ?? ''}
+                  autofocus={index === 0}
+                  aria-describedby={`alt-hint-${asset.id}`}
+                  class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+                />
+
+                <label
+                  for={`decorative-${asset.id}`}
+                  class="mt-2 flex items-start gap-2 text-xs font-normal"
+                >
+                  {/*
+                    The only control that writes `''`. Blank text means null — "nobody has said" —
+                    and this means "somebody decided it carries no information". A grid where blank
+                    meant decorative would mark every skipped row decorative by omission, which is
+                    the failure that makes the whole report stop being trustworthy.
+                  */}
+                  <input
+                    id={`decorative-${asset.id}`}
+                    name={`decorative-${asset.id}`}
+                    type="checkbox"
+                    checked={asset.alt_text === ''}
+                    class="mt-0.5"
+                  />
+                  Decorative — it carries no information
+                </label>
+
+                <p id={`alt-hint-${asset.id}`} class="mt-1 text-xs text-content-subtle">
+                  {asset.width && asset.height
+                    ? `${asset.width}×${asset.height}`
+                    : asset.mime_type}
+                  {' · '}
+                  <a href={`/admin/media/${asset.id}`} class="underline underline-offset-2">
+                    Open this asset
+                  </a>
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {
+          remaining > 0 && (
+            <p class="mt-4 text-sm text-content-subtle">
+              Showing {images.length} of {total}. Save these and come back for the rest.
+            </p>
+          )
+        }
+
+        <div class="mt-6 flex flex-wrap gap-3">
+          <button
+            type="submit"
+            class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+          >
+            Save descriptions
+          </button>
+          <a
+            href="/admin/media"
+            class="rounded-md border border-border-strong px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-sunken"
+          >
+            Skip for now
+          </a>
+        </div>
+      </form>
+    )
+  }
+</AdminLayout>

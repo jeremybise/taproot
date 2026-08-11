@@ -10,8 +10,28 @@ description: Uploading, alt text, and the focal point that keeps faces in frame.
 From the media library, or from any image field — the picker has an upload tab, so you never have to
 leave what you are writing.
 
-**You will be asked for alt text as you upload.** That moment is when you know what the image is
-for. An upload path that never asks is how a library fills with images nobody can describe.
+The library takes **up to ten files at once**, up to 60 MB in total. If one file is too big the rest
+still upload, and the next screen tells you which did not. Asking for more than ten at a time is
+refused rather than quietly trimmed, so you never have to work out which ones were dropped.
+
+**You will be asked to describe your images straight after uploading.** That moment is when you know
+what the image is for, and an upload path that never asks is how a library fills with images nobody
+can describe. From the picker — one image, chosen for one field — the alt text box is right there on
+the upload form. From the library, where you may have added ten at once, you land on a screen with a
+row per image instead: one description cannot serve ten pictures.
+
+## Describing several images at once
+
+The describe screen gives each image a thumbnail, a description box and a **Decorative** tick. Fill
+in what you can and press save.
+
+**A row you leave blank stays an open question.** It is not marked decorative — describing three of
+twelve images must not quietly declare the other nine finished. Come back to the rest whenever you
+like; the [accessibility report](/content/accessibility/) keeps listing them until they are done, and
+its **Describe them together** button opens this same screen for whatever is still outstanding. That
+is the way to clear a backlog: in screenfuls, rather than one image at a time.
+
+If you type a description over a Decorative tick that was already there, the description wins.
 
 ## Alt text
 

@@ -152,32 +152,31 @@ const uploadError = Astro.url.searchParams.get('error');
         enctype="multipart/form-data"
         class="mb-8 max-w-xl space-y-4 rounded-lg border border-border bg-surface-raised p-5"
       >
-        <h2 class="text-base font-semibold">Upload an asset</h2>
+        <h2 class="text-base font-semibold">Upload assets</h2>
 
         <div>
           <label for="file" class="block text-sm font-medium">
-            File
+            Files
           </label>
+          {/*
+            The alt box that used to sit under this is gone, and that is the point rather than a
+            loss. One description cannot serve twenty images, so a single box beside a `multiple`
+            input is a control that silently applies to the first file or to none. The question
+            moves to the step immediately after — every upload lands on the describe screen — so
+            "upload-in-place asks for alt text" still holds; it is asked once per image instead of
+            once per request. The picker's own upload keeps its inline box, because that one is
+            genuinely a single file being chosen for a single field.
+          */}
+          <p id="file-hint" class="mt-0.5 text-xs text-content-subtle">
+            Up to 10 at a time. You will be asked to describe any images on the next screen.
+          </p>
           <input
             id="file"
             name="file"
             type="file"
+            multiple
             required
-            class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div>
-          <label for="alt" class="block text-sm font-medium">
-            Alt text
-          </label>
-          <p id="alt-hint" class="mt-0.5 text-xs text-content-subtle">
-            Describe what the image conveys. Leave blank only if it is purely decorative.
-          </p>
-          <input
-            id="alt"
-            name="alt"
-            aria-describedby="alt-hint"
+            aria-describedby="file-hint"
             class="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
           />
         </div>

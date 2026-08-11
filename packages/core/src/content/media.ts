@@ -29,6 +29,22 @@ export interface MediaFilters {
    * editor picks "Images", not a list of the eleven image MIME types a browser might send.
    */
   accept?: string[];
+  /**
+   * Images nobody has described and nobody has marked decorative.
+   *
+   * `alt_text is null` and **not** `= ''`, which is the whole three-state rule in one predicate:
+   * null is "nobody has said", `''` is "somebody decided it carries no information", and only the
+   * first is an open question. Asking `!alt_text` here would drag every divider and icon back into
+   * a list an editor has already finished with — the same mistake `needsAltText` exists to stop
+   * call sites making.
+   *
+   * Narrowed to `image/` because alt text is a question about images; a PDF has no such attribute.
+   *
+   * It lives here, in the shared predicate, because two screens ask it — the accessibility report's
+   * count and the bulk describe grid — and a grid that disagreed with the number that sent somebody
+   * to it is the faceted-count bug one feature along.
+   */
+  undescribed?: boolean;
 }
 
 export interface ListMediaOptions extends MediaFilters {
@@ -97,8 +113,22 @@ function applyMediaFilters(query: MediaQuery, filters: MediaFilters): MediaQuery
     q = q.where((eb) => eb.or(accept.map((prefix) => eb('mime_type', 'like', `${prefix}%`))));
   }
 
+  if (filters.undescribed) {
+    q = q.where('alt_text', 'is', null).where('mime_type', 'like', 'image/%');
+  }
+
   return q;
 }
+
+/**
+ * The same query the library screen runs, exposed so the accessibility report cannot drift from it.
+ *
+ * Exported rather than left private because `undescribedImages` builds its own `selectFrom('media')`
+ * to keep its select list to three columns, and the alternative to sharing this was spelling
+ * `alt_text is null and mime_type like 'image/%'` in two files — which is exactly the pairing that
+ * makes a count and the grid it links to disagree.
+ */
+export { applyMediaFilters };
 
 /**
  * Whether an asset's MIME type satisfies a field's accept list.

@@ -289,9 +289,26 @@ const filtered = Boolean(search || typeFilter || ruleFilter || includeUnpublishe
         <>
           <p class="mt-1 max-w-prose text-sm text-content-muted">
             {undescribed.total} {undescribed.total === 1 ? 'image has' : 'images have'} no
-            description and no decorative mark — including any not yet placed on a page. Open one to
-            describe it, or to say it carries no information of its own.
+            description and no decorative mark — including any not yet placed on a page. Describe
+            them together, or open one to say it carries no information of its own.
           </p>
+
+          {/*
+            The bulk route is the primary action here, and it is what makes this section actionable
+            rather than merely accurate. A list of forty filenames each linking to its own screen is
+            a true report and forty page loads of work; the describe grid answers the same backlog
+            in screenfuls. The individual links stay underneath, because an image that needs a
+            careful description — or a hotspot set while you are there — still wants its own screen.
+          */}
+          <p class="mt-3">
+            <a
+              href="/admin/media/describe"
+              class="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-colors hover:bg-accent-hover"
+            >
+              Describe {undescribed.total === 1 ? 'it' : 'them'} together
+            </a>
+          </p>
+
           <ul class="mt-3 space-y-1 text-sm">
             {undescribed.images.map((image) => (
               <li>
@@ -302,10 +319,7 @@ const filtered = Boolean(search || typeFilter || ruleFilter || includeUnpublishe
             ))}
             {undescribed.total > undescribed.images.length && (
               <li class="text-content-subtle">
-                and {undescribed.total - undescribed.images.length} more —{' '}
-                <a href="/admin/media" class="underline">
-                  the whole library
-                </a>
+                and {undescribed.total - undescribed.images.length} more
               </li>
             )}
           </ul>

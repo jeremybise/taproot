@@ -119,6 +119,8 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/snippets/new', 'snippets/new'],
           ['/snippets/[id]', 'snippets/[id]'],
           ['/media', 'media/index'],
+          // Before `[id]`, so the static segment cannot be read as an asset id.
+          ['/media/describe', 'media/describe'],
           ['/media/[id]', 'media/[id]'],
           ['/taxonomies', 'taxonomies/index'],
           ['/taxonomies/[id]', 'taxonomies/[id]'],
@@ -187,6 +189,8 @@ export default function taproot(options: TaprootOptions = {}): AstroIntegration 
           ['/snippets', 'snippets/index'],
           ['/snippets/[id]', 'snippets/[id]'],
           ['/media', 'media/index'],
+          // Before `[id]`, so the static segment cannot be read as an asset id.
+          ['/media/describe', 'media/describe'],
           ['/media/[id]', 'media/[id]'],
           ['/media/[id]/details', 'media/[id]/details'],
           ['/media/file/[...key]', 'media/file/[...key]'],
