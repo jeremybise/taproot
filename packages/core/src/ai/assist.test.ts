@@ -211,3 +211,59 @@ describe('providers', () => {
     await expect(a.describeImage(big, CONTEXT)).resolves.toBe('ok');
   });
 });
+
+describe('effort', () => {
+  /**
+   * `effort` errors on Haiku 4.5 and Sonnet 4.5, and sending it unconditionally made those two fail
+   * every request — the models somebody reaches for first on a bulk alt-text run over hundreds of
+   * images. These assert the **request body**, not the contents of the allowlist, so the tests stay
+   * about the behaviour rather than restating the set.
+   */
+  async function callWith(model: string) {
+    respondWith(anthropicText('ok'));
+    const provider = createAiProvider({ TAPROOT_ANTHROPIC_API_KEY: 'k' }, 'anthropic', model)!;
+    await provider.generate({ system: 's', prompt: 'p', maxTokens: 512 });
+    return JSON.parse(String(calls[0]!.init.body)) as { output_config?: unknown; model: string };
+  }
+
+  it('sends effort to a model that accepts it', async () => {
+    expect((await callWith('claude-opus-5')).output_config).toEqual({ effort: 'low' });
+  });
+
+  it('omits effort for Haiku 4.5, which rejects it', async () => {
+    // The bug this closes: the cheapest model was the one that could not be used at all.
+    const body = await callWith('claude-haiku-4-5');
+    expect(body.output_config).toBeUndefined();
+    expect(body.model).toBe('claude-haiku-4-5');
+  });
+
+  it('omits effort for Sonnet 4.5, which rejects it', async () => {
+    expect((await callWith('claude-sonnet-4-5')).output_config).toBeUndefined();
+  });
+
+  it('omits effort for a model it has never heard of', async () => {
+    /*
+     * The direction the allowlist fails in, and the reason it is an allowlist. A model released
+     * after this code was written loses an optimisation; it does not lose the feature.
+     */
+    expect((await callWith('claude-something-unreleased')).output_config).toBeUndefined();
+  });
+
+  it('names the model on a 4xx but not on a 5xx', async () => {
+    // A wrong model is the likeliest cause of a 400 and the least visible: the settings field takes
+    // any string, so the provider's complaint is about a parameter rather than about the model.
+    respondWith({ error: 'bad model' }, 400);
+    const bad = createAiProvider({ TAPROOT_ANTHROPIC_API_KEY: 'k' }, 'anthropic', 'claude-nope')!;
+    const e400 = await bad
+      .generate({ system: 's', prompt: 'p', maxTokens: 64 })
+      .catch((c: Error) => c);
+    expect((e400 as Error).message).toContain('claude-nope');
+
+    // On a 5xx the model is not the problem, and naming it would misdirect.
+    respondWith({ error: 'upstream' }, 503);
+    const e503 = await bad
+      .generate({ system: 's', prompt: 'p', maxTokens: 64 })
+      .catch((c: Error) => c);
+    expect((e503 as Error).message).not.toContain('claude-nope');
+  });
+});

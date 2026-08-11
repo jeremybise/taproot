@@ -1263,6 +1263,17 @@ the environment's keys with the `settings` row. Seven things hold it up:
   is what search matches, with no second walk to drift. Capped at `MAX_PROSE` because a long page is
   thousands of tokens per button press. A **missing** row is reported as "not indexed yet" rather than
   summarised as empty, which is the state a database sits in before `npm run db:reindex`.
+- **`output_config.effort` is sent only to models that accept it, via an allowlist that fails towards
+  omission.** It **errors** on Haiku 4.5 and Sonnet 4.5 — precisely the models somebody picks for a
+  bulk alt-text run over hundreds of images — so sending it unconditionally made the cheapest options
+  the ones that could not be used at all, with a 400 naming the parameter rather than the cause. An
+  allowlist rather than a denylist because the two directions fail differently: omitting `effort`
+  costs some tokens, sending it where it is refused costs the whole feature. So an unknown model — one
+  released after that line was written, or a pinned snapshot — loses the optimisation and keeps
+  working, which is the only safe way for the list to go stale. Do not "fix" it into a denylist, and
+  do not validate the model field against a hardcoded list on the settings form: that would refuse a
+  model newer than the code, which is worse than passing a typo through to a provider error that
+  names it.
 - **A parse failure throws rather than falling back.** The two-line `TITLE:`/`DESCRIPTION:` format is
   the plainest shape all three providers hit, and what makes it safe is that an unparseable reply is
   an error — putting the whole blob in the title field would look like the feature working. Same

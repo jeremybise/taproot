@@ -33,6 +33,14 @@ one without the other is reasonable. Both start off.
 
 You can leave **Model** blank to use the provider's default, or set it to pin a particular one.
 
+For Claude, any of these work: `claude-opus-5` (the default), `claude-opus-4-8`, `claude-opus-4-7`,
+`claude-opus-4-6`, `claude-sonnet-5`, `claude-sonnet-4-6`, `claude-haiku-4-5`, or `claude-fable-5`.
+**`claude-sonnet-5` is a good choice for this job** — describing an image in a sentence is not hard
+reasoning, and it costs a fraction of Opus. `claude-haiku-4-5` is cheaper still.
+
+If you set a model name the provider does not recognise, the Generate button reports the error and
+names the model, which is usually enough to spot a typo.
+
 Each press of a Generate button spends your provider's API credit.
 
 ## Alt text

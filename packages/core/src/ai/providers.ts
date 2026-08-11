@@ -96,7 +96,11 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /** The one place a non-2xx becomes an error, so no adapter invents its own wording. */
-async function readOrThrow(response: Response, provider: AiProviderName): Promise<unknown> {
+async function readOrThrow(
+  response: Response,
+  provider: AiProviderName,
+  model?: string,
+): Promise<unknown> {
   if (!response.ok) {
     /*
      * The body is read for the message but deliberately truncated. A provider error can carry the
@@ -104,7 +108,14 @@ async function readOrThrow(response: Response, provider: AiProviderName): Promis
      * editor's screen and the server log.
      */
     const detail = (await response.text().catch(() => '')).slice(0, 300);
-    throw new AiError(`${provider} responded ${response.status}. ${detail}`.trim());
+    /*
+     * The model is named on a 4xx because it is the likeliest cause and the least visible one: the
+     * settings field takes any string, so a typo or an unsupported model surfaces here as a
+     * provider error about a parameter rather than as "that model is wrong". Left off a 5xx, where
+     * the model is not the problem and saying so would misdirect.
+     */
+    const where = model && response.status < 500 ? ` (model: ${model})` : '';
+    throw new AiError(`${provider} responded ${response.status}${where}. ${detail}`.trim());
   }
   return response.json();
 }
@@ -129,6 +140,38 @@ function requireText(value: string | undefined, provider: AiProviderName): strin
  */
 const ANTHROPIC_MODEL = 'claude-opus-5';
 const ANTHROPIC_VERSION = '2023-06-01';
+
+/**
+ * Models that accept `output_config.effort`. Anything not listed is sent **without** it.
+ *
+ * `effort` is a cost and latency optimisation on a one-sentence task, and it is not universally
+ * accepted — it **errors** on Haiku 4.5 and Sonnet 4.5, which are exactly the models somebody reaches
+ * for on a bulk alt-text run over hundreds of images. Sending it unconditionally made those two fail
+ * every request with a 400 that named the parameter and not the cause, so an operator who picked the
+ * cheapest model got a feature that looked broken.
+ *
+ * **An allowlist rather than a denylist, and unknown means omit**, because the two directions fail
+ * very differently. Omitting `effort` from a model that would have accepted it costs some tokens.
+ * Sending it to one that refuses costs the whole feature. So a model released after this line was
+ * written — or a dated snapshot somebody pinned — quietly loses the optimisation and keeps working,
+ * which is the only safe way for this list to go stale.
+ */
+const EFFORT_MODELS = new Set([
+  'claude-fable-5',
+  'claude-mythos-5',
+  'claude-opus-5',
+  'claude-opus-4-8',
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+  'claude-opus-4-5',
+  'claude-sonnet-5',
+  'claude-sonnet-4-6',
+]);
+
+/** Exported for the test, which asserts the request body rather than this set's contents. */
+export function anthropicSupportsEffort(model: string): boolean {
+  return EFFORT_MODELS.has(model);
+}
 
 function anthropic(apiKey: string, model: string): AiProvider {
   return {
@@ -159,18 +202,22 @@ function anthropic(apiKey: string, model: string): AiProvider {
             max_tokens: maxTokens,
             system,
             /*
-             * `low` effort rather than disabling thinking.
+             * `low` effort rather than disabling thinking, and only where the model takes it.
              *
              * Both cut latency and tokens on a one-sentence task, and disabling has failure modes
              * this code would have to defend against — internal tags leaking into the visible reply
              * being the one that matters here, since the reply goes straight into an input an editor
              * accepts. Lowering effort has none of them.
+             *
+             * Omitted entirely for a model outside `EFFORT_MODELS`; see that list for why silence is
+             * the safe default.
              */
-            output_config: { effort: 'low' },
+            ...(anthropicSupportsEffort(model) ? { output_config: { effort: 'low' } } : {}),
             messages: [{ role: 'user', content }],
           }),
         }),
         'anthropic',
+        model,
       );
 
       const payload = body as {
@@ -231,6 +278,7 @@ function openai(apiKey: string, model: string): AiProvider {
           }),
         }),
         'openai',
+        model,
       );
 
       const payload = body as { choices?: Array<{ message?: { content?: string } }> };
@@ -272,6 +320,7 @@ function gemini(apiKey: string, model: string): AiProvider {
           },
         ),
         'gemini',
+        model,
       );
 
       const payload = body as {
