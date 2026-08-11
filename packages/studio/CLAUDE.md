@@ -105,6 +105,28 @@ could catch it, and `BlockListEditor.test.tsx` renders those exact buttons but a
 `aria-label`, never their glyph. Scan for the character signature, not for double-encoded bytes: the
 byte scan is the obvious thing to write and finds nothing at all.
 
+**Every control that calls a model is `AiButton`, and the mark is reinforcement rather than the
+message.** Three screens offer suggestions — the bulk describe grid twice and an item's SEO panel —
+and presentation duplicated across them is presentation that drifts, which is the same argument
+`StatusBadge` and `Timestamp` already settle. It is also the thing an editor has to *recognise*: a
+marker only means something if it means the same thing everywhere. Four things hold it up:
+- **`--color-ai` is its own hue, not the accent.** The accent is configurable under Settings →
+  Branding, and a marker that moves with somebody's brand cannot mean one fixed thing. Violet because
+  that is the convention for generated content, so it reads without being learned.
+- **Outline, never solid.** Pressing it spends API credit and produces a suggestion somebody still has
+  to read, which is precisely not a screen's confident primary action — and a solid violet button
+  beside a solid accent Save is two controls competing to look most important. Two tokens rather than
+  four for the same reason: with no solid variant there is no label-on-solid pair to check.
+- **Strip the colour and the icon and every one still reads.** The label always says what will happen,
+  so WCAG 1.4.1 holds by construction exactly as it does on the status badges, and the icon carries
+  `aria-hidden`. `AiButton.test.tsx` asserts the accessible name is the label, that a busy state is
+  reported in *words* rather than by opacity, and that `srSuffix` distinguishes rows which otherwise
+  all read "Suggest".
+- **The mark is `sparkle`, singular, and that was decided by looking.** `sparkles` — one large star
+  plus two small — collapses into a violet blob at the 14–16px these buttons draw at. Both are
+  generated: the busier mark is right for Settings → AI's 20px hub card. No amount of reading path
+  data would have told you that; it needed a screenshot.
+
 **A new colour token is not done until it has a pair in `a11y-contrast.mjs`.** The script mirrors
 the `@theme` blocks by hand — jsdom resolves no custom properties, so there is no way to derive
 them — which means a token added to the CSS alone is simply unchecked. The same applies to a new

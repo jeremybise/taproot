@@ -45,6 +45,29 @@
   --color-warning-subtle: light-dark(oklch(96% 0.04 75), oklch(30% 0.05 75));
 
   /*
+   * The mark on an action that calls a model.
+   *
+   * Its own hue rather than the accent, because the accent is *configurable* — an operator picks it
+   * under Settings → Branding — and a marker that moves with the brand cannot mean one fixed thing.
+   * It is also not the primary-action colour: pressing Generate spends the deployment's API credit
+   * and produces a suggestion somebody still has to read, which is precisely not the confident
+   * primary action of a screen.
+   *
+   * Violet because that is the near-universal convention for generated content, so it reads without
+   * being learned. It sits close to `status-scheduled` (285) and is deliberately not adjacent to it
+   * anywhere: status badges live in content lists and this lives on buttons, and the sparkles mark
+   * beside it is what actually carries the meaning. Colour is reinforcement here exactly as it is on
+   * the badges — every one of these buttons says "Suggest" or "Generate" in words, so nothing is
+   * communicated by hue alone and WCAG 1.4.1 holds by construction.
+   *
+   * Two tokens rather than four: there is no solid AI button, so no label-on-solid pair is needed.
+   * Both are checked in `a11y-contrast.mjs` — a colour on a background it has never been measured
+   * against is unchecked however many routes pass.
+   */
+  --color-ai: light-dark(oklch(48% 0.2 300), oklch(76% 0.15 300));
+  --color-ai-subtle: light-dark(oklch(96% 0.03 300), oklch(30% 0.07 300));
+
+  /*
    * Content status colours.
    *
    * Reinforcement, never the message: every badge renders its own text label, so the colour is

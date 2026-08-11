@@ -3,6 +3,7 @@ import { SEO_GUIDANCE, resolveSeo, truncateForPreview, type SeoData } from '@tap
 
 import type { MediaOption } from '../mediaOptions.js';
 import { MediaField } from './media/MediaField.js';
+import { AiButton } from './AiButton.js';
 
 /**
  * The SEO panel: the fields, plus a preview of what they produce.
@@ -129,14 +130,9 @@ export default function SeoPanel({
       */}
       {aiSeo && itemId && (
         <div className="mt-3">
-          <button
-            type="button"
-            onClick={generateSeo}
-            disabled={generating}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-xs font-medium transition-colors hover:bg-surface-sunken disabled:opacity-60"
-          >
-            {generating ? 'Generating…' : 'Generate from page content'}
-          </button>
+          <AiButton size="sm" onClick={generateSeo} busy={generating}>
+            Generate from page content
+          </AiButton>
           <p className="mt-1 text-xs text-content-subtle">
             Fills both boxes from this page's text. Read them before saving — they are a suggestion,
             not a decision.

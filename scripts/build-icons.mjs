@@ -51,8 +51,18 @@ const ICONS = [
   'trash-2',
   'x',
 
-  // Settings → AI assist. `sparkles` is the conventional mark for a generated suggestion, which is
-  // what this screen configures — not an automation, not a robot.
+  /*
+   * The AI mark: `sparkle` singular, not `sparkles`.
+   *
+   * Both are the same convention, and at the 14–16px these buttons draw at, `sparkles` — one large
+   * star plus two small ones — collapses into a violet blob. A single four-pointed star survives the
+   * size. Checked by looking at it rendered rather than by reasoning about the path data, which is
+   * the only way this kind of thing is knowable.
+   *
+   * `sparkles` stays generated because Settings → AI's card in the hub draws at 20px, where the
+   * busier mark reads fine and looks less austere.
+   */
+  'sparkle',
   'sparkles',
 
   // Fixed navigation destinations.

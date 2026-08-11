@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+import { AiButton } from '../AiButton.js';
+
 /**
  * Generate buttons for the bulk describe grid.
  *
@@ -110,14 +112,9 @@ export default function AltTextSuggest({ rows, usedOn = null }: Props) {
   return (
     <div className="mt-4">
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={suggestAll}
-          disabled={runningAll}
-          className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken disabled:opacity-60"
-        >
-          {runningAll ? 'Generating…' : 'Suggest descriptions for empty rows'}
-        </button>
+        <AiButton onClick={suggestAll} busy={runningAll}>
+          Suggest descriptions for empty rows
+        </AiButton>
         <p className="text-xs text-content-subtle">
           Fills only the boxes you have left blank. Read each one before saving.
         </p>
@@ -136,17 +133,17 @@ export default function AltTextSuggest({ rows, usedOn = null }: Props) {
       <ul className="mt-3 space-y-1">
         {rows.map((row) => (
           <li key={row.id} className="flex flex-wrap items-center gap-2 text-xs">
-            <button
-              type="button"
+            {/* The filename rides in `srSuffix`: every row's button reads "Suggest", so without it a
+                screen-reader user gets a list of identical controls. */}
+            <AiButton
+              size="sm"
               onClick={() => suggest(row)}
-              disabled={state[row.id] === 'working' || runningAll}
-              className="rounded-md border border-border-strong px-2 py-1 font-medium transition-colors hover:bg-surface-sunken disabled:opacity-60"
+              busy={state[row.id] === 'working'}
+              disabled={runningAll}
+              srSuffix={`a description for ${row.filename}`}
             >
-              {state[row.id] === 'working' ? 'Generating…' : 'Suggest'}
-              {/* The filename in visually hidden text: every row's button reads "Suggest", so
-                  without this a screen-reader user gets a list of identical controls. */}
-              <span className="sr-only-focusable"> a description for {row.filename}</span>
-            </button>
+              Suggest
+            </AiButton>
             <span className="min-w-0 truncate text-content-subtle" title={row.filename}>
               {row.filename}
             </span>

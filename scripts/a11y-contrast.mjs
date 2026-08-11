@@ -30,6 +30,8 @@ const LIGHT = {
   'danger-subtle': [96, 0.03, 25],
   warning: [62, 0.14, 75],
   'warning-subtle': [96, 0.04, 75],
+  ai: [48, 0.2, 300],
+  'ai-subtle': [96, 0.03, 300],
   'status-draft': [58, 0.01, 250],
   'status-draft-subtle': [95, 0.004, 250],
   'status-review': [62, 0.14, 75],
@@ -62,6 +64,8 @@ const DARK = {
   'danger-subtle': [28, 0.06, 25],
   warning: [75, 0.13, 75],
   'warning-subtle': [30, 0.05, 75],
+  ai: [76, 0.15, 300],
+  'ai-subtle': [30, 0.07, 300],
   'status-draft': [70, 0.015, 250],
   'status-draft-subtle': [30, 0.008, 250],
   'status-review': [75, 0.13, 75],
@@ -88,6 +92,15 @@ const PAIRS = [
   // group headings, and the theme switcher's labels all sit on it.
   ['content-muted', 'surface-sunken', 4.5, 'inactive nav links in the sidebar'],
   ['content-subtle', 'surface-sunken', 4.5, 'group headings in the sidebar'],
+  /*
+   * The AI marker. Held to 4.5 rather than the 3:1 a non-text icon could claim, because the same
+   * token is used for the word "Generating…" while a request is in flight — and a threshold that
+   * depends on which of two states a control is in is a threshold nobody will re-derive correctly.
+   */
+  ['ai', 'surface', 4.5, 'the AI mark on the page background'],
+  ['ai', 'surface-raised', 4.5, 'the AI mark on a card'],
+  ['ai', 'ai-subtle', 4.5, 'the AI mark on its own tint, which is the hovered state'],
+  ['content', 'ai-subtle', 4.5, 'an AI button label on its hovered tint'],
   ['accent-content', 'accent', 4.5, 'primary button label'],
   ['accent-content', 'accent-hover', 4.5, 'primary button label, hovered'],
   /*
