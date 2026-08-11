@@ -26,6 +26,15 @@ export interface MenuLink {
   label: string;
   href: string;
   openInNewTab: boolean;
+  noFollow: boolean;
+  /**
+   * The composed `rel`, or null. Carried all the way here on purpose.
+   *
+   * This is the shape a consumer's template actually renders from, so dropping `rel` at this last
+   * step would leave every site assembling it from `openInNewTab` again — which is precisely what
+   * both existing consumers did, and both wrote `noopener` without `noreferrer`.
+   */
+  rel: string | null;
   children: MenuLink[];
 }
 
@@ -51,6 +60,8 @@ export function applyTermHrefs(
         label: entry.label,
         href,
         openInNewTab: entry.openInNewTab,
+        noFollow: entry.noFollow,
+        rel: entry.rel,
         children: applyTermHrefs(entry.children, termHref),
       };
     })

@@ -38,7 +38,28 @@ const patchSchema = z.object({
   url: z.string().max(2000).nullish(),
   parentId: z.string().nullish(),
   openInNewTab: z.boolean().optional(),
+  noFollow: z.boolean().optional(),
 });
+
+/**
+ * Read a checkbox on a **patch**, where absent is ambiguous and a bare `!== null` is a bug.
+ *
+ * An unticked checkbox is simply not posted, so on a create — where every field is being set at
+ * once — presence *is* the value and `form.get(name) !== null` is correct. A patch cannot use that:
+ * absent means either "the editor unticked it" or "this form never offered the control", and those
+ * must not collapse. They did here. `openInNewTab: form.get('openInNewTab') !== null` sat on this
+ * route while the admin rendered no such checkbox anywhere, so any form POST would have cleared a
+ * flag set through the API — latent only because nothing renders a form against this route yet, and
+ * armed the moment somebody adds the no-JS edit row the docblock below promises.
+ *
+ * A hidden marker beside each checkbox disambiguates: it is present exactly when the form rendered
+ * the control, so no marker means "leave it alone" and a marker with no checkbox means "unticked".
+ * The alternative idiom — a hidden `value="0"` sharing the checkbox's name, reading the last of
+ * `getAll` — needs no second name and is a trick, and this file would have to explain it anyway.
+ */
+function patchFlag(form: FormData, name: string): boolean | undefined {
+  return form.get(`${name}_present`) === null ? undefined : form.get(name) !== null;
+}
 
 /**
  * POST carries both edit and delete, because an HTML form can only GET or POST.
@@ -73,7 +94,8 @@ export const POST = handle(
         termId: (form.get('termId') as string | null) || null,
         url: (form.get('url') as string | null) || null,
         parentId: (form.get('parentId') as string | null) || null,
-        openInNewTab: form.get('openInNewTab') !== null,
+        openInNewTab: patchFlag(form, 'openInNewTab'),
+        noFollow: patchFlag(form, 'noFollow'),
       });
 
       if (!parsed.success) {

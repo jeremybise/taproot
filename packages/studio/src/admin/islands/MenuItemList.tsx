@@ -47,11 +47,31 @@ export interface MenuItemNodeData {
   targetType: 'item' | 'term' | 'url';
   href: string | null;
   brokenReason: 'deleted' | 'unpublished' | 'no_route' | null;
+  openInNewTab: boolean;
+  noFollow: boolean;
 }
 
 export interface MenuItemListProps {
   menuId: string;
   items: MenuItemNodeData[];
+}
+
+/**
+ * What one row's Save sends.
+ *
+ * Named rather than written inline at each of the three sites that pass it along — `saveItem`,
+ * `LevelProps` and the `RowProps` that extends it. Adding the two `rel` flags to the first two and
+ * not the third type-errored, which was the cheap version of this: a patch field that a row can set
+ * and the handler quietly drops is the expensive one, and nothing would have caught it.
+ *
+ * Every key is optional because the route treats absent as "keep what is stored" — see `patchFlag`
+ * in `api/menu-items/[itemId].ts` for why that distinction is load-bearing for the two booleans.
+ */
+export interface MenuItemPatch {
+  label?: string;
+  parentId?: string | null;
+  openInNewTab?: boolean;
+  noFollow?: boolean;
 }
 
 interface TreeNode extends MenuItemNodeData {
@@ -117,7 +137,7 @@ export default function MenuItemList({ menuId, items: initial }: MenuItemListPro
     void persistOrder(orderedIds);
   }
 
-  async function saveItem(id: string, patch: { label?: string; parentId?: string | null }) {
+  async function saveItem(id: string, patch: MenuItemPatch) {
     setBusy(true);
     setMessage(null);
     try {
@@ -199,7 +219,7 @@ interface LevelProps {
   draggable: boolean;
   busy: boolean;
   onReorder: (parentId: string | null, orderedIds: string[]) => void;
-  onSave: (id: string, patch: { label?: string; parentId?: string | null }) => void;
+  onSave: (id: string, patch: MenuItemPatch) => void;
   onRemove: (id: string) => void;
 }
 
@@ -282,6 +302,8 @@ function Row(props: RowProps) {
 
   const [label, setLabel] = useState(node.rawLabel);
   const [nextParent, setNextParent] = useState(node.parentId ?? '');
+  const [newTab, setNewTab] = useState(node.openInNewTab);
+  const [noFollow, setNoFollow] = useState(node.noFollow);
 
   const sortable = useSortable({ id: node.id, disabled: !draggable });
 
@@ -400,7 +422,12 @@ function Row(props: RowProps) {
             type="button"
             disabled={busy}
             onClick={() =>
-              onSave(node.id, { label, parentId: nextParent === '' ? null : nextParent })
+              onSave(node.id, {
+                label,
+                parentId: nextParent === '' ? null : nextParent,
+                openInNewTab: newTab,
+                noFollow,
+              })
             }
             className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-sunken disabled:opacity-60"
           >
@@ -412,6 +439,40 @@ function Row(props: RowProps) {
           <span className="rounded-full border border-border px-2 py-0.5 text-content-subtle">
             {node.targetType === 'item' ? 'Page' : node.targetType === 'term' ? 'Term' : 'Address'}
           </span>
+
+          {/*
+            Each label names the item in visually hidden text, matching the fields above. Every row
+            renders the same two words, so "New tab" alone leaves a screen-reader user with a list of
+            identical checkboxes and no way to tell which entry one belongs to.
+
+            These are saved by the row's own Save button rather than on change: a menu row is edited
+            as a unit, and a checkbox that persisted immediately would be the one control on the
+            screen that did — with no way to undo it and nothing said about it. `flex-wrap` on the
+            container is what keeps this off a second axis at 320px.
+          */}
+          <label htmlFor={`new-tab-${node.id}`} className="flex items-center gap-1.5">
+            <input
+              id={`new-tab-${node.id}`}
+              type="checkbox"
+              checked={newTab}
+              disabled={busy}
+              onChange={(event) => setNewTab(event.target.checked)}
+            />
+            New tab
+            <span className="sr-only-focusable"> for {node.displayLabel}</span>
+          </label>
+
+          <label htmlFor={`nofollow-${node.id}`} className="flex items-center gap-1.5">
+            <input
+              id={`nofollow-${node.id}`}
+              type="checkbox"
+              checked={noFollow}
+              disabled={busy}
+              onChange={(event) => setNoFollow(event.target.checked)}
+            />
+            Nofollow
+            <span className="sr-only-focusable"> for {node.displayLabel}</span>
+          </label>
 
           {node.brokenReason === 'deleted' ? (
             <span className="text-warning">Target was deleted — hidden from visitors</span>

@@ -360,3 +360,72 @@ describe('resolution', () => {
     expect(await resolveMenu(handle.db, 'nope')).toEqual([]);
   });
 });
+
+describe('rel', () => {
+  async function entryWith(flags: { openInNewTab?: boolean; noFollow?: boolean }) {
+    const menu = await createMenu(handle.db, { api_id: 'main', name: 'Main' });
+    const entry = await createMenuItem(handle.db, menu.id, {
+      targetType: 'url',
+      url: 'https://example.edu',
+      label: 'Partner',
+      ...flags,
+    });
+    return { menu, entry, resolved: async () => (await resolveMenu(handle.db, 'main'))[0]! };
+  }
+
+  it('adds the protective pair on a new-tab link whether or not anybody asked', async () => {
+    const { resolved } = await entryWith({ openInNewTab: true });
+    const node = await resolved();
+
+    /*
+     * The whole point of composing this in core. A consumer assembling `rel` from `openInNewTab`
+     * wrote `noopener` and no `noreferrer` on the first real site to render one — not a wrong rel,
+     * a nearly right one that looks deliberate.
+     */
+    expect(node.rel).toBe('noopener noreferrer');
+    expect(node.openInNewTab).toBe(true);
+  });
+
+  it('composes nofollow with the pair, and nofollow alone without it', async () => {
+    const both = await entryWith({ openInNewTab: true, noFollow: true });
+    expect((await both.resolved()).rel).toBe('nofollow noopener noreferrer');
+
+    await handle.db.deleteFrom('menus').execute();
+
+    const only = await entryWith({ noFollow: true });
+    const node = await only.resolved();
+    // A same-tab link has no opener to protect against, so the pair would be noise on every one.
+    expect(node.rel).toBe('nofollow');
+    expect(node.openInNewTab).toBe(false);
+  });
+
+  it('is null rather than empty when the entry needs none', async () => {
+    const { resolved } = await entryWith({});
+    // `rel=""` on every internal link is noise; null lets a consumer spread it conditionally.
+    expect((await resolved()).rel).toBeNull();
+  });
+
+  it('keeps a flag the caller did not mention', async () => {
+    const { entry, resolved } = await entryWith({ openInNewTab: true, noFollow: true });
+
+    // The distinction the island depends on: saving a label must not clear two checkboxes it never
+    // sent. `??` collapsing undefined into false is the shape of bug this guards.
+    await updateMenuItem(handle, entry.id, { label: 'Renamed' });
+
+    const node = await resolved();
+    expect(node.label).toBe('Renamed');
+    expect(node.openInNewTab).toBe(true);
+    expect(node.noFollow).toBe(true);
+    expect(node.rel).toBe('nofollow noopener noreferrer');
+  });
+
+  it('clears a flag when the caller passes false', async () => {
+    const { entry, resolved } = await entryWith({ openInNewTab: true, noFollow: true });
+
+    await updateMenuItem(handle, entry.id, { noFollow: false });
+
+    const node = await resolved();
+    expect(node.noFollow).toBe(false);
+    expect(node.rel).toBe('noopener noreferrer');
+  });
+});

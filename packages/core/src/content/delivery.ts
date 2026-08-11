@@ -880,6 +880,17 @@ export interface DeliveryMenuItem {
   id: string;
   label: string;
   openInNewTab: boolean;
+  noFollow: boolean;
+  /**
+   * The composed `rel`, or null. Render it; do not rebuild it from the two flags.
+   *
+   * It carries `noopener noreferrer` on a new-tab entry, which neither flag names and which the
+   * visitor's safety depends on — the same division `<TaprootEmbed>` draws when it owns `sandbox`
+   * and `referrerpolicy` rather than trusting a caller to remember them. The flags stay in the
+   * payload because they are what the entry actually *says*, and a site that wants to style an
+   * external link differently should not have to parse a token list to find out.
+   */
+  rel: string | null;
   target: DeliveryMenuTarget;
   children: DeliveryMenuItem[];
 }
@@ -952,6 +963,10 @@ function toDeliveryMenuItem(entry: ResolvedMenuItem): DeliveryMenuItem | null {
     id: entry.id,
     label: entry.label,
     openInNewTab: entry.openInNewTab,
+    noFollow: entry.noFollow,
+    // Composed by `resolveMenu` through `menuRel`, not recomputed here — one spelling, so the
+    // admin's own rendering and a consumer's cannot drift.
+    rel: entry.rel,
     target,
     children: entry.children
       .map(toDeliveryMenuItem)

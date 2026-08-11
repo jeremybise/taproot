@@ -33,6 +33,7 @@ import * as m0027 from './0027_summary_template.js';
 import * as m0028 from './0028_snippets.js';
 import * as m0029 from './0029_list_columns.js';
 import * as m0030 from './0030_url_prefix_slug.js';
+import * as m0031 from './0031_menu_no_follow.js';
 
 /**
  * The migration registry.
@@ -76,6 +77,7 @@ export const migrations: Record<string, Migration> = {
   '0028_snippets': m0028,
   '0029_list_columns': m0029,
   '0030_url_prefix_slug': m0030,
+  '0031_menu_no_follow': m0031,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {

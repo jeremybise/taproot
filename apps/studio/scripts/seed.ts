@@ -1747,6 +1747,22 @@ if (existingMenu && (await listMenuItems(handle.db, existingMenu.id)).length > 0
     contentItemId: await pathId('/about'),
   });
 
+  /*
+   * An external entry, which is the only kind that shows what the two `rel` checkboxes do.
+   *
+   * Every other seeded item points inside the site, where opening a new tab is the wrong choice and
+   * `nofollow` says nothing. Seeded with both on so a fresh clone renders
+   * `rel="nofollow noopener noreferrer"` in `apps/web`'s nav — the composed string, not the two
+   * booleans, which is the part a consumer is meant to copy.
+   */
+  await createMenuItem(handle.db, menu.id, {
+    targetType: 'url',
+    url: 'https://www.federalstudentaid.gov/',
+    label: 'Federal Student Aid',
+    openInNewTab: true,
+    noFollow: true,
+  });
+
   // A term archive, which is what makes the taxonomy visible on the public site at all.
   const studentServices = departments.terms.find((term) => term.name === 'Student Services');
   if (studentServices) {

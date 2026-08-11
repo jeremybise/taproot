@@ -11,6 +11,7 @@ import type {
 import { fromBool, now, toBool } from '../db/values.js';
 import { newId } from '../ids.js';
 import { slugify } from './paths.js';
+import { menuRel } from './rel.js';
 
 /**
  * Menus.
@@ -143,6 +144,11 @@ export interface MenuItemInput {
   url?: string | null;
   parentId?: string | null;
   openInNewTab?: boolean;
+  /**
+   * `rel="nofollow"`. The editor's choice, unlike the new-tab pair, which `menuRel` adds whether or
+   * not anybody asked — see `rel.ts` for why only one of the two is storable.
+   */
+  noFollow?: boolean;
 }
 
 /**
@@ -239,6 +245,7 @@ export async function createMenuItem(
     label: input.label?.trim() || null,
     ...target,
     open_in_new_tab: fromBool(input.openInNewTab),
+    no_follow: fromBool(input.noFollow),
     created_at: timestamp,
     updated_at: timestamp,
   };
@@ -323,8 +330,12 @@ export async function updateMenuItem(
     parent_id: parentId,
     depth,
     ...target,
+    // Absent keeps what is stored, matching every other field here. That distinction is what lets
+    // the island PATCH a label without silently clearing both flags — a checkbox the request never
+    // mentions is not a checkbox somebody unticked.
     open_in_new_tab:
       input.openInNewTab === undefined ? existing.open_in_new_tab : fromBool(input.openInNewTab),
+    no_follow: input.noFollow === undefined ? existing.no_follow : fromBool(input.noFollow),
     updated_at: timestamp,
   };
 
@@ -391,6 +402,18 @@ export interface ResolvedMenuItem {
    */
   contentItemId: string | null;
   openInNewTab: boolean;
+  noFollow: boolean;
+  /**
+   * The composed `rel`, or null when the entry needs none.
+   *
+   * Carried **beside** the two flags rather than instead of them, and it is not redundancy. The
+   * flags are what the admin edits and what round-trips into a write; `rel` is what goes in the
+   * markup, and it holds one token pair no flag corresponds to — `noopener noreferrer`, which
+   * `menuRel` adds on a new-tab link whether or not anybody asked. Leaving a consumer to assemble
+   * it from booleans is what produced `rel="noopener"` with no `noreferrer` on the first real site
+   * to render one: not a wrong `rel`, a nearly right one that looks deliberate.
+   */
+  rel: string | null;
   targetType: MenuTargetType;
   /**
    * Why there is no href, for the admin.
@@ -558,6 +581,11 @@ export async function resolveMenu(
          */
         contentItemId: entry.content_item_id ?? null,
         openInNewTab: toBool(entry.open_in_new_tab),
+        noFollow: toBool(entry.no_follow),
+        rel: menuRel({
+          openInNewTab: toBool(entry.open_in_new_tab),
+          noFollow: toBool(entry.no_follow),
+        }),
         targetType: entry.target_type,
         brokenReason,
         term,

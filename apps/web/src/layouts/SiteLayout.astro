@@ -241,7 +241,15 @@ const isCurrent = (href: string) => path === href;
                     <a
                       href={entry.href}
                       aria-current={isCurrent(entry.href) ? 'page' : undefined}
-                      {...(entry.openInNewTab ? { target: '_blank', rel: 'noopener' } : {})}
+                      target={entry.openInNewTab ? '_blank' : undefined}
+                      {/*
+                        `entry.rel`, never a hand-built one. This read `rel: 'noopener'` and dropped
+                        `noreferrer` — and so did the first real site built on Taproot, independently.
+                        Two consumers making the same omission is what moved the composition into
+                        core: the CMS knows `nofollow` was ticked and knows a new-tab link needs the
+                        protective pair, so it sends the finished string and a site renders it.
+                      */}
+                      rel={entry.rel ?? undefined}
                     >
                       {entry.label}
                       {entry.openInNewTab && (

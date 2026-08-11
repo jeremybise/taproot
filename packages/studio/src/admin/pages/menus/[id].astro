@@ -84,6 +84,14 @@ const islandItems = displayRows.map(({ row }) => {
     targetType: row.target_type,
     href: node?.href ?? null,
     brokenReason: node?.brokenReason ?? null,
+    /*
+     * Read from the row, not from `node`. A broken entry — a deleted or unpublished target — is
+     * absent from the resolved tree, and its flags are still the editor's to see and change while
+     * they fix it. `node?.openInNewTab ?? false` would silently untick both on exactly the rows
+     * somebody has opened the screen to repair.
+     */
+    openInNewTab: row.open_in_new_tab === 1,
+    noFollow: row.no_follow === 1,
   };
 });
 
@@ -284,6 +292,52 @@ const inputClass =
                   ))}
                 </select>
               </div>
+
+              {/*
+                Two checkboxes rather than a `rel` text input. The vocabulary is short and
+                security-relevant, so a free-text box would admit whatever somebody pasted — the
+                same argument that makes `ALLOWED_REL` an allowlist. `noopener noreferrer` is
+                deliberately not offered: it is added by `menuRel` on any new-tab entry, and a
+                control for it is a control somebody can untick.
+              */}
+              <fieldset class="mt-3 min-w-0">
+                <legend class="text-xs font-medium">Link behaviour</legend>
+
+                <label
+                  for={`add-new-tab-${key}`}
+                  class="mt-1.5 flex items-start gap-2 text-xs font-normal"
+                >
+                  <input
+                    id={`add-new-tab-${key}`}
+                    name="openInNewTab"
+                    type="checkbox"
+                    aria-describedby={`add-new-tab-hint-${key}`}
+                    class="mt-0.5"
+                  />
+                  Open in a new tab
+                </label>
+                <p id={`add-new-tab-hint-${key}`} class="mt-0.5 ml-5 text-xs text-content-subtle">
+                  Best kept for links that leave the site. Taproot adds the protective
+                  <code class="font-mono"> rel</code> for you.
+                </p>
+
+                <label
+                  for={`add-nofollow-${key}`}
+                  class="mt-2 flex items-start gap-2 text-xs font-normal"
+                >
+                  <input
+                    id={`add-nofollow-${key}`}
+                    name="noFollow"
+                    type="checkbox"
+                    aria-describedby={`add-nofollow-hint-${key}`}
+                    class="mt-0.5"
+                  />
+                  Tell search engines not to follow it
+                </label>
+                <p id={`add-nofollow-hint-${key}`} class="mt-0.5 ml-5 text-xs text-content-subtle">
+                  <code class="font-mono">rel="nofollow"</code>. For a paid or untrusted link.
+                </p>
+              </fieldset>
 
               <button
                 type="submit"

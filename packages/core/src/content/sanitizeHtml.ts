@@ -26,6 +26,10 @@
  * editor produces.
  */
 
+// The only import here, and `rel.ts` is itself importless, so this module stays reachable from
+// anywhere. The allowlist moved there when menus needed the same vocabulary — see that file.
+import { ALLOWED_REL, NEW_TAB_REL } from './rel.js';
+
 /**
  * Tags that survive, each mapped to the attributes allowed on it.
  *
@@ -254,15 +258,6 @@ function serializeAttributes(tag: string, raw: string): string {
 }
 
 /**
- * Relationship tokens an author is allowed to set.
- *
- * A short list rather than free text: `rel` is a security-relevant attribute, and the useful
- * editorial ones are few. Anything outside this set is discarded rather than passed through, so a
- * pasted `rel` cannot carry something nobody vetted.
- */
-const ALLOWED_REL = new Set(['nofollow', 'noopener', 'noreferrer', 'sponsored', 'ugc']);
-
-/**
  * Anchors, handled apart because their attributes constrain each other.
  *
  * A link opening in a new tab without `rel="noopener"` hands the opened page a reference back
@@ -290,10 +285,9 @@ function serializeAnchor(attributes: Map<string, string>): string {
     if (ALLOWED_REL.has(token.toLowerCase())) rel.add(token.toLowerCase());
   }
   // Not negotiable, and added last so it cannot be omitted by an author who set `rel` themselves.
-  if (newTab) {
-    rel.add('noopener');
-    rel.add('noreferrer');
-  }
+  // Shared with `menuRel` rather than spelled twice — a menu link and a prose link opening in a new
+  // tab must not carry different protection.
+  if (newTab) for (const token of NEW_TAB_REL) rel.add(token);
 
   if (rel.size > 0) parts.push(` rel="${escapeAttribute([...rel].join(' '))}"`);
 

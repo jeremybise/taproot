@@ -11,6 +11,7 @@ const createSchema = z.object({
   url: z.string().max(2000).nullish(),
   parentId: z.string().nullish(),
   openInNewTab: z.boolean().default(false),
+  noFollow: z.boolean().default(false),
 });
 
 /**
@@ -39,7 +40,11 @@ export const POST = handle(
             termId: (form.get('termId') as string | null) || null,
             url: (form.get('url') as string | null) || null,
             parentId: (form.get('parentId') as string | null) || null,
+            // An unticked checkbox is absent from a form post, so presence *is* the value. Safe on
+            // create, where every field is being set at once; the PATCH route cannot read it this
+            // way — see the note there.
             openInNewTab: form.get('openInNewTab') !== null,
+            noFollow: form.get('noFollow') !== null,
           };
         })()
       : ((await context.request.json()) as Record<string, unknown>);

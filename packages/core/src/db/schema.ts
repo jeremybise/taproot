@@ -789,6 +789,16 @@ export interface MenuItemsTable {
   term_id: string | null;
   url: string | null;
   open_in_new_tab: SqlBool;
+  /**
+   * `rel="nofollow"` on this entry, which is the editor's choice in a way the new-tab pair is not.
+   *
+   * A separate column rather than a free-text `rel`: the useful editorial tokens are few, and a
+   * text column would let a menu carry something nobody vetted — the reason `ALLOWED_REL` exists at
+   * all. `noopener noreferrer` is deliberately **not** stored, because it is not a decision: it is
+   * added by `menuRel` whenever the entry opens in a new tab, exactly as `serializeAnchor` adds it
+   * in prose. Storing it would make the protection something an editor could untick.
+   */
+  no_follow: SqlBool;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -807,6 +817,24 @@ export interface SettingsTable {
   /** Hex, one per palette. Null is the accent as written in `admin.css`. */
   accent_light: string | null;
   accent_dark: string | null;
+  /**
+   * Which AI provider to call, and with which model. **Never a key** — see `0032_ai_assist`.
+   *
+   * Null provider means "not chosen", which is distinct from "no key configured": an operator can
+   * set a key and not switch it on, and the reverse is a misconfiguration the System screen names
+   * rather than a state that silently half-works.
+   */
+  ai_provider: string | null;
+  ai_model: string | null;
+  /**
+   * One toggle per feature, because they are different decisions with different risks.
+   *
+   * Alt text is a description of an image a machine can actually see; a meta description is a claim
+   * about what a page is for. A site may reasonably want the first and not the second, and one
+   * blanket switch would make that unexpressible.
+   */
+  ai_alt_text: SqlBool;
+  ai_seo: SqlBool;
   updated_at: Timestamp;
   updated_by: string | null;
 }

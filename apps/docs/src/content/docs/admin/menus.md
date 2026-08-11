@@ -42,6 +42,21 @@ to Riverbend College".
 Move buttons reorder. Give an entry a parent to nest it as a dropdown; how many levels actually
 render is up to your site's design.
 
+## Link behaviour
+
+Two checkboxes on every entry, when you add it and on the row afterwards.
+
+**Open in a new tab** is best kept for links that leave your site. Taproot adds the protective
+`rel="noopener noreferrer"` for you, and there is deliberately no control to turn that off — it
+stops the page you opened from being able to reach back into yours, so it is not a preference.
+
+**Tell search engines not to follow it** adds `rel="nofollow"`, which asks a search engine not to
+treat the link as a recommendation. It is for a paid placement, or somewhere you are pointing at
+without vouching for. It is not a way to hide a page from search.
+
+Your site receives the finished `rel` and renders it, so the two boxes mean the same thing wherever
+the menu appears. Both are off unless you turn them on, and nothing about existing entries changed.
+
 ## Term entries
 
 Only useful if your site gives that taxonomy's terms their own pages. If it does not, the entry has
