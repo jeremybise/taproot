@@ -5,6 +5,35 @@ description: Package naming, npm scope, and the publishing rules for @taprootcms
 
 # Releasing Taproot packages
 
+**A release is a tag. Nobody runs `npm publish`, and nobody logs into npm.**
+[`.github/workflows/release.yml`](../../../.github/workflows/release.yml) fires on a `v*` tag,
+re-runs `npm run typecheck` and `npm test`, refuses a tag that disagrees with the four
+`package.json` versions, and publishes all four in dependency order. Authentication is **npm trusted
+publishing over OIDC** — the job mints a short-lived credential npm verifies against each package's
+trusted-publisher configuration, tied to this repository, this workflow filename, and the `release`
+environment. There is deliberately no `NPM_TOKEN` anywhere, so there is nothing to leak or rotate,
+and provenance is attached automatically.
+
+So the whole release is:
+
+```bash
+git tag -a v0.1.49 -m "Version 0.1.49"   # annotated, matching every previous tag
+git push origin v0.1.49
+```
+
+Three things follow, and the first is the one that wastes time:
+
+- **A local `npm whoami` returning 401 means nothing.** Local npm credentials are not part of this
+  process and are expected to be absent or stale. Asking somebody to `npm login` is asking them to
+  set up an authentication path the release deliberately does not use. If a publish needs
+  diagnosing, the evidence is the workflow run, not the laptop.
+- **The version bump is its own commit, and it lands before the tag.** The workflow compares the tag
+  to `packages/*/package.json` and fails the run rather than publishing a version no tag describes —
+  the registry being the one copy nobody can correct afterwards.
+- **A failed run is resumable.** Already-published versions are skipped rather than reattempted, so
+  a run that got core out and died on studio can simply be re-run; without that, npm's immutability
+  would make the retry die on core and burn a version number.
+
 **The names are the architecture.** `@taprootcms/astro` is what a *site* installs, matching Wolly's
 `@wollycms/astro`; the server is `@taprootcms/studio` and a site never installs it. Having those the
 wrong way round was the Phase 0 misreading, and the 3.75b rename is what corrected it.
