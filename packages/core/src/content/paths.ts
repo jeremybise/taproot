@@ -90,6 +90,36 @@ export function ancestorPaths(path: string): string[] {
   return out;
 }
 
+/**
+ * The bounds that select every descendant of a path, as a range rather than a prefix match.
+ *
+ * The predicate is `path > start and path < end`, and it has to be a range because **`like` cannot
+ * use the index**. SQLite's LIKE optimisation only fires when the indexed column has `NOCASE`
+ * collation or `case_sensitive_like` is on; `content_items_path_unique` is a plain BINARY index and
+ * **D1 refuses PRAGMA**, so neither escape is available. Measured on the real index:
+ * `like '/catalog/2026-27/%'` plans as `SCAN content_items`, this plans as `SEARCH … USING INDEX`.
+ * Same lesson as `0020_perf_indexes` — a query that looks correct is not evidence the scan is gone.
+ *
+ * `end` is the prefix with its trailing separator replaced by the next codepoint: `/` is 0x2F and
+ * `0` is 0x30, so `/catalog/` becomes `/catalog0` and everything under `/catalog/` sorts between
+ * them. Nothing else can: a sibling named `/catalog-archive` sorts *below* `/catalog/` because `-`
+ * is 0x2D, and `/catalog0` is the first thing above the branch.
+ *
+ * **Descendants only, never the root itself.** Including it would need an `or`, and this repo has
+ * already paid for one: indexing both sides of `purgeStaleResetTokens`' `or` changed its plan by
+ * nothing at all and the delete had to be split in two to spend the indexes. Every caller wants
+ * descendants anyway — `resolveDelivery` fetches the root separately. `>` rather than `>=` so a
+ * book rooted at `/` excludes the home page; no other root can equal its own prefix, which carries
+ * a trailing separator no stored path has.
+ */
+export function descendantPathRange(rootPath: string): { start: string; end: string } {
+  const normalized = normalizePath(rootPath);
+  const prefix =
+    normalized === PATH_SEPARATOR ? PATH_SEPARATOR : `${normalized}${PATH_SEPARATOR}`;
+
+  return { start: prefix, end: `${prefix.slice(0, -1)}0` };
+}
+
 export interface SubtreeNode {
   id: string;
   path: string;

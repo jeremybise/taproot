@@ -19,6 +19,7 @@ import { createHarness, body, type Harness } from './testHarness.js';
 
 import { GET as resolveGet } from './delivery/resolve.js';
 import { GET as itemsGet } from './delivery/items.js';
+import { GET as bookGet } from './delivery/book.js';
 import { GET as searchGet } from './delivery/search.js';
 import { GET as schemaGet } from './delivery/schema.js';
 import { GET as termsGet } from './delivery/taxonomy/[apiId]/terms.js';
@@ -1045,5 +1046,289 @@ describe('managing keys', () => {
     );
     expect(right.headers.get('location')).toContain('revoked=');
     expect((await getApiKey(h.db.db, key.id))!.revoked_at).not.toBeNull();
+  });
+});
+
+/**
+ * The book outline endpoint.
+ *
+ * Two things are worth a route test rather than a service test. A book that is not published, or a
+ * path that is not a book at all, has to 404 rather than answer an empty outline — because "a book
+ * with no sections yet" is an ordinary state and answering it would hide a misspelled address. And
+ * the tags have to name **every** type, not the ones the outline currently holds, because the write
+ * most worth invalidating for is somebody adding the first section of a new type.
+ */
+describe('the book endpoint', () => {
+  let bookType: ContentTypeRow;
+
+  beforeEach(async () => {
+    bookType = await createContentType(h.db.db, {
+      api_id: 'handbook',
+      name: 'Handbook',
+      name_plural: 'Handbooks',
+      kind: 'page',
+      book_root: true,
+      description: null,
+      icon: null,
+      url_prefix: null,
+      summary_template: null,
+      list_columns: null,
+      list_sort: null,
+      list_sort_field: null,
+      preview_path: null,
+      default_og_image_id: null,
+    });
+  });
+
+  async function book(title: string, status: 'published' | 'draft' = 'published') {
+    return createItem(h.db, bookType, [], { contentTypeId: bookType.id, title, status });
+  }
+
+  it('answers the sections in reading order', async () => {
+    const root = await book('Student Handbook');
+    // Created in reverse alphabetical order, so path order and reading order disagree.
+    for (const title of ['Welcome', 'Policies', 'Attendance']) {
+      await createItem(h.db, type, fields, {
+        contentTypeId: type.id,
+        title,
+        parentId: root.id,
+        status: 'published',
+        data: { body: 'x' },
+      });
+    }
+
+    h.as(editor);
+    const response = await bookGet(
+      h.context({ url: `/api/taproot/delivery/book?path=${root.path}` }),
+    );
+
+    expect(response.status).toBe(200);
+    const payload = await body<{ entries: { title: string }[]; complete: boolean }>(response);
+    expect(payload.entries.map((entry) => entry.title)).toEqual([
+      'Welcome',
+      'Policies',
+      'Attendance',
+    ]);
+    expect(payload.complete).toBe(true);
+  });
+
+  it('requires a path', async () => {
+    h.as(editor);
+    expect((await bookGet(h.context({ url: '/api/taproot/delivery/book' }))).status).toBe(400);
+  });
+
+  it('404s for a path that is not a book, and for one that does not exist', async () => {
+    const ordinary = await published('Admissions');
+    h.as(editor);
+
+    expect(
+      (await bookGet(h.context({ url: `/api/taproot/delivery/book?path=${ordinary.path}` }))).status,
+    ).toBe(404);
+    expect(
+      (await bookGet(h.context({ url: '/api/taproot/delivery/book?path=/nope' }))).status,
+    ).toBe(404);
+  });
+
+  it('404s for an unpublished book rather than leaking its outline', async () => {
+    const root = await book('Next year', 'draft');
+    h.as(editor);
+
+    expect(
+      (await bookGet(h.context({ url: `/api/taproot/delivery/book?path=${root.path}` }))).status,
+    ).toBe(404);
+  });
+
+  it('answers an empty outline for a published book with no sections', async () => {
+    const root = await book('Empty');
+    h.as(editor);
+
+    const response = await bookGet(
+      h.context({ url: `/api/taproot/delivery/book?path=${root.path}` }),
+    );
+    expect(response.status).toBe(200);
+    expect((await body<{ entries: unknown[] }>(response)).entries).toEqual([]);
+  });
+
+  /**
+   * Every type, not only the ones present — a new section can be of a type this outline has never
+   * held, and that is exactly the write a table of contents most needs to be purged by.
+   */
+  it('names the root and every type, so any section write can purge it', async () => {
+    const root = await book('Student Handbook');
+    h.as(editor);
+
+    const response = await bookGet(
+      h.context({ url: `/api/taproot/delivery/book?path=${root.path}` }),
+    );
+
+    const tags = (response.headers.get('cache-tag') ?? '').split(',');
+    expect(tags).toContain(`item:${root.id}`);
+    expect(tags).toContain(`type:${type.api_id}`);
+    expect(tags).toContain(`type:${bookType.api_id}`);
+    expect(tags).toContain('site');
+  });
+
+  it('takes a content:read key, like the rest of delivery', async () => {
+    const root = await book('Student Handbook');
+    const { key } = await withKey();
+
+    h.asKey(key);
+    const response = await bookGet(
+      h.context({ url: `/api/taproot/delivery/book?path=${root.path}` }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+});
+
+/**
+ * Subtree scoping, on the two endpoints that needed it.
+ *
+ * The problem only exists once a site holds a second edition of something: every superseded page is
+ * in the index too, and with several live years a content type crosses the 200-row cap on its own.
+ * Both endpoints take the same parameter spelled the same way, so scoping a listing and scoping a
+ * search are one thing to learn.
+ */
+describe('scoping a listing and a search to a branch', () => {
+  async function branch(root: string) {
+    const parent = await createItem(h.db, type, fields, {
+      contentTypeId: type.id,
+      title: root,
+      status: 'published',
+      data: { body: 'x' },
+    });
+    for (const title of ['Admissions', 'Policies']) {
+      await createItem(h.db, type, fields, {
+        contentTypeId: type.id,
+        title,
+        parentId: parent.id,
+        status: 'published',
+        data: { body: 'findme' },
+      });
+    }
+    return parent;
+  }
+
+  it('lists only what is under the given path', async () => {
+    const current = await branch('2026-27');
+    await branch('2025-26');
+    h.as(editor);
+
+    const response = await itemsGet(
+      h.context({ url: `/api/taproot/delivery/items?under=${current.path}` }),
+    );
+
+    const payload = await body<{ items: { path: string }[]; total: number }>(response);
+    expect(payload.items.map((item) => item.path).sort()).toEqual([
+      '/2026-27/admissions',
+      '/2026-27/policies',
+    ]);
+    // `total` is counted under the same filter, or a pager would page through rows it cannot show.
+    expect(payload.total).toBe(2);
+  });
+
+  it('excludes the branch root itself, which the caller already has', async () => {
+    const current = await branch('2026-27');
+    h.as(editor);
+
+    const response = await itemsGet(
+      h.context({ url: `/api/taproot/delivery/items?under=${current.path}` }),
+    );
+    const payload = await body<{ items: { path: string }[] }>(response);
+    expect(payload.items.some((item) => item.path === current.path)).toBe(false);
+  });
+
+  it('does not reach into a sibling whose path merely starts the same way', async () => {
+    const current = await createItem(h.db, type, fields, {
+      contentTypeId: type.id,
+      title: 'Catalog',
+      slug: 'catalog',
+      status: 'published',
+      data: { body: 'x' },
+    });
+    const decoy = await createItem(h.db, type, fields, {
+      contentTypeId: type.id,
+      title: 'Catalog archive',
+      slug: 'catalog-archive',
+      status: 'published',
+      data: { body: 'x' },
+    });
+    await createItem(h.db, type, fields, {
+      contentTypeId: type.id,
+      title: 'Old',
+      parentId: decoy.id,
+      status: 'published',
+      data: { body: 'x' },
+    });
+
+    h.as(editor);
+    const response = await itemsGet(
+      h.context({ url: `/api/taproot/delivery/items?under=${current.path}` }),
+    );
+    expect((await body<{ items: unknown[] }>(response)).items).toEqual([]);
+  });
+
+  it('answers an empty list for a branch nothing lives under, rather than an error', async () => {
+    h.as(editor);
+    const response = await itemsGet(
+      h.context({ url: '/api/taproot/delivery/items?under=/nothing-here' }),
+    );
+
+    // A branch with no visible items is an ordinary state, unlike a misspelled `type`, which names
+    // something and so 404s.
+    expect(response.status).toBe(200);
+    expect((await body<{ items: unknown[] }>(response)).items).toEqual([]);
+  });
+
+  it('narrows to one level with parent', async () => {
+    const current = await branch('2026-27');
+    const deep = await createItem(h.db, type, fields, {
+      contentTypeId: type.id,
+      title: 'Deep',
+      parentId: (
+        await createItem(h.db, type, fields, {
+          contentTypeId: type.id,
+          title: 'Middle',
+          parentId: current.id,
+          status: 'published',
+          data: { body: 'x' },
+        })
+      ).id,
+      status: 'published',
+      data: { body: 'x' },
+    });
+
+    h.as(editor);
+    const oneLevel = await itemsGet(
+      h.context({ url: `/api/taproot/delivery/items?parent=${current.id}` }),
+    );
+    const branchWide = await itemsGet(
+      h.context({ url: `/api/taproot/delivery/items?under=${current.path}` }),
+    );
+
+    const direct = await body<{ items: { path: string }[] }>(oneLevel);
+    const all = await body<{ items: { path: string }[] }>(branchWide);
+
+    expect(direct.items.some((item) => item.path === deep.path)).toBe(false);
+    expect(all.items.some((item) => item.path === deep.path)).toBe(true);
+  });
+
+  it('scopes a search to one branch', async () => {
+    const current = await branch('2026-27');
+    await branch('2025-26');
+    h.as(editor);
+
+    const everywhere = await searchGet(
+      h.context({ url: '/api/taproot/delivery/search?q=findme' }),
+    );
+    const scoped = await searchGet(
+      h.context({ url: `/api/taproot/delivery/search?q=findme&under=${current.path}` }),
+    );
+
+    expect((await body<{ total: number }>(everywhere)).total).toBe(4);
+
+    const inYear = await body<{ total: number; results: { path: string }[] }>(scoped);
+    expect(inYear.total).toBe(2);
+    expect(inYear.results.every((result) => result.path.startsWith('/2026-27/'))).toBe(true);
   });
 });

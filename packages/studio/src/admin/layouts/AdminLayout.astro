@@ -1,6 +1,6 @@
 ---
 import '../admin.css';
-import { listContentTypes, type User } from '@taprootcms/core';
+import { listContentTypes, typeIsBookRoot, type User } from '@taprootcms/core';
 import { getTaproot, canEditContent, canManageSchema, canStageToRelease } from '../../runtime/guards.js';
 import UserMenu from '../components/UserMenu.astro';
 import Icon from '../components/Icon.astro';
@@ -145,6 +145,16 @@ const groups: NavGroup[] = [
     label: 'Library',
     items: [
       { href: '/admin/media', label: 'Media', icon: 'image' },
+      /**
+       * Only once some content type actually makes books.
+       *
+       * Derived from the types this layout already loaded, so it costs no query — and a deployment
+       * that has never ticked the box is not offered a destination that could only ever be empty.
+       * The same rule Menus and Releases follow one line down: the sidebar shows what a site has.
+       */
+      ...(contentTypes.some(typeIsBookRoot)
+        ? [{ href: '/admin/books', label: 'Books', icon: 'book-open' }]
+        : []),
       // Content, not configuration — an office's contact details rather than a setting — so it
       // lives beside Media rather than under Settings with the block *types*.
       { href: '/admin/blocks', label: 'Reusable blocks', icon: 'blocks' },

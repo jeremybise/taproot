@@ -4,6 +4,7 @@ import {
   ITEM_SORTS,
   listItemSummaries,
   loadSearchExcerpts,
+  normalizePath,
   type ContentStatus,
   type Database,
   type ItemSort,
@@ -79,8 +80,23 @@ export const GET = handleScoped(
     const limit = Math.min(Number(params.get('limit') ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, MAX_LIMIT);
     const offset = Math.max(Number(params.get('offset') ?? 0) || 0, 0);
 
+    /**
+     * `under` scopes a search to one branch — the current catalog year, one handbook.
+     *
+     * The problem it solves only appears with a second edition: every course description and policy
+     * page is then in the index five times over, with nothing to make the current year win. Filtering
+     * the results afterwards on the client is the workaround, and it means paying to index four
+     * superseded years and then discarding them — which also breaks paging, because `total` counts
+     * what was thrown away.
+     *
+     * The same parameter and the same spelling as the listing endpoint, so a site scoping a
+     * directory and a site scoping a search write the same thing.
+     */
+    const under = params.get('under');
+
     const { items, total } = await listItemSummaries(db, {
       contentTypeId,
+      pathPrefix: under !== null ? normalizePath(under) : undefined,
       search: term,
       visibleOnly: true,
       // Kinds with a public URL, exactly as the listing endpoint takes them: a singleton's path is

@@ -1601,6 +1601,156 @@ if (!bannerExists) {
   });
 }
 
+// --- A book -----------------------------------------------------------------
+//
+// A student handbook, seeded so the Books screen and the outline screen have something real on a
+// fresh clone — and so `npm run a11y` can see them at all. Markup that only appears in a state the
+// seed never reaches is markup the audit cannot check, however many routes pass.
+//
+// Nested two levels deep on purpose: a one-level book cannot tell a depth-first walk from a flat
+// one, which is the ordering the whole outline rests on. It sits under an ordinary parent page, so
+// the Books screen's grouping — the whole of how editions are expressed — has a heading to draw.
+
+const handbookType = await ensureType(
+  {
+    api_id: 'handbook',
+    name: 'Handbook',
+    name_plural: 'Handbooks',
+    description:
+      'A document with an outline — a table of contents, a reading order, and previous/next between its pages.',
+    kind: 'page',
+    book_root: true,
+    icon: 'book-open',
+    url_prefix: null,
+    summary_template: '{{ title }}',
+  },
+  [
+    {
+      api_id: 'edition',
+      label: 'Edition',
+      type: 'text',
+      required: false,
+      localized: false,
+      help_text: 'The academic year this edition covers, as readers refer to it.',
+      config: {},
+    },
+    {
+      api_id: 'intro',
+      label: 'Introduction',
+      type: 'richtext',
+      required: false,
+      localized: false,
+      help_text: 'Front matter, shown before the first chapter.',
+      config: {},
+    },
+  ],
+);
+
+const handbooksParentId = await ensureItem(
+  handle,
+  page.type,
+  page.fields,
+  {
+    contentTypeId: page.type.id,
+    title: 'Handbooks',
+    slug: 'handbooks',
+    status: 'published',
+    userId: admin.id,
+    data: { summary: 'Student handbooks, one per academic year.' },
+  },
+  '/handbooks',
+);
+
+const handbookId = await ensureItem(
+  handle,
+  handbookType.type,
+  handbookType.fields,
+  {
+    contentTypeId: handbookType.type.id,
+    title: 'Student Handbook 2026-27',
+    slug: '2026-27',
+    parentId: handbooksParentId,
+    status: 'published',
+    userId: admin.id,
+    data: {
+      edition: '2026-27',
+      intro:
+        '<p>This handbook describes the policies in effect for the 2026-27 academic year. Students are governed by the edition in force when they enrolled.</p>',
+    },
+  },
+  '/handbooks/2026-27',
+);
+
+/**
+ * Chapters, created in reading order rather than alphabetical order.
+ *
+ * `position` comes from creation order, so seeding them alphabetically would make path order and
+ * reading order agree — and a book where those agree cannot demonstrate the outline doing anything.
+ */
+const handbookChapters: { title: string; slug: string; summary: string; sections?: string[] }[] = [
+  {
+    title: 'Welcome',
+    slug: 'welcome',
+    summary: 'What this handbook covers and who it applies to.',
+  },
+  {
+    title: 'Attendance',
+    slug: 'attendance',
+    summary: 'Expectations for class attendance, and how absences are recorded.',
+    sections: ['Reporting an absence', 'Extended absence'],
+  },
+  {
+    title: 'Academic standing',
+    slug: 'academic-standing',
+    summary: 'Good standing, probation, and the path back from suspension.',
+  },
+];
+
+for (const chapter of handbookChapters) {
+  const chapterId = await ensureItem(
+    handle,
+    page.type,
+    page.fields,
+    {
+      contentTypeId: page.type.id,
+      title: chapter.title,
+      slug: chapter.slug,
+      parentId: handbookId,
+      status: 'published',
+      userId: admin.id,
+      data: { summary: chapter.summary, body: `<p>${chapter.summary}</p>` },
+    },
+    `/handbooks/2026-27/${chapter.slug}`,
+  );
+
+  for (const section of chapter.sections ?? []) {
+    const slug = slugifyForSeed(section);
+    await ensureItem(
+      handle,
+      page.type,
+      page.fields,
+      {
+        contentTypeId: page.type.id,
+        title: section,
+        slug,
+        parentId: chapterId,
+        status: 'published',
+        userId: admin.id,
+        data: { summary: `${section}.`, body: `<p>${section}.</p>` },
+      },
+      `/handbooks/2026-27/${chapter.slug}/${slug}`,
+    );
+  }
+}
+
+/** Local rather than importing `slugify`, which the seed does not otherwise reach for. */
+function slugifyForSeed(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 // --- Reusable block ---------------------------------------------------------
 //
 // One library entry, referenced from two pages, so the feature is visible on a fresh clone: edit

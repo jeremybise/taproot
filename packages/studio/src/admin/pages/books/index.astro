@@ -1,0 +1,127 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import StatusBadge from '../../components/StatusBadge.astro';
+import Timestamp from '../../components/Timestamp.astro';
+import { listBooks } from '@taprootcms/core';
+import { getTaproot, loginRedirect } from '../../../runtime/guards.js';
+
+/**
+ * Books — documents rather than sections of the site.
+ *
+ * Under Library beside Reusable blocks and Text snippets, and for the same reason those are there: a
+ * catalog is content an editor works on, not configuration that shapes the site. It is deliberately
+ * *not* a sidebar entry per content type — a book is addressed by its own tree, and the type it
+ * happens to use is a detail, so one destination that spans them is the honest shape. Same argument
+ * "All content" already makes.
+ *
+ * **Grouped by parent, which is the whole of how editions are expressed.** `/catalog/2026-27` and
+ * `/catalog/2027-28` are two books sharing an ordinary parent, so "Catalog" is a heading and the
+ * years are rows beneath it. Nothing models an edition — see `0034_books` for why that stayed out.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+
+const books = await listBooks(taproot.db.db);
+
+/**
+ * Grouped in memory, in the order the query already returned.
+ *
+ * `listBooks` orders by `path`, so editions of one book are contiguous and sort naturally within
+ * their parent — the same reason `parentCandidates` sorts stably before grouping by type.
+ */
+const groups = new Map<string, { title: string; id: string | null; books: typeof books }>();
+for (const book of books) {
+  const key = book.parentId ?? '';
+  const existing = groups.get(key);
+  if (existing) existing.books.push(book);
+  else
+    groups.set(key, {
+      title: book.parentTitle ?? 'Top level',
+      id: book.parentId,
+      books: [book],
+    });
+}
+---
+
+<AdminLayout title="Books" user={taproot.user}>
+  <PageHeader title="Books" />
+
+  <p class="mb-6 max-w-prose text-sm text-content-muted">
+    A book is a document with an outline — a catalog, a handbook, a policy manual. Everything nested
+    under one is a section of it, in the order you arrange them, and your site can render a table of
+    contents and previous/next links from that.
+  </p>
+
+  {
+    books.length === 0 ? (
+      /*
+       * The empty state names the switch that creates one, because nothing on this screen can.
+       * A book is not created here — it is an ordinary content item of a type somebody has marked,
+       * so a "New book" button would be lying about where the decision lives.
+       */
+      <div class="rounded-md border border-border bg-surface-raised px-4 py-6 text-sm text-content-muted">
+        <p class="font-medium text-content">No books yet</p>
+        <p class="mt-1 max-w-prose">
+          A content type becomes a book under{' '}
+          <a class="underline" href="/admin/settings/types">
+            Settings → Content types
+          </a>
+          , by ticking <strong>Items of this type are books</strong>. Every item of that type is then
+          a book, and whatever you nest under it becomes its outline.
+        </p>
+      </div>
+    ) : (
+      <div class="space-y-8">
+        {[...groups.values()].map((group) => (
+          <section aria-labelledby={`group-${group.id ?? 'root'}`}>
+            <h2
+              id={`group-${group.id ?? 'root'}`}
+              class="mb-2 text-sm font-semibold text-content-muted"
+            >
+              {group.id ? (
+                <a class="underline" href={`/admin/content/${group.id}`}>
+                  {group.title}
+                </a>
+              ) : (
+                group.title
+              )}
+            </h2>
+
+            <div class="overflow-x-auto rounded-md border border-border">
+              <table class="w-full text-sm">
+                <thead class="bg-surface-sunken text-left">
+                  <tr>
+                    <th scope="col" class="px-4 py-2 font-medium">Book</th>
+                    <th scope="col" class="px-4 py-2 font-medium">Sections</th>
+                    <th scope="col" class="px-4 py-2 font-medium">Status</th>
+                    <th scope="col" class="px-4 py-2 font-medium">Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.books.map((book) => (
+                    <tr class="border-t border-border">
+                      <td class="px-4 py-2">
+                        <a class="font-medium underline" href={`/admin/books/${book.id}`}>
+                          {book.title}
+                        </a>
+                        <span class="ml-2 text-xs text-content-subtle">{book.typeName}</span>
+                      </td>
+                      <td class="px-4 py-2 tabular-nums">{book.sectionCount}</td>
+                      <td class="px-4 py-2">
+                        <StatusBadge status={book.status} />
+                      </td>
+                      <td class="px-4 py-2">
+                        <Timestamp value={book.updatedAt} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))}
+      </div>
+    )
+  }
+</AdminLayout>

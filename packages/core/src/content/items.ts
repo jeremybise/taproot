@@ -31,15 +31,45 @@ import {
 } from './derivedIndex.js';
 import { blockTypeRegistry, type ContentTypeWithFields } from './types.js';
 import {
+  bookRootWithin,
+  holdsSharedContent,
+  isInBook,
+  typeIsBookRoot,
+  wouldNestBook,
+} from './books.js';
+import {
   buildCollectionPath,
   buildPath,
   computeSubtreeRewrite,
+  descendantPathRange,
   normalizePath,
   slugify,
   wouldCreateCycle,
   type PathRewrite,
   type SubtreeNode,
 } from './paths.js';
+
+/**
+ * What to pass as `validateItemData`'s `allowSharedContent`, and the gate that makes it free.
+ *
+ * **Answered without a query in the overwhelming case.** A book refuses reusable blocks and text
+ * snippets, but almost no item holds either — so the structural check comes first and the indexed
+ * ancestor lookup only runs for data that actually has something to refuse. This is the same
+ * data-driven gate `blockTypesFor` applies to the block registry, and the reason a rule enforced on
+ * every content write costs nothing on nearly every content write.
+ *
+ * Returning `true` when there is nothing to share is not a loophole: with no reusable block and no
+ * snippet token in the data, the option has nothing to act on and the two answers are identical.
+ */
+async function allowSharedContentFor(
+  db: Kysely<Database>,
+  contentType: ContentTypeRow,
+  parentPath: string | null,
+  data: unknown,
+): Promise<boolean> {
+  if (!holdsSharedContent(data)) return true;
+  return !(await isInBook(db, contentType, parentPath));
+}
 
 export class ContentItemError extends Error {
   override name = 'ContentItemError';
@@ -50,6 +80,7 @@ export class ContentItemError extends Error {
       | 'validation_failed'
       | 'cycle'
       | 'singleton_exists'
+      | 'nested_book'
       | 'invalid_parent' = 'validation_failed',
     readonly fieldErrors: Record<string, string[]> = {},
   ) {
@@ -123,6 +154,22 @@ export interface ItemFilters {
   contentTypeId?: string;
   status?: ContentStatus;
   parentId?: string | null;
+  /**
+   * Narrow to everything **below** a path — a whole book, a whole section, a whole catalog year.
+   *
+   * `parentId` is one level and this is the branch, which is the question a table of contents, a
+   * year-scoped listing and a search inside one edition all actually have. Five live catalog years
+   * put every content type over the delivery listing's 200-row cap on its own, while any single year
+   * is comfortably inside it — so without this a consumer either pages through four superseded
+   * years to find the current one, or invents a `catalog-year` taxonomy that duplicates what `path`
+   * already carries.
+   *
+   * **Descendants only, and implemented as a range rather than a `like`.** See
+   * `descendantPathRange`: the index is BINARY, D1 refuses the PRAGMA that would let `like` use it,
+   * and the root is excluded so the predicate needs no `or` — which SQLite has already been shown
+   * here to refuse to spend indexes across.
+   */
+  pathPrefix?: string;
   search?: string;
   /**
    * Term ids to filter by — an item carrying any one of them matches.
@@ -309,6 +356,12 @@ function applyItemFilters(query: ItemQuery, filters: ItemFilters): ItemQuery {
       filters.parentId === null
         ? q.where('parent_id', 'is', null)
         : q.where('parent_id', '=', filters.parentId);
+  }
+  if (filters.pathPrefix !== undefined) {
+    // Two range bounds on the unique path index, never `like`. `queryPlans.test.ts` asserts the
+    // plan, because the wrong form here is a full scan that returns exactly the right rows.
+    const { start, end } = descendantPathRange(filters.pathPrefix);
+    q = q.where('path', '>', start).where('path', '<', end);
   }
   if (filters.search) {
     const needle = `%${filters.search.toLowerCase()}%`;
@@ -978,19 +1031,45 @@ export async function createItem(
     }
   }
 
-  // Loaded once and used twice: validation needs it to check a block's contents, and the text index
-  // needs it to walk them. A second call would be a second query for the same map.
-  const blockTypes = await blockTypesFor(db, fields, input.data ?? {});
-
-  const validation = validateItemData(fields, input.data ?? {}, { blockTypes });
-  if (!validation.success) {
-    throw new ContentItemError('Content failed validation.', 'validation_failed', validation.errors);
-  }
-
+  /**
+   * The parent is resolved **before** validation, because validation now depends on where the item
+   * lands: an item inside a book may not hold shared content, and "inside a book" is a fact about
+   * the parent chain. Nothing in the parent lookup depends on the data being valid, so the two
+   * simply swapped.
+   */
   const parentId = contentType.kind === 'page' ? (input.parentId ?? null) : null;
   const parent = parentId ? await getItem(db, parentId) : undefined;
   if (parentId && !parent) {
     throw new ContentItemError(`Parent item ${parentId} not found.`, 'invalid_parent');
+  }
+
+  // A book inside a book has no answer to "which outline is this section in" — see `wouldNestBook`.
+  // Only asked when this type actually makes book roots, so nothing else pays for the lookup.
+  if (typeIsBookRoot(contentType)) {
+    const enclosing = await wouldNestBook(db, parent?.path ?? null);
+    if (enclosing) {
+      throw new ContentItemError(
+        `"${enclosing.title}" is already a book, and books cannot be nested. Move this outside it.`,
+        'nested_book',
+      );
+    }
+  }
+
+  // Loaded once and used twice: validation needs it to check a block's contents, and the text index
+  // needs it to walk them. A second call would be a second query for the same map.
+  const blockTypes = await blockTypesFor(db, fields, input.data ?? {});
+
+  const validation = validateItemData(fields, input.data ?? {}, {
+    blockTypes,
+    allowSharedContent: await allowSharedContentFor(
+      db,
+      contentType,
+      parent?.path ?? null,
+      input.data ?? {},
+    ),
+  });
+  if (!validation.success) {
+    throw new ContentItemError('Content failed validation.', 'validation_failed', validation.errors);
   }
 
   // Still read, but only for `position` below — the slug comes from the path namespace now, because
@@ -1117,7 +1196,33 @@ export async function updateItem(
 
   if (input.data !== undefined) {
     blockTypes = await blockTypesFor(db, fields, input.data);
-    const validation = validateItemData(fields, input.data, { blockTypes });
+
+    /**
+     * The **destination** decides, not where the item sits now.
+     *
+     * Moving a page that carries a snippet into a book is the same violation as authoring one there,
+     * and reading `existing.path` would miss it. The parent is loaded again here rather than hoisted
+     * out of the move branch below because `allowSharedContentFor` only asks when the data actually
+     * holds something shared — so this second lookup happens on the rare save that could be refused,
+     * and never on the ordinary one.
+     */
+    const destinationParentId =
+      input.parentId !== undefined ? (input.parentId ?? null) : existing.parent_id;
+    const destinationParentPath = holdsSharedContent(input.data)
+      ? destinationParentId
+        ? ((await getItem(db, destinationParentId))?.path ?? null)
+        : null
+      : null;
+
+    const validation = validateItemData(fields, input.data, {
+      blockTypes,
+      allowSharedContent: await allowSharedContentFor(
+        db,
+        contentType,
+        destinationParentPath,
+        input.data,
+      ),
+    });
     if (!validation.success) {
       throw new ContentItemError(
         'Content failed validation.',
@@ -1169,6 +1274,33 @@ export async function updateItem(
     const parent = nextParentId ? await getItem(db, nextParentId) : undefined;
     if (nextParentId && !parent) {
       throw new ContentItemError(`Parent item ${nextParentId} not found.`, 'invalid_parent');
+    }
+
+    /**
+     * A move must not nest one book inside another — see `wouldNestBook`.
+     *
+     * Gated on `parentChanged` rather than the whole branch, because a rename cannot change what a
+     * path is *inside*; and the second query only runs when the destination is genuinely in a book,
+     * so an ordinary move pays one lookup and a move into a book pays two. The subtree check is the
+     * case the type check misses: dragging a plain folder that *holds* a book into another book
+     * nests them, and the item being moved is not a book root itself.
+     */
+    if (parentChanged) {
+      const destination = await wouldNestBook(db, parent?.path ?? null);
+      if (destination) {
+        const nested = await bookRootWithin(
+          db,
+          subtree.map((node) => node.id),
+        );
+        if (nested) {
+          const what =
+            nested.id === id ? 'This is a book' : `"${nested.title}" inside it is a book`;
+          throw new ContentItemError(
+            `${what}, and "${destination.title}" is a book too. Books cannot be nested.`,
+            'nested_book',
+          );
+        }
+      }
     }
 
     slug = await uniquePathSlug(db, contentType, parent?.path ?? null, desiredSlug, id);

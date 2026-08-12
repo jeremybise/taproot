@@ -15,6 +15,7 @@ import { findImage, mediaOptions, referencedMediaOptions } from '../../mediaOpti
 import { parentCandidates } from '../../parentOptions.js';
 import ReleaseBadge from '../../components/ReleaseBadge.astro';
 import {
+  bookRootFor,
   getContentType,
   getItem,
   getRelease,
@@ -99,7 +100,29 @@ const [inReleases, addableReleases] = canStageToRelease(user)
  * and it is why a relation inside a block had no candidates at all.
  */
 const blockTypes = await blockTypeOptionsForFields(taproot.db.db, contentType.fields);
-const reusableBlocks = await reusableBlockOptionsForFields(taproot.db.db, contentType.fields);
+
+/**
+ * Whether this item sits inside a book, which decides whether it may hold shared content.
+ *
+ * A book refuses reusable blocks and text snippets, because both resolve at read time from a row an
+ * editor changes centrally — so editing one would silently rewrite every published edition. That is
+ * enforced by `validateItemData`, which is the boundary; this is only so the editor does not offer
+ * what the save will refuse.
+ */
+const enclosingBook = await bookRootFor(taproot.db.db, item.path);
+
+/**
+ * Emptied inside a book, rather than a new prop threaded through every nested editor.
+ *
+ * `BlockListEditor` already treats an empty library as "nothing to offer", and both the picker and
+ * the snippet inserter are driven by these lists — so removing the affordance is removing the
+ * options. The screen says why in words just below, because a control that is simply absent teaches
+ * nobody anything, which is the failure the nested block field's "create some under Settings"
+ * message already demonstrated.
+ */
+const reusableBlocks = enclosingBook
+  ? []
+  : await reusableBlockOptionsForFields(taproot.db.db, contentType.fields);
 
 const termsByTaxonomy = await termOptionsForFields(taproot.db.db, contentType.fields, {
   blockTypes,
@@ -211,7 +234,7 @@ const flash = error
  * and media lists already make: this page reads the content type anyway, and a fetch per field
  * would be a request per control on every load.
  */
-const snippetOptions = (await listSnippets(taproot.db.db)).map((snippet) => ({
+const snippetOptions = (enclosingBook ? [] : await listSnippets(taproot.db.db)).map((snippet) => ({
   apiId: snippet.api_id,
   name: snippet.name,
   kind: snippet.kind,
@@ -318,6 +341,25 @@ const snippetOptions = (await listSnippets(taproot.db.db)).map((snippet) => ({
           </p>
         )}
       </section>
+    )
+  }
+
+  {
+    /**
+     * Said in words, because a control that is simply absent teaches nobody anything.
+     *
+     * The reusable-block picker and the snippet inserter are gone above; without this an editor who
+     * has used them on another page concludes the admin is broken. Same failure the nested block
+     * field's "create some under Settings" message demonstrated — advice that cannot help, because
+     * the list is empty for a reason unrelated to how many exist.
+     */
+    enclosingBook && (
+      <p class="mb-4 max-w-prose rounded-md border border-border bg-surface-raised px-4 py-3 text-sm text-content-muted">
+        This page is part of <a class="underline" href={`/admin/content/${enclosingBook.id}`}>{enclosingBook.title}</a>,
+        which is a book — so it cannot use reusable blocks or text snippets. Editing one of those
+        later would change every edition already published. Put shared wording on the book's own
+        fields instead.
+      </p>
     )
   }
 

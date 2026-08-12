@@ -129,6 +129,7 @@ const ROUTES = [
    */
   '/admin/media/describe',
   '/admin/blocks',
+  '/admin/books',
   '/admin/snippets',
   '/admin/snippets/new',
   '/admin/taxonomies',
@@ -300,6 +301,31 @@ if (richestItem) {
   const route = `/admin/content/${richestItem.id}#preview-open`;
   ROUTES.push(route);
   EXTRA_COOKIES.set(route, 'taproot_preview_pane=open');
+}
+
+/**
+ * One book's outline screen.
+ *
+ * Picked by section count rather than by taking the first, for the reason that trap has already
+ * caught this repo three times: the outline table, its indentation and its "New edition" form only
+ * exist once a book actually has sections, so auditing an empty one would check a heading and an
+ * empty state while reporting zero. The seeded handbook is nested two levels deep so the indented
+ * rows are in the DOM.
+ */
+const booksHtml = await (await fetch(`${base}/admin/books`, { headers: { cookie } })).text();
+const bookIds = [...booksHtml.matchAll(/books\/([0-9a-f-]{36})/g)].map((match) => match[1]);
+if (bookIds.length > 0) {
+  let richest = bookIds[0];
+  let mostSections = -1;
+  for (const id of bookIds) {
+    const html = await (await fetch(`${base}/admin/books/${id}`, { headers: { cookie } })).text();
+    const sections = (html.match(/<tr/g) ?? []).length;
+    if (sections > mostSections) {
+      mostSections = sections;
+      richest = id;
+    }
+  }
+  ROUTES.push(`/admin/books/${richest}`);
 }
 
 // One block type's field builder. Block types are excluded from the content-types endpoint on

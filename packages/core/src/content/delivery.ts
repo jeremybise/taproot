@@ -10,7 +10,7 @@ import type {
 } from '../db/schema.js';
 import type { StorageAdapter } from '../storage/types.js';
 import { parseJson } from '../db/values.js';
-import { repeaterRowFields } from '../validation/fields.js';
+import { MAX_BLOCK_DEPTH, repeaterRowFields } from '../validation/fields.js';
 import { parseVisibility, type VisibilityCondition } from '../validation/visibility.js';
 import {
   SITE_TAG,
@@ -400,6 +400,19 @@ export async function buildItemPayload(
     collectReferences(result.fields, result.data, collected);
   }
 
+  /**
+   * Relation targets whose field config asked for their values.
+   *
+   * Loaded **before** the reference loaders below, because a hydrated target's own media, relation
+   * and term ids have to reach `collected` in time to ride the queries that were going to run
+   * anyway — exactly what the query-results loop above does, one line up, and for the same reason:
+   * doing it afterwards would mean a second round of loaders, or a card missing its photo.
+   */
+  const hydrated = await hydrateRelationTargets(db, contentType.fields, data, blockTypes, options);
+  for (const entry of hydrated.values()) {
+    collectReferences(entry.fields, entry.data, collected);
+  }
+
   const [media, { references, linkTargets }, terms] = await Promise.all([
     loadMedia(db, [...collected.mediaIds], options),
     loadItemReferences(db, [...collected.itemIds], options),
@@ -474,6 +487,19 @@ export async function buildItemPayload(
      */
     references: {
       ...references,
+      /**
+       * Hydrated relation targets, folded in before query results.
+       *
+       * Same merge rule the query results below follow, and the same reason: two entries for one id
+       * is impossible in a map, so the one carrying `data` has to win over the bare ref
+       * `loadItemReferences` produced. Query results come last because they are the stricter answer
+       * — a listing never shows a draft, even under a preview token.
+       */
+      ...Object.fromEntries(
+        [...hydrated].flatMap(([id, entry]) =>
+          references[id] ? [[id, { ...references[id]!, data: entry.data }] as const] : [],
+        ),
+      ),
       ...Object.fromEntries(
         resolvedQueries.items.map(({ item: row, data: resultData }) => [
           row.id,
@@ -592,6 +618,16 @@ export interface DeliverItemsOptions extends DeliveryOptions {
   offset?: number;
   /** Narrow to types whose items have pages — see `ItemFilters.contentTypeHasItemPages`. */
   contentTypeHasItemPages?: boolean;
+  /** Direct children of one item. `null` for the top level. See `ItemFilters.parentId`. */
+  parentId?: string | null;
+  /**
+   * Everything below a path — one book, one section, one catalog year.
+   *
+   * The branch rather than one level, which is what a year-scoped listing needs: with several live
+   * editions a content type crosses this endpoint's 200-row cap on its own, while any one edition is
+   * comfortably inside it. See `ItemFilters.pathPrefix` for why it is a range and not a `like`.
+   */
+  pathPrefix?: string;
   /**
    * Send each item's own field values, and the maps their ids resolve through.
    *
@@ -623,6 +659,8 @@ export async function deliverItems(
   const filters = {
     contentTypeId: options.contentTypeId,
     termIds: options.termIds,
+    parentId: options.parentId,
+    pathPrefix: options.pathPrefix,
     search: options.search,
     sort: options.sort,
     visibleOnly: true,
@@ -1427,6 +1465,146 @@ function toDeliveryMedia(row: MediaRow, options: DeliveryOptions): DeliveryMedia
  * that rule in JS would be free to disagree with the one every other read uses. Preview pays the
  * extra query; a visitor does not, and a preview is `no-store` anyway.
  */
+/**
+ * How many relation targets one page may hydrate.
+ *
+ * A bound rather than a budget: a single `catalog_entry` is the case this exists for, and a
+ * multi-relation that somebody ticked `includeData` on could otherwise put fifty page bodies on a
+ * payload built to be one round trip. Generous enough that no deliberate use hits it, small enough
+ * that a mistake is capped rather than fatal — the same shape as `MAX_BOOK_SECTIONS`.
+ */
+export const MAX_HYDRATED_RELATIONS = 50;
+
+/**
+ * Item ids stored in relation fields whose config asked for their values.
+ *
+ * Mirrors `collectReferences`' walk rather than inventing a second one, for the reason that walk
+ * already gives: a field this reaches and that one does not — or the other way round — is a
+ * reference that is looked up and never used, or used and never looked up. Blocks and repeater rows
+ * are reached because a relation field can sit in either, which is exactly the gap `fieldTree.ts`
+ * exists to close for the editor's own option loaders.
+ */
+function collectHydratedRelationIds(
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  blockTypes: ReadonlyMap<string, { fields: FieldRow[] }> | undefined,
+  into: Set<string> = new Set(),
+  depth = MAX_BLOCK_DEPTH,
+): Set<string> {
+  for (const field of fields) {
+    const value = data[field.api_id];
+    if (value === undefined || value === null) continue;
+    const entries = Array.isArray(value) ? value : [value];
+
+    if (field.type === 'relation') {
+      const config = parseJson<Record<string, unknown>>(field.config, {});
+      if (config.includeData !== true) continue;
+      for (const id of entries) if (typeof id === 'string') into.add(id);
+      continue;
+    }
+
+    if (field.type === 'block' && blockTypes && depth > 0) {
+      for (const raw of entries) {
+        if (typeof raw !== 'object' || raw === null) continue;
+        const block = raw as { type?: unknown; data?: unknown };
+        if (typeof block.type !== 'string') continue;
+        const blockType = blockTypes.get(block.type);
+        if (!blockType) continue;
+        collectHydratedRelationIds(
+          blockType.fields,
+          (block.data ?? {}) as Record<string, unknown>,
+          blockTypes,
+          into,
+          depth - 1,
+        );
+      }
+      continue;
+    }
+
+    if (field.type === 'repeater') {
+      const subFields = repeaterRowFields(field);
+      for (const raw of entries) {
+        if (typeof raw !== 'object' || raw === null) continue;
+        const row = raw as { data?: unknown };
+        collectHydratedRelationIds(
+          subFields,
+          (row.data ?? {}) as Record<string, unknown>,
+          blockTypes,
+          into,
+          depth,
+        );
+      }
+    }
+  }
+
+  return into;
+}
+
+/**
+ * Load the field values of relation targets that opted into carrying them.
+ *
+ * **The third caller of `resultFields`/`resultData`**, joining the query resolver and `deliverItems`
+ * — which is what keeps one answer to "what does a listed item carry". Two copies of that filter is
+ * how one of them keeps sending `block` after the other stops.
+ *
+ * Three queries at most however many targets there are: one for the rows, one per *distinct* content
+ * type. Visibility is the shared predicate, so a relation cannot hand a consumer a draft it could
+ * not otherwise see.
+ */
+async function hydrateRelationTargets(
+  db: Kysely<Database>,
+  fields: FieldRow[],
+  data: Record<string, unknown>,
+  blockTypes: ReadonlyMap<string, { fields: FieldRow[] }> | undefined,
+  options: DeliveryOptions,
+): Promise<Map<string, { fields: FieldRow[]; data: Record<string, unknown> }>> {
+  const wanted = collectHydratedRelationIds(fields, data, blockTypes);
+  const out = new Map<string, { fields: FieldRow[]; data: Record<string, unknown> }>();
+  if (wanted.size === 0) return out;
+
+  const ids = [...wanted].slice(0, MAX_HYDRATED_RELATIONS);
+
+  let query = db
+    .selectFrom('content_items')
+    .select(['id', 'content_type_id', 'data'])
+    .where('id', 'in', ids);
+
+  /**
+   * The same predicate the bare references use — and **the second of two gates, not the only one.**
+   *
+   * The authoritative gate is the merge in `buildItemPayload`, which attaches `data` only to an id
+   * `loadItemReferences` already returned: an invisible target has no entry to attach to, so its
+   * values cannot reach a payload however this query is written. That is deliberate — one predicate
+   * decides visibility for references, and hydration inherits the answer rather than re-deciding it.
+   *
+   * This filter is kept anyway for cost: without it a page hydrating a draft target reads its whole
+   * `data` blob and its content type, to then discard both. Note the consequence for testing —
+   * removing *either* gate alone leaves the tests green, because the other still holds. Neither is
+   * dead code; they answer different questions.
+   */
+  if (!options.includeUnpublished) query = query.where(visibleToPublic);
+
+  const rows = await query.execute();
+  if (rows.length === 0) return out;
+
+  const byType = new Map<string, FieldRow[]>();
+  for (const typeId of new Set(rows.map((row) => row.content_type_id))) {
+    const contentType = await getContentType(db, typeId);
+    if (contentType) byType.set(typeId, resultFields(contentType.fields));
+  }
+
+  for (const row of rows) {
+    const carried = byType.get(row.content_type_id);
+    if (!carried) continue;
+    out.set(row.id, {
+      fields: carried,
+      data: resultData(carried, parseJson<Record<string, unknown>>(row.data, {})),
+    });
+  }
+
+  return out;
+}
+
 async function loadItemReferences(
   db: Kysely<Database>,
   ids: string[],

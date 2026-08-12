@@ -830,6 +830,16 @@ const RelationConfig: ConfigForm = ({ config, onChange, contentTypes, currentCon
         onChange={(reverseLabel) => onChange({ ...config, reverseLabel })}
       />
 
+      {/*
+       * The hint says what it costs, because the cost is paid on every page that has this field
+       * rather than only where a template reads it — the field config decides, not the request.
+       */}
+      <Toggle
+        label="Send the linked item's content too"
+        hint="On, your site receives the linked item's own field values, not just its title and link — for a page that renders content held somewhere else. Leave it off for a list of links: it makes every request for this page bigger, whether or not your templates use it."
+        checked={config.includeData === true}
+        onChange={(includeData) => onChange({ ...config, includeData })}
+      />
     </div>
   );
 };

@@ -52,6 +52,62 @@ export function collectRichTextRefs(
   return into;
 }
 
+/**
+ * Point a rich-text value's internal item links at different items.
+ *
+ * What a subtree copy needs, and the half `collectRichTextRefs` cannot do: duplicating a catalog
+ * year has to leave the copy's prose linking *within the copy*, or 2027-28's pages all link back
+ * into 2026-27 — a defect with no visible symptom, because every link still works and goes to a real
+ * page that looks almost identical.
+ *
+ * **The marker is kept, never resolved.** `resolveRichTextRefs` replaces `taproot:item:{id}` with a
+ * path because it is building output for a browser; this is rewriting *stored* content, where the
+ * whole point of the marker is that a page which later moves keeps its links. Writing a path here
+ * would silently convert a reference into a frozen URL — the one thing rich-text references exist to
+ * prevent.
+ *
+ * An id with no entry in the map is left exactly as it was, which is what makes this safe for a
+ * partial copy: a link out of the subtree still points where it did. Media is not remapped at all,
+ * because a copy shares the library's assets rather than duplicating them.
+ *
+ * Parsed with `tokenize`, never a regex over the markup, for the reason `sanitizeHtml` gives — a
+ * second opinion about where an attribute ends is a second parser, and the two will disagree.
+ */
+export function remapRichTextItemRefs(html: string, idMap: ReadonlyMap<string, string>): string {
+  if (!html || !html.includes('taproot:item:')) return html;
+
+  const out: string[] = [];
+
+  for (const token of tokenize(html)) {
+    if (token.kind === 'text') {
+      out.push(token.value);
+      continue;
+    }
+    if (token.kind === 'other') continue;
+    if (token.kind === 'close') {
+      out.push(`</${token.name}>`);
+      continue;
+    }
+    if (token.name !== 'a') {
+      out.push(renderOpen(token.name, token.attributes));
+      continue;
+    }
+
+    const href = hrefOf(token.attributes);
+    const match = href ? REF.exec(href) : null;
+    const replacement =
+      match && match[1]!.toLowerCase() === 'item' ? idMap.get(match[2]!) : undefined;
+
+    out.push(
+      replacement
+        ? renderOpen('a', replaceHref(token.attributes, `taproot:item:${replacement}`))
+        : renderOpen('a', token.attributes),
+    );
+  }
+
+  return out.join('');
+}
+
 export interface RichTextTargets {
   /** Item id → the path to link to. Absent means "do not link": missing, or not visible. */
   items: Map<string, string>;

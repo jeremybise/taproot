@@ -60,11 +60,20 @@ export default function ContentTypeSettings({
   contentType,
   fields,
   images = [],
+  bookConflicts = [],
 }: {
   contentType: ContentTypeRow;
   fields: FieldRow[];
   /** Image assets selectable as this type's default social card. */
   images?: MediaOption[];
+  /**
+   * Existing content that would stop saving if this type became a book, from `bookRootBlockers`.
+   *
+   * Rendered rather than recomputed here, following `contentTypeDeleteBlockers`: a screen that works
+   * out for itself whether a write would succeed drifts the moment a rule is added, and the failure
+   * mode is a control that is offered and then refused.
+   */
+  bookConflicts?: { id: string; title: string; path: string; reason: string }[];
 }) {
   const [name, setName] = useState(contentType.name);
   const [namePlural, setNamePlural] = useState(contentType.name_plural);
@@ -96,6 +105,7 @@ export default function ContentTypeSettings({
   const [urlPrefix, setUrlPrefix] = useState(contentType.url_prefix ?? '');
   const [previewPath, setPreviewPath] = useState(contentType.preview_path ?? '');
   const [itemPages, setItemPages] = useState(contentType.item_pages === 1);
+  const [bookRoot, setBookRoot] = useState(contentType.book_root === 1);
   const [ogImageId, setOgImageId] = useState(contentType.default_og_image_id ?? '');
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -127,6 +137,7 @@ export default function ContentTypeSettings({
           ...(contentType.kind === 'collection'
             ? { url_prefix: urlPrefix.trim() || null, item_pages: itemPages }
             : {}),
+          ...(contentType.kind === 'page' ? { book_root: bookRoot } : {}),
           // `null` rather than omitted when blank, so clearing the box turns preview back off.
           // Omitting it would read as "not provided" and keep the old value — the `undefined`/`null`
           // distinction `updateContentType` makes, from the side that has to send it.
@@ -548,6 +559,70 @@ export default function ContentTypeSettings({
             site lists them; they simply have no page of their own, so nothing is served at their
             address and site search leaves them out.
           </p>
+        </div>
+      )}
+
+      {contentType.kind === 'page' && (
+        <div className="rounded-md border border-border bg-surface-raised px-4 py-3">
+          <label htmlFor="ct-book-root" className="flex items-start gap-2.5 text-sm font-medium">
+            <input
+              id="ct-book-root"
+              type="checkbox"
+              checked={bookRoot}
+              aria-describedby="ct-book-root-hint"
+              onChange={(e) => setBookRoot(e.target.checked)}
+              className="mt-0.5"
+            />
+            Items of this type are books
+          </label>
+          <p id="ct-book-root-hint" className="mt-1 text-xs text-content-subtle">
+            A book is a document rather than a section of your site — a catalog, a handbook, a policy
+            manual. Everything nested under one becomes its outline: a table of contents, a reading
+            order, and previous/next links between its pages. You can also duplicate a whole book to
+            start next year&rsquo;s edition, which leaves the published one untouched.
+          </p>
+          {/*
+           * The one consequence somebody has to agree to, said before they tick rather than
+           * discovered by an editor on an unrelated page days later.
+           *
+           * A book refuses reusable blocks and text snippets because both are resolved at read time
+           * from a row somebody edits centrally — so editing one would silently rewrite every
+           * published edition, which is the property the whole feature exists to protect.
+           */}
+          <p className="mt-2 text-xs text-content-subtle">
+            Pages inside a book cannot use reusable blocks or text snippets: editing one later would
+            change every edition you have already published. Put shared wording on the book&rsquo;s
+            own fields instead.
+          </p>
+
+          {bookRoot && bookConflicts.length > 0 && (
+            <div
+              role="status"
+              className="mt-3 rounded-md border border-status-draft-border bg-status-draft-subtle px-3 py-2 text-xs"
+            >
+              <p className="font-medium">
+                {bookConflicts.length} existing page
+                {bookConflicts.length === 1 ? '' : 's'} would stop saving
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {bookConflicts.slice(0, 10).map((conflict) => (
+                  <li key={conflict.id}>
+                    <a href={`/admin/content/${conflict.id}`} className="underline">
+                      {conflict.title}
+                    </a>{' '}
+                    <span className="text-content-subtle">
+                      — {conflict.reason === 'reusable_block' ? 'reusable block' : 'text snippet'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {bookConflicts.length > 10 && (
+                <p className="mt-1 text-content-subtle">
+                  and {bookConflicts.length - 10} more.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 

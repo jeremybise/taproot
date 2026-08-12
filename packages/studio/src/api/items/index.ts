@@ -6,6 +6,7 @@ import {
   itemWebhookSubject,
   itemWriteTags,
   listItems,
+  normalizePath,
   publicationEvents,
   termIdsForBranch,
   type ContentTypeKind,
@@ -94,9 +95,23 @@ export const GET = handle(async ({ context, taproot }) => {
         ]
       : undefined;
 
+  /**
+   * `under` narrows the search to one branch, for a picker that should not offer the whole site.
+   *
+   * The relation-picker half of the same problem the delivery listing has: once a site holds five
+   * catalog years, a "related programs" picker offers five identically titled entries with nothing
+   * distinguishing them, and choosing the wrong one links this year's page to a superseded edition —
+   * which nothing on screen would ever report. A field configured with a scope searches inside it.
+   *
+   * Normalised rather than validated, matching the delivery routes: a path that matches nothing
+   * answers an empty list, which for a picker reads correctly as "no candidates here".
+   */
+  const under = params.get('under');
+
   const result = await listItems(taproot.db.db, {
     contentTypeId,
     contentTypeKinds,
+    pathPrefix: under !== null ? normalizePath(under) : undefined,
     status: (params.get('status') as never) ?? undefined,
     search: params.get('search') ?? undefined,
     termIds,

@@ -426,3 +426,94 @@ describe('embed values', () => {
     });
   });
 });
+
+/**
+ * `allowSharedContent: false` — the rule a book carries, and the mirror image of the file above.
+ *
+ * `requireComplete` relaxes three rules for a half-typed preview; this tightens one for a document
+ * that must not change once published. Both are forwarded unchanged through the block and repeater
+ * recursions, which is why the assertions below are again at **all three walk sites**: a rule that
+ * reaches the top level and not a repeater row is a rule an author routes around by accident.
+ *
+ * What it refuses is content resolved at read time from a row an editor edits centrally — a reusable
+ * block and a text snippet. Media is deliberately untouched; see `books.ts` for why the asymmetry is
+ * principled rather than a carve-out.
+ */
+describe('what allowSharedContent: false refuses', () => {
+  const IN_BOOK = { allowSharedContent: false } as const;
+  const registry = new Map([['card', { fields: [field({ api_id: 'body', type: 'richtext' })] }]]);
+
+  it('refuses a reusable block, and allows an ordinary one', () => {
+    const fields = [field({ api_id: 'body', type: 'block' })];
+    const reusable = { body: [{ id: 'b1', type: 'card', data: {}, ref: 'lib-1' }] };
+    const ordinary = { body: [{ id: 'b1', type: 'card', data: { body: '<p>Hi</p>' } }] };
+
+    expect(validateItemData(fields, reusable, { blockTypes: registry }).success).toBe(true);
+    expect(validateItemData(fields, reusable, { blockTypes: registry, ...IN_BOOK }).success).toBe(
+      false,
+    );
+    // The block field itself still works — it is the *reference* that is refused, not composition.
+    expect(validateItemData(fields, ordinary, { blockTypes: registry, ...IN_BOOK }).success).toBe(
+      true,
+    );
+  });
+
+  it('refuses a snippet token in a top-level text and richtext field', () => {
+    const fields = [
+      field({ api_id: 'label', type: 'text' }),
+      field({ api_id: 'body', type: 'richtext' }),
+    ];
+
+    expect(validateItemData(fields, { label: 'Tuition is {{ tuition }}' }).success).toBe(true);
+    expect(validateItemData(fields, { label: 'Tuition is {{ tuition }}' }, IN_BOOK).success).toBe(
+      false,
+    );
+    expect(validateItemData(fields, { body: '<p>{{ tuition }} a year</p>' }, IN_BOOK).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a snippet token inside a block', () => {
+    const fields = [field({ api_id: 'body', type: 'block' })];
+    const data = { body: [{ id: 'b1', type: 'card', data: { body: '<p>{{ tuition }}</p>' } }] };
+
+    expect(validateItemData(fields, data, { blockTypes: registry }).success).toBe(true);
+    expect(validateItemData(fields, data, { blockTypes: registry, ...IN_BOOK }).success).toBe(false);
+  });
+
+  it('refuses a snippet token inside a repeater row', () => {
+    const fields = [
+      field({
+        api_id: 'rows',
+        type: 'repeater',
+        config: JSON.stringify({ fields: [{ api_id: 'note', label: 'Note', type: 'text' }] }),
+      }),
+    ];
+    const data = { rows: [{ id: 'r1', data: { note: 'Costs {{ tuition }}' } }] };
+
+    expect(validateItemData(fields, data).success).toBe(true);
+    expect(validateItemData(fields, data, IN_BOOK).success).toBe(false);
+  });
+
+  it('leaves ordinary prose containing braces alone', () => {
+    // The token grammar is the `api_id` character set, so `{{ some text }}` is not a token and a
+    // book must not refuse a page that happens to discuss syntax.
+    const fields = [field({ api_id: 'body', type: 'richtext' })];
+
+    expect(validateItemData(fields, { body: '<p>Write {{ some text }} here</p>' }, IN_BOOK).success)
+      .toBe(true);
+  });
+
+  it('still admits media, which is the asymmetry the rule depends on', () => {
+    const fields = [field({ api_id: 'photo', type: 'media' })];
+
+    expect(validateItemData(fields, { photo: 'asset-1' }, IN_BOOK).success).toBe(true);
+  });
+
+  it('does not relax anything, unlike its mirror image', () => {
+    // Tightening one rule must not quietly loosen another: a required field is still required.
+    const fields = [field({ api_id: 'summary', type: 'text', required: 1 })];
+
+    expect(validateItemData(fields, {}, IN_BOOK).success).toBe(false);
+  });
+});

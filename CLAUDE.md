@@ -534,6 +534,85 @@ one. Four things hold it up:
   one flatten somebody else's shape. An unknown taxonomy is a **404** rather than an empty list,
   since "no terms yet" is an ordinary state that would hide a misspelled `api_id` forever.
 
+**A book is a subtree, and `content_types.book_root` is the whole of the model.** A catalog, a
+student handbook, a policy manual — content that is a *document* rather than a section of the site,
+with an outline, a reading order and yearly editions. There is no `books` table and there must not
+be one: a `page` tree already *is* an outline, `path` is materialised and `position` orders siblings,
+so an entity would create a second place for a section's position to live. That is the objection
+that killed regions in Phase 2, a departments entity in Phase 3, and a separate table for block
+types. Seven things hold it up:
+- **A column on the content type, forced off for every kind with no tree**, exactly as `url_prefix`
+  is nulled for a non-collection and `preview_path` for a non-singleton. Read through
+  `typeIsBookRoot`, never the column — it is meaningless for a collection or a singleton, and a call
+  site reading it directly is one that will forget the kind check.
+- **Editions are deliberately not modelled.** An edition is a sibling subtree produced by copying;
+  the thing owning them is their shared parent, an ordinary page whose children `resolveDelivery`
+  already returns — so a year switcher needs no new delivery surface and `is_current` stays a
+  user-defined field. Freezing a published year falls out of the copies being different rows.
+- **A book refuses reusable blocks and text snippets, and that is the load-bearing decision.**
+  Copy-forward freezes *items* and leaks through three shared mechanisms: reusable blocks, snippets
+  and media are global rows resolved at read time, so editing `{{ tuition }}` once silently rewrites
+  every archived year with no revision recording it. **Media stays allowed** and the asymmetry is
+  principled — a media row's *bytes* are immutable by construction, where a snippet's mutability is
+  its entire purpose. Page-wide shared wording belongs on the **book root's own fields**, which is
+  per-edition by construction. Do not add a per-book "allow shared content" toggle: it changes
+  meaning the moment somebody presses Duplicate, and would let a copy produce an edition that is
+  already leaking. The growth path is book-scoped library rows.
+- **The refusal is `validateItemData`'s `allowSharedContent`, the mirror of `requireComplete`.** Same
+  mechanism, opposite direction — one relaxes three rules for a half-typed preview, this tightens one
+  for a frozen document — and both forward unchanged through the block and repeater recursions, which
+  is what makes it a boundary rather than a screen's good manners. Derived on the write path behind
+  `holdsSharedContent`, the `blockTypesFor` gate again: the indexed ancestor lookup only runs for data
+  that actually holds something to refuse. **A token naming no snippet still counts**, because one can
+  be created next year and start substituting into every published edition.
+- **Previous/next costs no query, and a materialised reading order is the wrong fix.** It would
+  renumber every later section on an ordinary insert. A book page already fetches its outline for the
+  contents sidebar, so `bookNavigation` is arithmetic over an array it holds — importless, in
+  `pure.ts`, shared with the consumer. The outline is **its own endpoint** rather than a key on
+  `resolve`, or 188 entries are stored on all 188 cached page responses instead of once. Its ancestor
+  walk uses a **falling ceiling, not `depth - 1`**: a branch the consumer filters out otherwise stalls
+  the search and a deep page reports no ancestors at all.
+- **What is navigable is the consumer's call.** The outline carries each entry's type `api_id` and the
+  site filters — a catalog keeps 91 programs of study inside the book and out of its previous/next.
+  Same split as `resolveMenu`'s `termHref`: Taproot cannot know which branches a site serves.
+- **Nested books are refused rather than resolved**, on create *and* on move — including the case the
+  type check misses, where an ordinary page that *holds* a book is dragged into one. Allowing them
+  means answering "which outline is this section in" and every answer is wrong for somebody.
+
+**`ItemFilters.pathPrefix` is a range comparison and must never become a `like`.** Measured on the
+real index: `like '/catalog/2026-27/%'` plans as `SCAN content_items`, `path > ? and path < ?` as
+`SEARCH … USING INDEX content_items_path_unique`. SQLite's LIKE optimisation needs a `NOCASE` index
+or `case_sensitive_like`, and **D1 refuses PRAGMA**, so neither escape exists — this is
+`0020_perf_indexes`' lesson one query along. `descendantPathRange` is the one place the bounds live;
+`/` is 0x2F so the upper bound replaces it with `0`, which is what excludes `/catalog-archive`
+(sorting below) and `/catalog0zzz` (above). **Descendants only**, so the predicate needs no `or` —
+the thing SQLite already refused to spend indexes across. `queryPlans.test.ts` asserts the plan and
+keeps a negative control proving the `like` form scans.
+
+**Copying a subtree remaps five reference-carrying field types, not one.** `relation` is the obvious
+one and stopping there leaves a `link` field's button, a rich-text `taproot:item:` marker, and either
+of those nested inside a block or a repeater row all pointing back into the previous edition — none
+of which breaks visibly, because every link works and lands on a real page that looks almost
+identical. The walk is structural rather than definition-driven, so it needs no block registry and
+cannot be defeated by a field whose definition has since changed; rich text goes through `tokenize`,
+never a regex. `media`, `taxonomy` and `query.termIds` are left alone deliberately — they point
+outside the subtree by design. Block and repeater ids are **re-minted on a copy and left alone on a
+repair**, which is why `remapData` takes `mintIds`: without the split the repair pass could never
+decide that nothing changed. Copies land as **drafts with `publish_at` cleared**, for the reason
+revisions do not restore a scheduled moment. It is chunked and resumable with **no bookkeeping
+table** — an item counts as copied when something exists at its mapped path, the `ensureItem` shape
+the seed already uses — and an interrupted run leaves a partial subtree of drafts rather than
+anything a visitor can see.
+
+**A relation can carry its target's field values, and `includeData` is off by default.** The third
+caller of `resultFields`/`resultData`, which is what keeps one answer to "what does a listed item
+carry". Hydration runs *before* the reference loaders so a target's own media and term ids ride the
+queries that were going to run anyway. **Two independent gates keep a draft out** — the hydration
+query filters on `visibleToPublic`, and the merge only attaches `data` to an id `loadItemReferences`
+already returned — so removing either alone leaves the tests green. That redundancy is deliberate and
+the test asserts the property rather than one mechanism: a draft's *values* appear nowhere, while its
+id legitimately remains in the host's own `data`, which keeps the stored shape.
+
 **A collection's items can have no pages of their own, and `content_types.item_pages` is how.** A
 staff directory is the case: the people are real content — created, versioned, classified, listed on
 a page the site builds — and none of them is a URL. Without it the CMS insists otherwise, and a

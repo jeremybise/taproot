@@ -4,6 +4,7 @@ import {
   getTaxonomyByApiId,
   isItemSort,
   ITEM_SORTS,
+  normalizePath,
   termIdsForBranch,
   type DeliveryTermRef,
   type ItemSort,
@@ -153,6 +154,23 @@ export const GET = handleScoped(
       termIds = [...new Set(branches.flat())];
     }
 
+    /**
+     * `under` scopes the listing to a branch; `parent` scopes it to one level.
+     *
+     * The pair a book needs and a versioned section needs generally: with five live catalog years,
+     * every content type is over this endpoint's 200-row cap on its own while any single year sits
+     * comfortably inside it. Without `under`, a consumer either pages through four superseded
+     * editions to reach the current one or invents a taxonomy that restates what `path` already
+     * says.
+     *
+     * `under` is normalised rather than validated, matching `resolve`: a path is a path, and a
+     * caller sending a trailing slash or a missing leading one means the same thing. It answers an
+     * empty list for a path nothing lives under — a branch with no visible items is an ordinary
+     * state, unlike a misspelled `type` or `taxonomy`, which name things and so 404.
+     */
+    const under = params.get('under');
+    const parent = params.get('parent');
+
     const limit = Math.min(Number(params.get('limit') ?? 50) || 50, 200);
     const offset = Math.max(Number(params.get('offset') ?? 0) || 0, 0);
 
@@ -161,6 +179,8 @@ export const GET = handleScoped(
       storage: taproot.storage,
       contentTypeId,
       termIds,
+      pathPrefix: under !== null ? normalizePath(under) : undefined,
+      parentId: parent !== null ? parent : undefined,
       search: params.get('q') ?? undefined,
       sort,
       limit,

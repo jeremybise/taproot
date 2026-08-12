@@ -1,0 +1,161 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import StatusBadge from '../../components/StatusBadge.astro';
+import { bookOutline, getContentType, getItem, typeIsBookRoot } from '@taprootcms/core';
+import { getTaproot, loginRedirect, canEditContent } from '../../../runtime/guards.js';
+
+/**
+ * One book's outline — every section, in the order somebody reads them.
+ *
+ * The screen a table of contents is arranged on, and the honest answer to "what will previous and
+ * next do": it renders the same `bookOutline` the delivery endpoint answers with, so the order an
+ * editor sees here is the order a visitor gets rather than a second implementation free to disagree.
+ *
+ * **`includeUnpublished`, unlike delivery.** An editor arranging a book has to see the draft chapter
+ * they are part-way through; a visitor must not. One function, one flag, and the flag is the whole
+ * difference.
+ */
+const taproot = getTaproot(Astro.locals);
+if (!taproot.user) return Astro.redirect(loginRedirect(Astro.url));
+const user = taproot.user;
+
+const item = await getItem(taproot.db.db, Astro.params.id!);
+if (!item) return new Response('Not found', { status: 404 });
+
+const contentType = await getContentType(taproot.db.db, item.content_type_id);
+if (!contentType || !typeIsBookRoot(contentType)) {
+  // Not a book. Redirected to the ordinary editor rather than 404ing, because the id *is* a real
+  // content item — somebody following a stale link should land on the thing, not on nothing.
+  return Astro.redirect(`/admin/content/${item.id}`);
+}
+
+const outline = await bookOutline(taproot.db.db, item.path, { includeUnpublished: true });
+const entries = outline?.entries ?? [];
+
+const canEdit = canEditContent(user);
+
+const copied = Astro.url.searchParams.get('copied');
+const remaining = Astro.url.searchParams.get('remaining');
+---
+
+<AdminLayout
+  title={item.title}
+  user={taproot.user}
+  breadcrumbs={[{ label: 'Books', href: '/admin/books' }, { label: item.title }]}
+>
+  <PageHeader title={item.title}>
+    <a
+      href={`/admin/content/${item.id}`}
+      class="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium"
+    >
+      Edit book details
+    </a>
+  </PageHeader>
+
+  {
+    copied && (
+      <p role="status" class="mb-4 rounded-md border border-border bg-surface-raised px-4 py-3 text-sm">
+        Copied {copied} item{copied === '1' ? '' : 's'}.
+        {remaining && remaining !== '0'
+          ? ` ${remaining} still to copy — run it again to continue.`
+          : ' The new edition is ready as drafts.'}
+      </p>
+    )
+  }
+
+  <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <p class="max-w-prose text-sm text-content-muted">
+      {entries.length} section{entries.length === 1 ? '' : 's'}, in reading order. Your site renders a
+      table of contents and previous/next links from exactly this.
+      {!outline?.complete && ' This book is larger than the outline can carry, so the end is missing.'}
+    </p>
+
+    {
+      canEdit && (
+        /**
+         * "New edition" is the duplicate action wearing the name people actually use.
+         *
+         * A real form POST rather than a button an island wires up, so it works before hydration —
+         * the same reason `RevisionHistory`'s restore is a form. The endpoint is chunked, so a large
+         * book comes back with `remaining` and the message above says to run it again.
+         */
+        <form method="POST" action={`/api/taproot/items/${item.id}/duplicate`} class="flex items-end gap-2">
+          <div>
+            <label for="new-edition-slug" class="block text-xs font-medium">
+              New edition URL segment
+            </label>
+            <input
+              id="new-edition-slug"
+              name="slug"
+              placeholder={`${item.slug}-copy`}
+              class="mt-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 font-mono text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            class="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-label"
+          >
+            New edition
+          </button>
+        </form>
+      )
+    }
+  </div>
+
+  {
+    entries.length === 0 ? (
+      <div class="rounded-md border border-border bg-surface-raised px-4 py-6 text-sm text-content-muted">
+        <p class="font-medium text-content">Nothing in this book yet</p>
+        <p class="mt-1 max-w-prose">
+          Create content items with this book as their parent and they become its sections. Nest them
+          as deeply as the document needs — the outline follows the tree.
+        </p>
+      </div>
+    ) : (
+      <div class="overflow-x-auto rounded-md border border-border">
+        <table class="w-full text-sm">
+          <caption class="sr-only">
+            Sections of {item.title}, in reading order
+          </caption>
+          <thead class="bg-surface-sunken text-left">
+            <tr>
+              <th scope="col" class="px-4 py-2 font-medium">Section</th>
+              <th scope="col" class="px-4 py-2 font-medium">Type</th>
+              <th scope="col" class="px-4 py-2 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr class="border-t border-border">
+                <td class="px-4 py-2">
+                  {/*
+                   * Depth shown as indentation *and* stated in the accessible name, because
+                   * `padding-left` says nothing to a screen reader — the outline's whole meaning is
+                   * the nesting, so it cannot live only in the geometry.
+                   */}
+                  <span style={`padding-inline-start:${entry.depth * 1.25}rem`} class="inline-block">
+                    <a class="underline" href={`/admin/content/${entry.id}`}>
+                      {entry.title}
+                    </a>
+                    <span class="sr-only"> — level {entry.depth + 1}</span>
+                  </span>
+                  <div
+                    style={`padding-inline-start:${entry.depth * 1.25}rem`}
+                    class="font-mono text-xs text-content-subtle"
+                  >
+                    {entry.path}
+                  </div>
+                </td>
+                <td class="px-4 py-2 text-content-subtle">{entry.typeApiId}</td>
+                <td class="px-4 py-2">
+                  <StatusBadge status={entry.status} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</AdminLayout>

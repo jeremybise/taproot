@@ -3,7 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 5 complete, including 5.5 through 5.9; Phase 6 under way.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 5 complete, including 5.5 through 5.9, plus Phase 11 (Books); Phase 6 under way.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
@@ -381,6 +381,32 @@ npm test
 ---
 
 ## What's next
+
+**If you are upgrading, run `npm run db:migrate`** for `0034_books`. Nothing to backfill and no
+reindex: the column defaults to off, so no existing content type becomes a book until somebody says so.
+
+**Books are done** — Phase 11, built ahead of 7–10 because it depends on nothing they add. A book is
+a document rather than a section of your site: a course catalog, a student handbook, a policy manual.
+Tick **Items of this type are books** on a page content type, and every item of it gains an outline —
+the pages nested under it, in the order you arrange them — plus a table of contents your site can
+render, previous/next links between sections, and a **New edition** button that copies the whole
+thing forward as drafts for next year.
+
+Copying an edition repoints links *inside* the book at the copies, so next year's chapters link to
+next year's pages rather than back into last year's, and leaves links pointing outside alone. Because
+the copy is genuinely separate rows, nothing done to the new edition can change what the published
+one says — which is the point when students are entitled to the edition in force when they enrolled.
+
+That property is also why **a book cannot use reusable blocks or text snippets**: both are shared, so
+editing one would silently rewrite editions you already published. Shared wording goes on the book's
+own fields, where it is copied forward with the edition. Settings tells you before you tick the box
+if existing pages would be affected.
+
+Three things came with it that are useful outside books. Listings and search can be **scoped to a
+branch** (`under=/catalog/2026-27`), so several live editions no longer crowd each other out. A
+relation field can opt into **carrying its target's content**, so a page can render something held
+elsewhere in one request instead of fetching a whole type to use one item. And a subtree can be
+**unpublished or de-indexed in one action**, for retiring an old edition.
 
 **Phase 6 is under way** — integrations: webhooks, a tracking script manager, an MCP server, and
 workflow notifications, grouped because they share the outbound-HTTP layer and the API-key scope

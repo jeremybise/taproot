@@ -11,6 +11,7 @@ import type { FieldRow, FieldType } from '../db/schema.js';
 import { parseJson, stringifyJson } from '../db/values.js';
 import { ITEM_SORTS } from '../content/itemSort.js';
 import { CONTENT_TYPE_KINDS } from '../content/contentTypeKind.js';
+import { hasSnippetToken } from '../content/snippetTokens.js';
 import { isFieldVisible, visibilityCondition } from './visibility.js';
 
 /**
@@ -375,6 +376,25 @@ export const fieldConfigSchemas = {
     multiple: z.boolean().default(false),
     /** Label shown on the reverse side of the relation in the target type's editor. */
     reverseLabel: z.string().optional(),
+    /**
+     * Send the target's own field values, not just its title and path.
+     *
+     * A relation target is a name and a URL, which is right for a breadcrumb and insufficient when
+     * the referring page has to *render* the target: a marketing program page showing the curriculum
+     * held on its catalog entry would otherwise fetch every entry of that type and use one.
+     *
+     * **Off by default, and the default is the point.** It is the same trade `include=data` makes on
+     * a listing — a picker asking for two hundred candidates by title must not start paying for two
+     * hundred page bodies — except that this one is paid on *every* `resolve` of the referring page,
+     * because the field config decides rather than the request. Turn it on where a template reads
+     * the target's fields; leave it off for a "see also" list of links.
+     *
+     * `block` and `query` are stripped from what comes back, exactly as they are from a query
+     * field's results and from `include=data`, and for the same reasons: page composition is not a
+     * card, and stripping `query` is what bounds the recursion. Resolution is **one level** — a
+     * hydrated target's own relations stay bare ids.
+     */
+    includeData: z.boolean().default(false),
   }),
   snippet: z.object({
     /**
@@ -874,6 +894,28 @@ export interface ValidateItemOptions {
    * repeater row — along with the write paths still refusing an incomplete item.
    */
   requireComplete?: boolean;
+  /**
+   * Whether content resolved from a shared library row may be stored here. Defaults to yes.
+   *
+   * False for an item inside a **book**, and it is the rule the whole feature rests on. A book is a
+   * document that must not change once published — a catalog year a student holds rights to — and
+   * copying a subtree gets that for the items, because the copies are different rows. It does not
+   * get it for a reusable block or a text snippet: both are resolved at read time from a row an
+   * editor edits centrally, so changing `{{ tuition }}` once silently rewrites every archived year,
+   * with no revision on any page recording that it happened.
+   *
+   * **The mirror image of `requireComplete`, and deliberately the same mechanism.** That one relaxes
+   * three rules for a half-typed preview; this one tightens one for a frozen document. Both are
+   * forwarded unchanged through `validateBlocks` and `validateRepeater`, so a reusable block nested
+   * three deep or a snippet token in a repeater row is refused exactly as one at the top level is —
+   * which is what makes this a boundary rather than a screen's good manners.
+   *
+   * Media is deliberately **not** covered. A media row's bytes are immutable by construction — the
+   * storage key derives from the asset id, so replacing an image writes a new row — and what stays
+   * editable is alt text, a title, a hotspot and a crop, none of which is a factual claim the
+   * document makes. A snippet's whole purpose is the opposite of that.
+   */
+  allowSharedContent?: boolean;
 }
 
 /**
@@ -940,6 +982,27 @@ export function validateItemData(
     }
 
     if (result.data === undefined) continue;
+
+    /**
+     * A book refuses snippet tokens, for the reason it refuses reusable blocks.
+     *
+     * Checked here rather than inside `buildValueSchema` so it covers every walk site at once: the
+     * block and repeater recursions both re-enter `validateItemData`, so a `{{ tuition }}` in the
+     * third row of a repeater inside a block is refused by this same line. Asked of the *parsed*
+     * value, which for richtext is the sanitised string — a token cannot be smuggled through markup
+     * the sanitiser drops.
+     */
+    if (
+      options.allowSharedContent === false &&
+      (field.type === 'text' || field.type === 'richtext') &&
+      typeof result.data === 'string' &&
+      hasSnippetToken(result.data)
+    ) {
+      errors[field.api_id] = [
+        'A text snippet cannot be used in a book, because editing it later would change every published edition. Write the value out here.',
+      ];
+      continue;
+    }
 
     if (field.type === 'block' && options.blockTypes) {
       const blocks = validateBlocks(
@@ -1141,6 +1204,15 @@ function validateBlocks(
      * `data` is dropped rather than preserved so the stored shape cannot imply otherwise.
      */
     if (block.ref) {
+      // A book refuses library content outright — see `ValidateItemOptions.allowSharedContent`.
+      // Refused rather than dereferenced into a copy: two copies of one block raises the question
+      // of which is authoritative, which is the objection reusable blocks exist to answer.
+      if (options.allowSharedContent === false) {
+        errors.push(
+          `${position}: a reusable block cannot be placed in a book, because editing it later would change every published edition. Build the block here, or put shared text on the book's own fields.`,
+        );
+        return;
+      }
       value.push({ id: block.id, type: block.type, data: {}, ref: block.ref });
       return;
     }
@@ -1230,6 +1302,14 @@ export const contentTypeInputSchema = z.object({
    * is what every collection before this column had.
    */
   item_pages: z.boolean().optional(),
+  /**
+   * Whether items of this type are the root of a book. Defaults to no.
+   *
+   * `optional` rather than `nullish` with a default, matching `item_pages`: absent means "keep what
+   * is stored" on a PATCH, and there is no third state for `null` to mean. Only a `page` may turn it
+   * on — the write paths force it off for every other kind rather than trusting the input.
+   */
+  book_root: z.boolean().optional(),
   /**
    * Length-bounded, and otherwise unvalidated on purpose.
    *

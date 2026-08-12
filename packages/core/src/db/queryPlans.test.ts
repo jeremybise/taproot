@@ -9,6 +9,7 @@ import { purgeExpiredAttempts } from '../auth/throttle.js';
 import { purgeExpiredSessions } from '../auth/session.js';
 import { purgeExpiredPreviewTokens } from '../content/preview.js';
 import { listBlockTypes } from '../content/types.js';
+import { listItemSummaries } from '../content/items.js';
 
 /**
  * Query plans for the predicates that run whether or not anybody visits.
@@ -123,5 +124,44 @@ describe('public read path query plans', () => {
      */
     expect(plans.every((plan) => !plan.includes('SCAN'))).toBe(true);
     expect(plans.join(' ')).toContain('content_types_kind_idx');
+  });
+});
+
+/**
+ * The subtree filter, which is the one predicate here that runs on a *read* path rather than a
+ * sweep — and the one whose wrong implementation is invisible.
+ *
+ * `like 'path%'` returns exactly the same rows as the range form and plans as a full scan, because
+ * SQLite's LIKE optimisation needs a `NOCASE` index or `case_sensitive_like` and `content_items`
+ * has a plain BINARY unique index while **D1 refuses PRAGMA**. So the correct-looking version is a
+ * table scan on every year-scoped listing and every book's table of contents, and nothing but the
+ * plan can tell the two apart. Same lesson `0020_perf_indexes` paid for with the `or`.
+ */
+describe('subtree filter query plans', () => {
+  it('seeks the path index rather than scanning the table', async () => {
+    const plans = await plansFor(() =>
+      listItemSummaries(db, { pathPrefix: '/catalog/2026-27', limit: 50 }),
+    );
+
+    expect(plans.every((plan) => !plan.includes('SCAN content_items'))).toBe(true);
+    expect(plans.join(' ')).toContain('content_items_path_unique');
+  });
+
+  /**
+   * Asserted against the alternative, not just in isolation.
+   *
+   * A test that only says "the range seeks" would still pass if somebody swapped in a `like` and
+   * the planner happened to cope. Explaining both here records *why* the range form exists, and
+   * fails loudly the day SQLite changes its mind about either.
+   */
+  it('confirms the like form it replaced would scan', async () => {
+    const explained = await db.executeQuery<{ detail: string }>(
+      CompiledQuery.raw(
+        "explain query plan select id from content_items where path like ?",
+        ['/catalog/2026-27/%'],
+      ),
+    );
+
+    expect(explained.rows.map((row) => row.detail).join(' | ')).toContain('SCAN');
   });
 });

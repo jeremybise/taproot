@@ -212,6 +212,15 @@ export async function createContentType(
      * `typeHasItemPages` will not read.
      */
     item_pages: input.kind === 'collection' && input.item_pages === false ? 0 : 1,
+    /**
+     * Only a `page` can be a book root; every other kind is forced off.
+     *
+     * A book is a subtree, and a collection is flat under a `url_prefix` while a singleton has one
+     * item — neither has a tree to outline. Forced here rather than trusted from the input, matching
+     * `url_prefix`, `preview_path` and `item_pages`, so changing a type's kind cannot leave the
+     * column saying something `typeIsBookRoot` will not read.
+     */
+    book_root: input.kind === 'page' && input.book_root === true ? 1 : 0,
     summary_template: input.summary_template ?? null,
     list_columns: input.list_columns ? stringifyJson(input.list_columns) : null,
     list_sort: input.list_sort ?? null,
@@ -268,6 +277,15 @@ export async function updateContentType(
   const itemPages =
     kind === 'collection' ? (input.item_pages ?? existing.item_pages === 1) : true;
 
+  /**
+   * Absent keeps what is stored; a boolean sets it. Only a page may be a book root.
+   *
+   * Forced off for every other kind for `itemPages`' reason: a page switched to a collection must
+   * not leave a 1 behind for whoever switches it back, since the subtree that made it a book is not
+   * addressable from a collection at all.
+   */
+  const bookRoot = kind === 'page' ? (input.book_root ?? existing.book_root === 1) : false;
+
   const patch = {
     name: input.name ?? existing.name,
     name_plural: input.name_plural ?? existing.name_plural,
@@ -295,6 +313,7 @@ export async function updateContentType(
           : (input.preview_path ?? null)
         : null,
     item_pages: itemPages ? 1 : 0,
+    book_root: bookRoot ? 1 : 0,
     summary_template:
       input.summary_template === undefined
         ? existing.summary_template

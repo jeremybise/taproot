@@ -144,6 +144,7 @@ describe('the delivery API', () => {
     const delivery = routes.filter((route) => route.pattern.startsWith('/api/taproot/delivery/'));
 
     expect(delivery.map((route) => route.pattern).sort()).toEqual([
+      '/api/taproot/delivery/book',
       '/api/taproot/delivery/items',
       '/api/taproot/delivery/menu/[apiId]',
       '/api/taproot/delivery/resolve',

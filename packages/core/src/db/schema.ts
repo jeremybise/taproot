@@ -301,6 +301,20 @@ export interface ContentTypesTable {
    */
   item_pages: number;
   /**
+   * Whether items of this type are the root of a book. 0 for every other kind.
+   *
+   * A book is a document rather than a site section — a catalog, a handbook, a policy manual — and
+   * the subtree beneath a book root is its outline, read in `position` order depth-first. Read
+   * through `typeIsBookRoot`, never directly: the column is only meaningful for a `page`, because a
+   * collection is flat under a `url_prefix` and a singleton has one item, and a call site reading it
+   * itself is one that will forget the kind check. Same rule `typeHasItemPages` exists for.
+   *
+   * What it buys beyond the tree that was already there: an outline endpoint, previous/next between
+   * sections, subtree-scoped listings and search, and a duplicate that produces next year's edition.
+   * What it costs is that a book refuses reusable blocks and text snippets — see `books.ts`.
+   */
+  book_root: number;
+  /**
    * How an item or block instance of this type is summarised in one line, as a template.
    *
    * `{{ api_id }}` tokens filled from the item's `data` — `{{ headline }} · {{ link }}` — rendered by
