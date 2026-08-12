@@ -508,9 +508,24 @@ export function createTaprootClient(options: TaprootClientOptions) {
       const requested = Number(url.searchParams.get(pageParam));
       const page = Number.isFinite(requested) ? Math.max(1, Math.floor(requested)) : 1;
 
+      /**
+       * Every narrowing option is forwarded by **spread**, never named one by one.
+       *
+       * Listing them was the original shape and it shipped a silent bug: `under` was added to
+       * `SearchOptions`, `SearchPageOptions` inherits from it, so a caller passing `under` type-checked
+       * cleanly — and this function dropped it on the floor. The search still returned results, just
+       * unscoped, which is the worst way for it to fail: nothing errors and the page looks like it
+       * works until somebody notices five catalog editions in one result list.
+       *
+       * Spreading means the next option added to `SearchOptions` arrives here for free. `limit` and
+       * `offset` come last because this function owns paging and a caller cannot override it — which
+       * is why they are `Omit`ted from `SearchPageOptions` in the first place.
+       */
+      const { perPage: _perPage, queryParam: _queryParam, pageParam: _pageParam, ...narrowing } =
+        pageOptions;
+
       const found = await search(query, {
-        type: pageOptions.type,
-        sort: pageOptions.sort,
+        ...narrowing,
         limit: perPage,
         offset: (page - 1) * perPage,
       });

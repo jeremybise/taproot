@@ -151,6 +151,47 @@ describe('searchPage', () => {
     expect(url().searchParams.get('offset')).toBe('20');
   });
 
+  /**
+   * The bug this caught, and the class of bug rather than the instance.
+   *
+   * `searchPage` used to forward `type` and `sort` by name. `under` was added to `SearchOptions`
+   * later, `SearchPageOptions` inherits from it, so passing `under` type-checked perfectly and was
+   * dropped on the floor — the search returned results, just unscoped, with nothing anywhere
+   * reporting a problem. Asserted for every narrowing option at once, so the next one added to
+   * `SearchOptions` is covered without anybody remembering to come back here.
+   */
+  it('forwards every narrowing option to the search, not just the ones it names', async () => {
+    const { client, url } = pagingClient(0);
+
+    await client.searchPage(new URL('https://site.example/search?q=aid'), {
+      perPage: 10,
+      type: 'page',
+      sort: 'title',
+      under: '/catalog/2026-27',
+    });
+
+    expect(url().searchParams.get('type')).toBe('page');
+    expect(url().searchParams.get('sort')).toBe('title');
+    expect(url().searchParams.get('under')).toBe('/catalog/2026-27');
+  });
+
+  it('does not leak its own paging vocabulary onto the request', async () => {
+    // `perPage`, `queryParam` and `pageParam` are this function's own arguments — the delivery API
+    // has never heard of them, and a spread that forwarded them would put three junk parameters on
+    // every search URL.
+    const { client, url } = pagingClient(0);
+
+    await client.searchPage(new URL('https://site.example/search?q=aid'), {
+      perPage: 10,
+      queryParam: 'term',
+      pageParam: 'p',
+    });
+
+    expect(url().searchParams.has('perPage')).toBe(false);
+    expect(url().searchParams.has('queryParam')).toBe(false);
+    expect(url().searchParams.has('pageParam')).toBe(false);
+  });
+
   it('lands on page one for every way `?page=` can be nonsense', async () => {
     // `offset=NaN` is what the naive version puts on the wire, and the delivery API answers 400 —
     // a broken search page produced by a visitor editing their own URL.
