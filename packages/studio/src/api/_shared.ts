@@ -170,6 +170,10 @@ export function mapError(error: unknown): Response {
       case 'cycle':
       case 'invalid_parent':
       case 'singleton_exists':
+      // A conflict rather than a bad request: the order sent was valid when the screen rendered it
+      // and something else has since changed the level. The client's answer is to reload, which is
+      // what 409 says and 400 does not.
+      case 'stale_order':
         return apiError(409, error.message);
       default:
         return apiError(400, error.message);

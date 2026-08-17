@@ -1601,47 +1601,84 @@ if (!bannerExists) {
   });
 }
 
-// --- A book -----------------------------------------------------------------
+// --- A nested page tree ------------------------------------------------------
 //
-// A student handbook, seeded so the Books screen and the outline screen have something real on a
-// fresh clone — and so `npm run a11y` can see them at all. Markup that only appears in a state the
-// seed never reaches is markup the audit cannot check, however many routes pass.
+// A student handbook as an ordinary page tree, seeded so a fresh clone has something with real depth
+// in it — and so `npm run a11y` sees a content list that is not flat. Markup that only appears in a
+// state the seed never reaches is markup the audit cannot check, however many routes pass.
 //
-// Nested two levels deep on purpose: a one-level book cannot tell a depth-first walk from a flat
-// one, which is the ordering the whole outline rests on. It sits under an ordinary parent page, so
-// the Books screen's grouping — the whole of how editions are expressed — has a heading to draw.
+// Nested two levels deep on purpose, under an ordinary parent page. Chapters are created out of
+// alphabetical order, which is what makes `reorderSiblings` visible: without it, creation order and
+// path order agree and nothing on screen can show an arrangement being kept.
 
-const handbookType = await ensureType(
+/**
+ * A second page type inside that tree, so a content list has more than one type nested in it.
+ *
+ * It is also what carries the two settings below that a plain `page` has nowhere to demonstrate:
+ * a type kept out of the sidebar, and a repeater that keeps its own rows in order.
+ */
+const policy = await ensureType(
   {
-    api_id: 'handbook',
-    name: 'Handbook',
-    name_plural: 'Handbooks',
-    description:
-      'A document with an outline — a table of contents, a reading order, and previous/next between its pages.',
+    api_id: 'policy',
+    name: 'Policy',
+    name_plural: 'Policies',
+    description: 'A single numbered policy, as cited in a handbook or manual.',
     kind: 'page',
-    book_root: true,
-    icon: 'book-open',
+    icon: 'clipboard-list',
     url_prefix: null,
-    summary_template: '{{ title }}',
+    summary_template: '{{ code }} · {{ title }}',
+    /**
+     * The case the setting exists for, so a fresh clone shows it doing its job.
+     *
+     * A policy is real content — versioned, searchable, with its own list screen — and nobody ever
+     * reaches one from the sidebar: they are reached through the handbook page that holds them. A
+     * sidebar entry for it would push the ones people open every day further down for no gain.
+     */
+    hide_from_nav: true,
   },
   [
     {
-      api_id: 'edition',
-      label: 'Edition',
+      api_id: 'code',
+      label: 'Policy number',
       type: 'text',
-      required: false,
+      required: true,
       localized: false,
-      help_text: 'The academic year this edition covers, as readers refer to it.',
+      help_text: 'As it is cited elsewhere — "AC-201".',
       config: {},
     },
     {
-      api_id: 'intro',
-      label: 'Introduction',
+      api_id: 'body',
+      label: 'Body',
       type: 'richtext',
       required: false,
       localized: false,
-      help_text: 'Front matter, shown before the first chapter.',
+      help_text: null,
       config: {},
+    },
+    {
+      /**
+       * A glossary, and the seed's one example of a repeater that sorts itself.
+       *
+       * The other seeded repeater is an event's schedule, whose order *is* the meaning — which is
+       * why sorting is opt-in, and why that one deliberately stays manual. A glossary is the
+       * opposite: alphabetical is the only order anybody wants, and maintaining it by hand is work
+       * that grows with the content for no benefit. Adding a term anywhere puts it in its place on
+       * save.
+       */
+      api_id: 'definitions',
+      label: 'Definitions',
+      type: 'repeater',
+      required: false,
+      localized: false,
+      help_text: 'Terms this policy defines. Kept in alphabetical order for you.',
+      config: {
+        sortBy: 'term',
+        sortDirection: 'asc',
+        fields: [
+          { api_id: 'term', label: 'Term', type: 'text', required: true, config: {} },
+          { api_id: 'meaning', label: 'Meaning', type: 'text', required: true, config: {} },
+        ],
+      },
     },
   ],
 );
@@ -1663,18 +1700,18 @@ const handbooksParentId = await ensureItem(
 
 const handbookId = await ensureItem(
   handle,
-  handbookType.type,
-  handbookType.fields,
+  page.type,
+  page.fields,
   {
-    contentTypeId: handbookType.type.id,
+    contentTypeId: page.type.id,
     title: 'Student Handbook 2026-27',
     slug: '2026-27',
     parentId: handbooksParentId,
     status: 'published',
     userId: admin.id,
     data: {
-      edition: '2026-27',
-      intro:
+      summary: 'The policies in effect for the 2026-27 academic year.',
+      body:
         '<p>This handbook describes the policies in effect for the 2026-27 academic year. Students are governed by the edition in force when they enrolled.</p>',
     },
   },
@@ -1685,7 +1722,7 @@ const handbookId = await ensureItem(
  * Chapters, created in reading order rather than alphabetical order.
  *
  * `position` comes from creation order, so seeding them alphabetically would make path order and
- * reading order agree — and a book where those agree cannot demonstrate the outline doing anything.
+ * reading order agree — and a tree where those agree cannot show `reorderSiblings` doing anything.
  */
 const handbookChapters: { title: string; slug: string; summary: string; sections?: string[] }[] = [
   {
@@ -1723,20 +1760,22 @@ for (const chapter of handbookChapters) {
     `/handbooks/2026-27/${chapter.slug}`,
   );
 
-  for (const section of chapter.sections ?? []) {
+  // Policies rather than pages, so one level of the tree holds two content types — which is what
+  // the reorder route's own test asserts is handled, and what a real document looks like.
+  for (const [index, section] of (chapter.sections ?? []).entries()) {
     const slug = slugifyForSeed(section);
     await ensureItem(
       handle,
-      page.type,
-      page.fields,
+      policy.type,
+      policy.fields,
       {
-        contentTypeId: page.type.id,
+        contentTypeId: policy.type.id,
         title: section,
         slug,
         parentId: chapterId,
         status: 'published',
         userId: admin.id,
-        data: { summary: `${section}.`, body: `<p>${section}.</p>` },
+        data: { code: `AT-${20 + index * 10}`, body: `<p>${section}.</p>` },
       },
       `/handbooks/2026-27/${chapter.slug}/${slug}`,
     );

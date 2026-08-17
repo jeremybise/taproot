@@ -134,8 +134,8 @@ describe('public read path query plans', () => {
  * `like 'path%'` returns exactly the same rows as the range form and plans as a full scan, because
  * SQLite's LIKE optimisation needs a `NOCASE` index or `case_sensitive_like` and `content_items`
  * has a plain BINARY unique index while **D1 refuses PRAGMA**. So the correct-looking version is a
- * table scan on every year-scoped listing and every book's table of contents, and nothing but the
- * plan can tell the two apart. Same lesson `0020_perf_indexes` paid for with the `or`.
+ * table scan on every branch-scoped listing, and nothing but the plan can tell the two apart. Same
+ * lesson `0020_perf_indexes` paid for with the `or`.
  */
 describe('subtree filter query plans', () => {
   it('seeks the path index rather than scanning the table', async () => {

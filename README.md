@@ -3,7 +3,7 @@
 A DB-backed, Astro-native CMS aimed at a real-world case: a campus website with many non-technical
 departmental contributors.
 
-**Status: Phases 0 through 5 complete, including 5.5 through 5.9, plus Phase 11 (Books); Phase 6 under way.** Sign in, define a content type and its fields visually,
+**Status: Phases 0 through 5 complete, including 5.5 through 5.9; Phase 6 under way.** Sign in, define a content type and its fields visually,
 write content with a real rich text editor, pick images from a real media browser, classify it,
 relate it to other content, put it in a menu, set its focal point, and see it render — cropped to
 that focal point — at a real nested URL, **on your own site, beside the editor, as you type**. Then
@@ -382,31 +382,38 @@ npm test
 
 ## What's next
 
-**If you are upgrading, run `npm run db:migrate`** for `0034_books`. Nothing to backfill and no
-reindex: the column defaults to off, so no existing content type becomes a book until somebody says so.
+**If you are upgrading, run `npm run db:migrate`** for `0036_hide_from_nav` and
+`0037_drop_book_columns`. Nothing to backfill and no reindex: the one column added defaults to off,
+and the two dropped were read by nothing.
 
-**Books are done** — Phase 11, built ahead of 7–10 because it depends on nothing they add. A book is
-a document rather than a section of your site: a course catalog, a student handbook, a policy manual.
-Tick **Items of this type are books** on a page content type, and every item of it gains an outline —
-the pages nested under it, in the order you arrange them — plus a table of contents your site can
-render, previous/next links between sections, and a **New edition** button that copies the whole
-thing forward as drafts for next year.
+**Books were removed.** Phase 11 built a "book" — a subtree treated as one document, with an outline,
+a reading order and yearly editions — and it is gone: the outline screen, the `/delivery/book`
+endpoint, the `book()` client method, and the content-type setting that turned it on. If you ticked
+**Items of this type are books** on a deployment, nothing about your content is lost; the pages are
+ordinary pages in an ordinary tree, and only the extra screens and the outline endpoint have gone.
 
-Copying an edition repoints links *inside* the book at the copies, so next year's chapters link to
-next year's pages rather than back into last year's, and leaves links pointing outside alone. Because
-the copy is genuinely separate rows, nothing done to the new edition can change what the published
-one says — which is the point when students are entitled to the edition in force when they enrolled.
+Several things it brought are genuinely useful without it, and those stayed:
 
-That property is also why **a book cannot use reusable blocks or text snippets**: both are shared, so
-editing one would silently rewrite editions you already published. Shared wording goes on the book's
-own fields, where it is copied forward with the edition. Settings tells you before you tick the box
-if existing pages would be affected.
-
-Three things came with it that are useful outside books. Listings and search can be **scoped to a
-branch** (`under=/catalog/2026-27`), so several live editions no longer crowd each other out. A
-relation field can opt into **carrying its target's content**, so a page can render something held
-elsewhere in one request instead of fetching a whole type to use one item. And a subtree can be
-**unpublished or de-indexed in one action**, for retiring an old edition.
+- **Sibling order is finally writable.** `position` decides the order a site is handed a page's
+  children, and until now it was set once when a page was created and never again. `POST
+  /api/taproot/items/{id}/children/reorder` sets a whole level at once, refusing a stale or partial
+  list rather than renumbering rows a second editor has just changed. There is no admin screen for it
+  yet — the outline was the only one, and it went with books.
+- **Content types can be hidden from the sidebar.** Real content nobody navigates to by type — a
+  listing's entries, a directory's people — where an entry nobody clicks pushes the ones people use
+  daily below the fold. It changes navigation and nothing else: items still appear under All content,
+  still turn up in search, and the type's own list stays where it is.
+- **A repeater can keep its own entries in order.** Pick a field under **Keep entries in order of**
+  and rows are re-sorted on every save, so a course code typed anywhere lands where it belongs and
+  nobody maintains the order by hand. Numbers inside text sort as numbers, so `RAD 20`, `RAD 196` and
+  `RAD 1096` come out in that order. Off by default, because plenty of repeaters — an event's
+  schedule, a program's plan — carry their meaning *in* the order they were typed.
+- **Listings and search can be scoped to a branch** (`under=/handbooks/2026-27`), so one section of a
+  site can be queried without the rest of it crowding the results.
+- **A relation field can carry its target's content**, so a page can render something held elsewhere
+  in one request instead of fetching a whole type to use one item.
+- **A subtree can be duplicated, and unpublished or de-indexed in one action.** Copying repoints links
+  *inside* the subtree at the copies and leaves links pointing outward alone.
 
 **Phase 6 is under way** — integrations: webhooks, a tracking script manager, an MCP server, and
 workflow notifications, grouped because they share the outbound-HTTP layer and the API-key scope

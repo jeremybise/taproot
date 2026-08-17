@@ -81,13 +81,13 @@ export const GET = handleScoped(
     const offset = Math.max(Number(params.get('offset') ?? 0) || 0, 0);
 
     /**
-     * `under` scopes a search to one branch — the current catalog year, one handbook.
+     * `under` scopes a search to one branch — one section of a site, one copy of a versioned one.
      *
-     * The problem it solves only appears with a second edition: every course description and policy
-     * page is then in the index five times over, with nothing to make the current year win. Filtering
-     * the results afterwards on the client is the workaround, and it means paying to index four
-     * superseded years and then discarding them — which also breaks paging, because `total` counts
-     * what was thrown away.
+     * The problem it solves appears as soon as a section is duplicated: every page in it is then in
+     * the index twice over, with nothing to make the current copy win. Filtering the results
+     * afterwards on the client is the workaround, and it means paying to index the superseded ones
+     * and then discarding them — which also breaks paging, because `total` counts what was thrown
+     * away.
      *
      * The same parameter and the same spelling as the listing endpoint, so a site scoping a
      * directory and a site scoping a search write the same thing.

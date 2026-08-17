@@ -6,17 +6,17 @@ import { apiError, handle, json, readJson } from '../../_shared.js';
 /**
  * Copy an item and everything beneath it, as drafts.
  *
- * How a book gets its next edition: duplicate `/catalog/2026-27` to `/catalog/2027-28`, edit the
+ * How a versioned section rolls over: duplicate `/handbook/2026-27` to `/handbook/2027-28`, edit the
  * copy, publish it. Freezing last year is then structural — the old pages are different rows, so
  * nothing done to the copy can reach them.
  *
- * **Chunked, and the caller loops.** A catalog year is ~280 items and each is its own batch, so one
+ * **Chunked, and the caller loops.** A large subtree can be hundreds of items and each is its own batch, so one
  * request cannot finish inside a Worker's budget. `remaining` is what a progress UI reads and what
  * a script tests; calling again resumes, because an item counts as copied when something exists at
  * its mapped path — no job table, no cleanup after a failure.
  *
  * **Contributor**, matching `createItem`: everything this writes is a draft, which reaches nobody.
- * Publishing the edition afterwards is a separate act and still costs editor, one item at a time or
+ * Publishing the copy afterwards is a separate act and still costs editor, one item at a time or
  * through the bulk endpoint.
  */
 const schema = z.object({

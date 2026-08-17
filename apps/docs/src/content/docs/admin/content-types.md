@@ -121,6 +121,16 @@ Each type can also be given a **sidebar icon** on its own settings screen. It is
 name is always beside it, and an icon is never the only thing telling two entries apart — but on a
 site with a dozen types it makes the sidebar scannable rather than a list to read.
 
+A type can also be kept out of the sidebar entirely, with **Hide from the sidebar** on its settings
+screen. That is for content nobody navigates to directly — the entries behind a listing, the people
+in a staff directory — where an entry that is never clicked pushes the ones people use every day
+further down.
+
+It hides the sidebar row and nothing else. Items of a hidden type still appear under **Content → All
+content**, still turn up in search, still have their own list at the same address, and are still
+created and edited exactly as before. If you want content to *go away*, unpublish or delete it —
+this setting will not do it and is not meant to.
+
 ## What the list shows
 
 **List columns**, on the type's settings screen, chooses which columns the list of these items has —

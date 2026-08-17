@@ -123,6 +123,21 @@ Add a row with **Add row**, reorder with the move buttons, remove with the row's
 Sub-fields can be any of the simpler kinds above, but not blocks and not another repeater; a table
 of tables is a data model rather than a field.
 
+### Rows that sort themselves
+
+Where the order is always the same — a glossary by term, courses by code — a repeater can maintain
+it for you. Whoever set the field up chooses **Keep entries in order of** and picks one of its
+sub-fields; from then on every save puts the rows in that order, so a new entry typed at the bottom
+lands where it belongs and nobody tidies up afterwards.
+
+Numbers inside text sort as numbers, so `RAD 20`, `RAD 196` and `RAD 1096` come out in that order
+rather than alphabetically. Rows where the field is still blank stay at the end, so a half-finished
+entry does not jump to the top.
+
+This is off unless somebody turns it on, because plenty of repeaters carry their meaning *in* the
+order they were typed — an event's schedule, the steps of a process, a program's plan where a blank
+term means "same as the row above". If your rows are one of those, leave it alone.
+
 ---
 
 ## Required fields

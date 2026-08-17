@@ -39,16 +39,6 @@ export * from './content/menuHrefs.js';
  */
 export * from './content/queryKeys.js';
 /**
- * Previous, next and up within a book, computed from an outline the caller already has.
- *
- * Here rather than in the studio because the site is what renders the control: a book page fetches
- * its outline once for the table of contents, and navigation is arithmetic over that array. The
- * alternative was a materialised reading-order column, which renumbers every later section whenever
- * somebody inserts one — a cascading write on an ordinary save, to save a read that costs nothing.
- * Importless, so a consumer's bundle pays only for the arithmetic.
- */
-export * from './content/bookNav.js';
-/**
  * The cache-tag vocabulary, shared by the two caches that use it.
  *
  * The studio tags its cached delivery JSON; a consumer tags the HTML it renders from that JSON, and
@@ -185,15 +175,5 @@ export type {
 } from './content/delivery.js';
 
 export type { DeliveryQueryResult } from './content/itemQueries.js';
-
-/**
- * Type-only, because `bookOutline.ts` reaches the database and `bookNav.ts` does not.
- *
- * A consumer needs the shape to type its table of contents and to hand `entries` to
- * `bookNavigation`; it must never reach the function that builds one. `export type` is erased at
- * build, so this costs the consumer's bundle nothing — the same arrangement every `Delivery*` type
- * above already has.
- */
-export type { BookOutline, BookOutlineEntry } from './content/bookOutline.js';
 
 export type { ContentStatus, ContentTypeKind, FieldType } from './db/schema.js';

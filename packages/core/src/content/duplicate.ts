@@ -9,17 +9,17 @@ import { remapRichTextItemRefs } from './richTextRefs.js';
 import { newId } from '../ids.js';
 
 /**
- * Copying a subtree — which is how a book gets its next edition.
+ * Copying a subtree — a page and everything beneath it, as drafts.
  *
- * The rollover a versioned document needs: duplicate `/catalog/2026-27` and every section beneath it
- * to `/catalog/2027-28` as drafts, edit the copy, publish it. Freezing the old year is then
- * structural rather than enforced — the 2026-27 pages are *different rows*, so nothing anybody does
- * to next year's catalog can reach them. That is the whole argument for copy-forward over
- * effective-dating or a version column, and it is why a book refuses shared library content, which
- * would otherwise leak straight through the copy (see `books.ts`).
+ * What a versioned section of a site needs: duplicate `/handbook/2026-27` and every page beneath it
+ * to `/handbook/2027-28`, edit the copy, publish it. Freezing the old one is then structural rather
+ * than enforced — its pages are *different rows*, so nothing anybody does to the copy can reach
+ * them. That is the whole argument for copy-forward over effective-dating or a version column.
  *
- * Nothing here is book-specific. A subtree is a subtree, and the same operation serves any versioned
- * section of a site.
+ * Note what copy-forward does **not** freeze: anything the copies resolve at read time from a shared
+ * row — a reusable block, a text snippet — still points at one central row, so editing that row
+ * changes every copy, including ones meant to stand as a record. Media is exempt by construction: a
+ * media row's bytes are immutable because the storage key derives from the asset id.
  */
 
 /** What to call the copy, and where to put it. */
@@ -28,7 +28,7 @@ export interface DuplicateSubtreeInput {
   slug?: string;
   /**
    * Where the copy's root goes. Defaults to the source's own parent, which makes the copy a sibling
-   * — the shape an edition takes, since `/catalog/2026-27` and `/catalog/2027-28` share a parent.
+   * — the shape a new version takes, since `/handbook/2026-27` and `/handbook/2027-28` share one.
    */
   parentId?: string | null;
   /** Title for the copy's root. Descendants always keep theirs. */
@@ -216,8 +216,8 @@ export async function duplicateSubtree(
      * A descendant whose parent has not been copied yet is left for the next call.
      *
      * Reachable when a `limit` cut the previous pass mid-tree. Counting it as remaining rather than
-     * attaching it somewhere plausible is the only honest option — a section silently re-parented
-     * to the book's root is a table of contents that is quietly wrong.
+     * attaching it somewhere plausible is the only honest option — a page silently re-parented to
+     * the copy's root is a tree that is quietly wrong.
      */
     if (!parentCopyId) {
       remaining += 1;
@@ -245,13 +245,13 @@ export async function duplicateSubtree(
    * A second pass over what was written, so a link *forward* in the tree is not left dangling.
    *
    * The copy loop remaps against the ids it knows, and it cannot know one it has not created yet —
-   * a chapter linking to an appendix later in the book would keep pointing at the original. Rather
-   * than a topological sort over an arbitrary reference graph (which can be cyclic, and a book's
-   * cross-references frequently are), every item is written once and then repaired once with the
-   * complete map.
+   * a page linking to one copied later would keep pointing at the original. Rather than a
+   * topological sort over an arbitrary reference graph (which can be cyclic, and cross-references
+   * within one section of a site frequently are), every item is written once and then repaired once
+   * with the complete map.
    *
-   * Only items whose remapped data actually differs are rewritten, so a book with no internal links
-   * pays nothing, and a resumed run does not churn what an earlier one already fixed.
+   * Only items whose remapped data actually differs are rewritten, so a subtree with no internal
+   * links pays nothing, and a resumed run does not churn what an earlier one already fixed.
    */
   if (remaining === 0) created += await repairReferences(handle, root, idMap, input.userId ?? null);
 
@@ -388,8 +388,8 @@ function remapValue(value: unknown, idMap: ReadonlyMap<string, string>, mintIds:
 /**
  * Fix references that pointed at items copied after their referrer.
  *
- * See the call site: one repair pass beats a topological sort, because a book's cross-references are
- * routinely cyclic and a sort has no answer for that.
+ * See the call site: one repair pass beats a topological sort, because cross-references within a
+ * subtree are routinely cyclic and a sort has no answer for that.
  */
 async function repairReferences(
   handle: TaprootDb,
@@ -413,7 +413,7 @@ async function repairReferences(
   for (const copy of copies) {
     const current = parseData(copy.data);
     // No id minting here, so an unchanged item compares equal and is skipped — which is what keeps a
-    // book with no internal links from being rewritten end to end for nothing.
+    // subtree with no internal links from being rewritten end to end for nothing.
     const remapped = remapData(current, idMap);
     if (JSON.stringify(current) === JSON.stringify(remapped)) continue;
 

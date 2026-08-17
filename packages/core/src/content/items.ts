@@ -31,13 +31,6 @@ import {
 } from './derivedIndex.js';
 import { blockTypeRegistry, type ContentTypeWithFields } from './types.js';
 import {
-  bookRootWithin,
-  holdsSharedContent,
-  isInBook,
-  typeIsBookRoot,
-  wouldNestBook,
-} from './books.js';
-import {
   buildCollectionPath,
   buildPath,
   computeSubtreeRewrite,
@@ -49,28 +42,6 @@ import {
   type SubtreeNode,
 } from './paths.js';
 
-/**
- * What to pass as `validateItemData`'s `allowSharedContent`, and the gate that makes it free.
- *
- * **Answered without a query in the overwhelming case.** A book refuses reusable blocks and text
- * snippets, but almost no item holds either — so the structural check comes first and the indexed
- * ancestor lookup only runs for data that actually has something to refuse. This is the same
- * data-driven gate `blockTypesFor` applies to the block registry, and the reason a rule enforced on
- * every content write costs nothing on nearly every content write.
- *
- * Returning `true` when there is nothing to share is not a loophole: with no reusable block and no
- * snippet token in the data, the option has nothing to act on and the two answers are identical.
- */
-async function allowSharedContentFor(
-  db: Kysely<Database>,
-  contentType: ContentTypeRow,
-  parentPath: string | null,
-  data: unknown,
-): Promise<boolean> {
-  if (!holdsSharedContent(data)) return true;
-  return !(await isInBook(db, contentType, parentPath));
-}
-
 export class ContentItemError extends Error {
   override name = 'ContentItemError';
   constructor(
@@ -80,8 +51,8 @@ export class ContentItemError extends Error {
       | 'validation_failed'
       | 'cycle'
       | 'singleton_exists'
-      | 'nested_book'
-      | 'invalid_parent' = 'validation_failed',
+      | 'invalid_parent'
+      | 'stale_order' = 'validation_failed',
     readonly fieldErrors: Record<string, string[]> = {},
   ) {
     super(message);
@@ -155,14 +126,10 @@ export interface ItemFilters {
   status?: ContentStatus;
   parentId?: string | null;
   /**
-   * Narrow to everything **below** a path — a whole book, a whole section, a whole catalog year.
+   * Narrow to everything **below** a path — a whole branch of the site tree.
    *
-   * `parentId` is one level and this is the branch, which is the question a table of contents, a
-   * year-scoped listing and a search inside one edition all actually have. Five live catalog years
-   * put every content type over the delivery listing's 200-row cap on its own, while any single year
-   * is comfortably inside it — so without this a consumer either pages through four superseded
-   * years to find the current one, or invents a `catalog-year` taxonomy that duplicates what `path`
-   * already carries.
+   * `parentId` is one level and this is the branch, which is the question a section-scoped listing
+   * and a search inside one part of a site both actually have.
    *
    * **Descendants only, and implemented as a range rather than a `like`.** See
    * `descendantPathRange`: the index is BINARY, D1 refuses the PRAGMA that would let `like` use it,
@@ -1031,43 +998,17 @@ export async function createItem(
     }
   }
 
-  /**
-   * The parent is resolved **before** validation, because validation now depends on where the item
-   * lands: an item inside a book may not hold shared content, and "inside a book" is a fact about
-   * the parent chain. Nothing in the parent lookup depends on the data being valid, so the two
-   * simply swapped.
-   */
   const parentId = contentType.kind === 'page' ? (input.parentId ?? null) : null;
   const parent = parentId ? await getItem(db, parentId) : undefined;
   if (parentId && !parent) {
     throw new ContentItemError(`Parent item ${parentId} not found.`, 'invalid_parent');
   }
 
-  // A book inside a book has no answer to "which outline is this section in" — see `wouldNestBook`.
-  // Only asked when this type actually makes book roots, so nothing else pays for the lookup.
-  if (typeIsBookRoot(contentType)) {
-    const enclosing = await wouldNestBook(db, parent?.path ?? null);
-    if (enclosing) {
-      throw new ContentItemError(
-        `"${enclosing.title}" is already a book, and books cannot be nested. Move this outside it.`,
-        'nested_book',
-      );
-    }
-  }
-
   // Loaded once and used twice: validation needs it to check a block's contents, and the text index
   // needs it to walk them. A second call would be a second query for the same map.
   const blockTypes = await blockTypesFor(db, fields, input.data ?? {});
 
-  const validation = validateItemData(fields, input.data ?? {}, {
-    blockTypes,
-    allowSharedContent: await allowSharedContentFor(
-      db,
-      contentType,
-      parent?.path ?? null,
-      input.data ?? {},
-    ),
-  });
+  const validation = validateItemData(fields, input.data ?? {}, { blockTypes });
   if (!validation.success) {
     throw new ContentItemError('Content failed validation.', 'validation_failed', validation.errors);
   }
@@ -1197,32 +1138,7 @@ export async function updateItem(
   if (input.data !== undefined) {
     blockTypes = await blockTypesFor(db, fields, input.data);
 
-    /**
-     * The **destination** decides, not where the item sits now.
-     *
-     * Moving a page that carries a snippet into a book is the same violation as authoring one there,
-     * and reading `existing.path` would miss it. The parent is loaded again here rather than hoisted
-     * out of the move branch below because `allowSharedContentFor` only asks when the data actually
-     * holds something shared — so this second lookup happens on the rare save that could be refused,
-     * and never on the ordinary one.
-     */
-    const destinationParentId =
-      input.parentId !== undefined ? (input.parentId ?? null) : existing.parent_id;
-    const destinationParentPath = holdsSharedContent(input.data)
-      ? destinationParentId
-        ? ((await getItem(db, destinationParentId))?.path ?? null)
-        : null
-      : null;
-
-    const validation = validateItemData(fields, input.data, {
-      blockTypes,
-      allowSharedContent: await allowSharedContentFor(
-        db,
-        contentType,
-        destinationParentPath,
-        input.data,
-      ),
-    });
+    const validation = validateItemData(fields, input.data, { blockTypes });
     if (!validation.success) {
       throw new ContentItemError(
         'Content failed validation.',
@@ -1274,33 +1190,6 @@ export async function updateItem(
     const parent = nextParentId ? await getItem(db, nextParentId) : undefined;
     if (nextParentId && !parent) {
       throw new ContentItemError(`Parent item ${nextParentId} not found.`, 'invalid_parent');
-    }
-
-    /**
-     * A move must not nest one book inside another — see `wouldNestBook`.
-     *
-     * Gated on `parentChanged` rather than the whole branch, because a rename cannot change what a
-     * path is *inside*; and the second query only runs when the destination is genuinely in a book,
-     * so an ordinary move pays one lookup and a move into a book pays two. The subtree check is the
-     * case the type check misses: dragging a plain folder that *holds* a book into another book
-     * nests them, and the item being moved is not a book root itself.
-     */
-    if (parentChanged) {
-      const destination = await wouldNestBook(db, parent?.path ?? null);
-      if (destination) {
-        const nested = await bookRootWithin(
-          db,
-          subtree.map((node) => node.id),
-        );
-        if (nested) {
-          const what =
-            nested.id === id ? 'This is a book' : `"${nested.title}" inside it is a book`;
-          throw new ContentItemError(
-            `${what}, and "${destination.title}" is a book too. Books cannot be nested.`,
-            'nested_book',
-          );
-        }
-      }
     }
 
     slug = await uniquePathSlug(db, contentType, parent?.path ?? null, desiredSlug, id);
@@ -1450,6 +1339,100 @@ export async function restoreRevision(
     revisionReason: 'restore',
     restoredFrom: revision.revision_number,
   });
+}
+
+/**
+ * Put one sibling group in a new order.
+ *
+ * **`position` had no write path at all until this.** `createItem` set it to `siblings.length` and
+ * nothing ever changed it again, so the order `resolveDelivery` hands a consumer as an item's
+ * children was permanently the order somebody happened to create them in. The only fix available to
+ * an editor was to delete a page and make it again, which loses its revisions, its id and every link
+ * pointing at it.
+ *
+ * ## Why this takes a whole level, and rejects a partial one
+ *
+ * `position` means nothing except relative to siblings, so a reorder is inherently per-level — the
+ * same reasoning `reorderMenuItems` records. This goes one step further and requires the ids to be
+ * **exactly** the parent's children: no missing ones, no extras.
+ *
+ * A subset would be silently wrong. Positions here are assigned `0..n-1`, so reordering three of a
+ * parent's eight children hands those three the positions the first three already hold, and the
+ * result is a level with duplicate positions ordered by the `title` tiebreak — which looks like the
+ * drag simply not working, on some rows, sometimes.
+ *
+ * Exactness also settles the concurrency case for free, and it is a real one: two editors on one
+ * section of a site, one adds a page while the other drags. The dragger's list predates the insert,
+ * so it is refused and their screen reloads, rather than the new page being shuffled to the end of a
+ * level it was never part of.
+ *
+ * ## What it deliberately does not do
+ *
+ * **No revision.** A revision snapshots `title`, `slug`, `status`, `data` and `seo` — position is
+ * in none of them, so restoring one has never restored an order and writing a revision here would
+ * append history entries that say nothing and restore nothing.
+ *
+ * **No path rewrite, and that asymmetry is the whole reason this is a separate function rather than
+ * a key on `UpdateItemInput`.** Reordering siblings touches one integer per row: no slug changes,
+ * no descendant paths move, no redirects are written. Re-parenting does all three, for the item and
+ * every descendant. Keeping them apart is what lets an editor's screen offer dragging as the cheap,
+ * fluid act and re-parenting as an explicit one — a drag that could silently rewrite forty URLs and
+ * write forty redirects is not a drag anybody should be offered.
+ *
+ * ## The parent's own timestamp moves
+ *
+ * `updated_at` is bumped on the reordered children **and on the parent**, which is not tidiness.
+ * The parent's delivery response carries its children in this order, and `getItemVersionByPath`
+ * answers a conditional request from `updated_at` alone — so leaving the parent's stamp still would
+ * mean a cached copy of the parent revalidating, being told 304, and having its freshness renewed
+ * against an order that has changed. RFC 9111 §4.3.4 makes that unbounded rather than capped at the
+ * TTL, which is the same trap `reusableBlockLibraryVersion` exists to close one feature along.
+ */
+export async function reorderSiblings(
+  handle: TaprootDb,
+  parentId: string | null,
+  orderedIds: string[],
+): Promise<void> {
+  const children = await getChildren(handle.db, parentId);
+
+  const known = new Set(children.map((child) => child.id));
+  const requested = new Set(orderedIds);
+
+  const exact =
+    orderedIds.length === children.length &&
+    requested.size === orderedIds.length &&
+    children.every((child) => requested.has(child.id));
+
+  if (!exact) {
+    throw new ContentItemError(
+      'That order does not match this item\'s children. Reload the page and try again.',
+      'stale_order',
+    );
+  }
+
+  // Nothing to write, and skipping it keeps a no-op drag from moving the parent's ETag and
+  // invalidating every cached copy of a page whose order did not change.
+  const unchanged = children.every((child, index) => child.id === orderedIds[index]);
+  if (unchanged) return;
+
+  const timestamp = now();
+  const statements: BatchStatement[] = orderedIds.map((id, index) =>
+    handle.db
+      .updateTable('content_items')
+      .set({ position: index, updated_at: timestamp })
+      .where('id', '=', id),
+  );
+
+  if (parentId !== null) {
+    statements.push(
+      handle.db
+        .updateTable('content_items')
+        .set({ updated_at: timestamp })
+        .where('id', '=', parentId),
+    );
+  }
+
+  await handle.batch(statements);
 }
 
 /**

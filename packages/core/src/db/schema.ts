@@ -301,19 +301,18 @@ export interface ContentTypesTable {
    */
   item_pages: number;
   /**
-   * Whether items of this type are the root of a book. 0 for every other kind.
+   * Whether this type is left out of the admin sidebar. 0 for every type by default.
    *
-   * A book is a document rather than a site section — a catalog, a handbook, a policy manual — and
-   * the subtree beneath a book root is its outline, read in `position` order depth-first. Read
-   * through `typeIsBookRoot`, never directly: the column is only meaningful for a `page`, because a
-   * collection is flat under a `url_prefix` and a singleton has one item, and a call site reading it
-   * itself is one that will forget the kind check. Same rule `typeHasItemPages` exists for.
+   * For content that is real content and is never reached from the sidebar — a directory's people,
+   * a course subject reached through the page that lists it — where an entry nobody clicks pushes
+   * the ones people use daily below the fold.
    *
-   * What it buys beyond the tree that was already there: an outline endpoint, previous/next between
-   * sections, subtree-scoped listings and search, and a duplicate that produces next year's edition.
-   * What it costs is that a book refuses reusable blocks and text snippets — see `books.ts`.
+   * **The sidebar only.** A hidden type keeps its list screen, its create screen, and its place in
+   * "All content" and in search. A flag that also filtered listings would be a delete that does not
+   * delete. Read through `isNavigable`, so the two questions — does this type exist, and is it in
+   * the sidebar — cannot be conflated at a call site.
    */
-  book_root: number;
+  hide_from_nav: number;
   /**
    * How an item or block instance of this type is summarised in one line, as a template.
    *

@@ -1136,6 +1136,13 @@ const RepeaterConfig: ConfigForm = ({ config, onChange, ...rest }) => {
         />
       </Row>
 
+      <SortChoice
+        subFields={subFields}
+        sortBy={typeof config.sortBy === 'string' ? config.sortBy : ''}
+        sortDirection={config.sortDirection === 'desc' ? 'desc' : 'asc'}
+        onChange={(sortBy, sortDirection) => onChange({ ...config, sortBy, sortDirection })}
+      />
+
       <fieldset>
         <legend className="text-sm font-medium">Fields in each entry</legend>
         <p className="mt-0.5 text-xs text-content-subtle">
@@ -1301,6 +1308,90 @@ const RepeaterConfig: ConfigForm = ({ config, onChange, ...rest }) => {
     </div>
   );
 };
+
+/**
+ * Whether a repeater keeps its rows in a chosen order, and by which sub-field.
+ *
+ * The case is a course subject holding forty courses, whose order is by code and always was. Left to
+ * an editor, that is a maintenance task growing with the content — and a *drag* does not fix it,
+ * because moving one row of forty to its place is miserable however smooth the interaction is.
+ *
+ * **Off by default, and it has to stay off by default.** A repeater's order is often semantic: a
+ * program's plan rows use a blank "term" to mean "same term as the row above", so sorting one would
+ * destroy the meaning of every row after the first. Nothing can detect that, so the default is the
+ * order an author typed.
+ *
+ * Only sub-fields whose values are worth ordering are offered — text, number and date. A richtext
+ * body sorts by its markup, which is nonsense dressed as a feature, and `media`, `relation`, `link`
+ * and `taxonomy` store ids that sort by nothing an author can see.
+ */
+function SortChoice({
+  subFields,
+  sortBy,
+  sortDirection,
+  onChange,
+}: {
+  subFields: Record<string, unknown>[];
+  sortBy: string;
+  sortDirection: 'asc' | 'desc';
+  onChange: (sortBy: string | undefined, sortDirection: string | undefined) => void;
+}) {
+  const id = useId();
+
+  const sortable = subFields.filter((sub) =>
+    ['text', 'number', 'date'].includes(String(sub.type ?? '')),
+  );
+
+  // Nothing orderable in the row yet, so a control here would be a menu with one entry saying no.
+  if (sortable.length === 0) return null;
+
+  return (
+    <Row>
+      <div>
+        <label htmlFor={id} className="block text-sm font-medium">
+          Keep entries in order of
+        </label>
+        <p id={`${id}-hint`} className="mt-0.5 text-xs text-content-subtle">
+          Entries are re-sorted every time the item is saved, so nobody has to place a new one by
+          hand. Leave this alone where the order itself carries meaning.
+        </p>
+        <select
+          id={id}
+          value={sortBy}
+          aria-describedby={`${id}-hint`}
+          onChange={(e) =>
+            onChange(e.target.value || undefined, e.target.value ? sortDirection : undefined)
+          }
+          className={inputClass}
+        >
+          <option value="">The order they are entered in</option>
+          {sortable.map((sub) => (
+            <option key={String(sub.api_id)} value={String(sub.api_id)}>
+              {String(sub.label || sub.api_id)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {sortBy !== '' && (
+        <div>
+          <label htmlFor={`${id}-direction`} className="block text-sm font-medium">
+            Direction
+          </label>
+          <select
+            id={`${id}-direction`}
+            value={sortDirection}
+            onChange={(e) => onChange(sortBy, e.target.value)}
+            className={inputClass}
+          >
+            <option value="asc">A to Z, lowest first</option>
+            <option value="desc">Z to A, highest first</option>
+          </select>
+        </div>
+      )}
+    </Row>
+  );
+}
 
 function SubFieldButton({
   label,

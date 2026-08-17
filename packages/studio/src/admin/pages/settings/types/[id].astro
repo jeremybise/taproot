@@ -5,7 +5,6 @@ import ContentTypeSettings from '../../../islands/ContentTypeSettings.tsx';
 import DeleteContentType from '../../../components/DeleteContentType.astro';
 import { imageOptions } from '../../../mediaOptions.js';
 import {
-  bookRootBlockers,
   contentTypeDeleteBlockers,
   getContentType,
   listBlockTypes,
@@ -30,17 +29,6 @@ const taxonomies = await listTaxonomies(taproot.db.db);
 const blockTypes = await listBlockTypes(taproot.db.db);
 // And for this type's default social card.
 const images = await imageOptions(taproot.db.db, taproot.storage);
-
-/**
- * What would break if this type became a book, computed before anybody ticks the box.
- *
- * Ticking it applies a rule to content written weeks earlier: every existing item of this type
- * gains a subtree that then refuses reusable blocks and snippets. Unreported, the consequence lands
- * on somebody else entirely — an editor opens an unrelated page inside that subtree and is refused
- * by a rule they did not set and cannot see. Only asked for a `page`, since no other kind can be one.
- */
-const bookConflicts =
-  contentType.kind === 'page' ? await bookRootBlockers(taproot.db.db, contentType) : [];
 
 const itemCountRow = await taproot.db.db
   .selectFrom('content_items')
@@ -127,7 +115,6 @@ const kindLabels: Record<string, string> = {
       contentType={contentType}
       fields={contentType.fields}
       images={images}
-      bookConflicts={bookConflicts}
     />
   </section>
 

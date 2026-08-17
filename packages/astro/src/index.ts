@@ -1,8 +1,6 @@
 import { PREVIEW_PARAM } from '@taprootcms/core/pure';
 
 import type {
-  BookOutline,
-  BookOutlineEntry,
   DeliveryItemRef,
   DeliveryMedia,
   DeliveryMenuItem,
@@ -87,7 +85,7 @@ export interface SearchOptions {
   /** A content type's `api_id`, to search one type. Omit for everything addressable. */
   type?: string;
   /**
-   * Scope the search to one branch — the current catalog year, one handbook.
+   * Scope the search to one branch — one section of a site, one copy of a versioned one.
    *
    * Worth reaching for the moment a site holds a second edition of anything: every superseded page
    * is otherwise in the results with nothing to make the current one win. Filtering results
@@ -130,7 +128,7 @@ export interface ListOptions {
   /** The taxonomy `term` belongs to, which is what lets `term` be a slug from a URL. */
   taxonomy?: string;
   /**
-   * Everything below a path — one catalog year, one handbook, one section of the site.
+   * Everything below a path — one whole branch of the site tree.
    *
    * The branch, not one level. With several live editions of a document a content type crosses this
    * endpoint's 200-item cap on its own, while any single edition is comfortably inside it — so this
@@ -423,39 +421,6 @@ export function createTaprootClient(options: TaprootClientOptions) {
     },
 
     /**
-     * A book's outline — every section under a book root, in reading order.
-     *
-     * The table of contents a book page renders, and the array `bookNavigation` turns into
-     * previous/next/up. One request per *book* rather than per page, so a layout fetches it beside
-     * `resolve` and derives navigation from it without a second round trip:
-     *
-     * ```astro
-     * ---
-     * import { bookNavigation } from '@taprootcms/astro';
-     *
-     * const [page, outline] = await Promise.all([
-     *   taproot.resolve(path),
-     *   taproot.book('/catalog/2026-27'),
-     * ]);
-     *
-     * // Programs of study live in the book but not in its navigation — the site decides, not the CMS.
-     * const { previous, next, ancestors } = bookNavigation(outline.entries, path, {
-     *   exclude: ['program_of_study'],
-     * });
-     * ---
-     * ```
-     *
-     * Throws `TaprootDeliveryError` with a 404 when the path is not a published book root, which is
-     * distinct from a book that has no sections yet — that answers `entries: []`.
-     *
-     * Check `complete`: a book larger than the server's cap comes back truncated, and previous/next
-     * would otherwise stop working somewhere in the middle with nothing on the page to say why.
-     */
-    book(path: string): Promise<BookOutline> {
-      return request<BookOutline>(`/book?path=${encodeURIComponent(path)}`);
-    },
-
-    /**
      * Search a site's content: title, path, and the item's own prose.
      *
      * Results come back ranked — a term in the title above a term in the body — with a plain-text
@@ -692,21 +657,9 @@ export {
    */
   highlightTerms,
   searchTokens,
-  /**
-   * Previous, next and up within a book, from the outline the page already fetched.
-   *
-   * Here rather than server-side because a server answer would need the current path as a cache key
-   * — one cached response per page instead of one per book, which is the whole reason the outline is
-   * its own endpoint. Filtering is the site’s: which branches deserve navigation depends on the
-   * routes it serves, the same split as `applyTermHrefs`.
-   */
-  bookNavigation,
 } from '@taprootcms/core/pure';
 
 export type {
-  /** A book’s outline and one entry in it, as `taproot.book()` answers. */
-  BookOutline,
-  BookOutlineEntry,
   DeliveryField,
   DeliveryItem,
   DeliveryItemRef,

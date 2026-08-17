@@ -202,6 +202,14 @@ one route never audited. Seven inert labels sat there through four phases as a r
 `/api/taproot/content-types` returns types *without* their fields, so a count derived from that
 list is zero for everything and quietly restores the bug.
 
+**A screen that renders extra markup in one state needs a route in that state, and no selector is
+clever enough to substitute.** This has been got wrong repeatedly — the closed `<dialog>`, the
+collapsed nav panel, `items[0]`, the collection settings form — so the shape is worth naming rather
+than re-deriving each time. The question the run itself cannot answer is: **does the route I just
+added actually contain the markup I added it for?** A route chosen by a plausible-looking heuristic
+has already passed cleanly while auditing a page that did not contain the markup at all. Fetch the
+page and grep for it before believing a new route covers anything.
+
 What it does **not** cover, and what needs a real browser and a human: post-hydration behaviour of
 the React islands, and screen-reader output. Custom interactions are where WCAG failures actually
 creep in — off-the-shelf Radix primitives rarely fail. **Drag-and-drop must always be added

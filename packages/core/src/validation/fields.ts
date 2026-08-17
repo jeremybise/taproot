@@ -11,7 +11,6 @@ import type { FieldRow, FieldType } from '../db/schema.js';
 import { parseJson, stringifyJson } from '../db/values.js';
 import { ITEM_SORTS } from '../content/itemSort.js';
 import { CONTENT_TYPE_KINDS } from '../content/contentTypeKind.js';
-import { hasSnippetToken } from '../content/snippetTokens.js';
 import { isFieldVisible, visibilityCondition } from './visibility.js';
 
 /**
@@ -894,28 +893,6 @@ export interface ValidateItemOptions {
    * repeater row — along with the write paths still refusing an incomplete item.
    */
   requireComplete?: boolean;
-  /**
-   * Whether content resolved from a shared library row may be stored here. Defaults to yes.
-   *
-   * False for an item inside a **book**, and it is the rule the whole feature rests on. A book is a
-   * document that must not change once published — a catalog year a student holds rights to — and
-   * copying a subtree gets that for the items, because the copies are different rows. It does not
-   * get it for a reusable block or a text snippet: both are resolved at read time from a row an
-   * editor edits centrally, so changing `{{ tuition }}` once silently rewrites every archived year,
-   * with no revision on any page recording that it happened.
-   *
-   * **The mirror image of `requireComplete`, and deliberately the same mechanism.** That one relaxes
-   * three rules for a half-typed preview; this one tightens one for a frozen document. Both are
-   * forwarded unchanged through `validateBlocks` and `validateRepeater`, so a reusable block nested
-   * three deep or a snippet token in a repeater row is refused exactly as one at the top level is —
-   * which is what makes this a boundary rather than a screen's good manners.
-   *
-   * Media is deliberately **not** covered. A media row's bytes are immutable by construction — the
-   * storage key derives from the asset id, so replacing an image writes a new row — and what stays
-   * editable is alt text, a title, a hotspot and a crop, none of which is a factual claim the
-   * document makes. A snippet's whole purpose is the opposite of that.
-   */
-  allowSharedContent?: boolean;
 }
 
 /**
@@ -982,27 +959,6 @@ export function validateItemData(
     }
 
     if (result.data === undefined) continue;
-
-    /**
-     * A book refuses snippet tokens, for the reason it refuses reusable blocks.
-     *
-     * Checked here rather than inside `buildValueSchema` so it covers every walk site at once: the
-     * block and repeater recursions both re-enter `validateItemData`, so a `{{ tuition }}` in the
-     * third row of a repeater inside a block is refused by this same line. Asked of the *parsed*
-     * value, which for richtext is the sanitised string — a token cannot be smuggled through markup
-     * the sanitiser drops.
-     */
-    if (
-      options.allowSharedContent === false &&
-      (field.type === 'text' || field.type === 'richtext') &&
-      typeof result.data === 'string' &&
-      hasSnippetToken(result.data)
-    ) {
-      errors[field.api_id] = [
-        'A text snippet cannot be used in a book, because editing it later would change every published edition. Write the value out here.',
-      ];
-      continue;
-    }
 
     if (field.type === 'block' && options.blockTypes) {
       const blocks = validateBlocks(
@@ -1150,7 +1106,73 @@ function validateRepeater(
     }
   });
 
-  return { value, errors };
+  return { value: sortRepeaterRows(value, config, subFields), errors };
+}
+
+/**
+ * Put a repeater's rows in the order a sub-field says, when one does.
+ *
+ * A course subject holds forty courses whose reading order is by code, always. Without this an
+ * editor maintains that order by hand — an editing task that grows with the content and that a
+ * *drag* does not fix: moving one row of forty to its right place is miserable however smooth the
+ * interaction is. Astro content collections got this free from filenames, and the property worth
+ * copying is not "there is a way to reorder" but "nobody ever thinks about order".
+ *
+ * Six decisions, most with a plausible wrong answer:
+ *
+ * - **Opt-in per field, and off by default.** A repeater's order is often *semantic*: the catalog's
+ *   program plans use a blank `term` to mean "same term as the row above", so sorting one would
+ *   destroy the meaning of every row after the first. There is no way to detect that, so the answer
+ *   is to ask.
+ * - **Applied on write, not on read.** The stored order becomes the sorted order, so delivery pays
+ *   nothing, the payload keeps the shape a write can round-trip, and what an editor sees after
+ *   saving is what a visitor gets. A read-time sort would put stored and delivered order out of
+ *   step, which is the rule `data` has to keep for the generated types to keep describing what is
+ *   sent.
+ * - **`Intl.Collator` with `numeric: true`, never a string comparison.** `RAD 1096` sorts before
+ *   `RAD 196` as text, which is wrong in the way that looks plausible on the ten rows anybody checks
+ *   — the same trap `indexedValueKind`'s three value columns exist for one layer down.
+ * - **A row missing the key sorts last rather than first.** A half-typed row belongs at the end
+ *   where its author left it, not at the top of a finished list; and an empty string sorting first
+ *   would make an editor's blank new row jump the queue on every save.
+ * - **The sort is stable**, so rows sharing a key keep the order they were entered in. `Array.sort`
+ *   has been stable since ES2019, and the comparison returns 0 for equal keys rather than falling
+ *   back to anything else.
+ * - **A key naming a sub-field that no longer exists does nothing**, rather than erroring or sorting
+ *   by `undefined`. The configuration outlives the fields it names — a query field's
+ *   `dateFieldApiId` follows the same rule, and for the same reason: a live save must not break for
+ *   a change made weeks earlier on another screen.
+ */
+function sortRepeaterRows(
+  rows: RepeaterRow[],
+  config: Record<string, unknown>,
+  subFields: FieldRow[],
+): RepeaterRow[] {
+  const key = typeof config.sortBy === 'string' ? config.sortBy : '';
+  if (!key) return rows;
+  if (!subFields.some((field) => field.api_id === key)) return rows;
+
+  const descending = config.sortDirection === 'desc';
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+  const sortKey = (row: RepeaterRow): string | null => {
+    const value = (row.data as Record<string, unknown> | undefined)?.[key];
+    if (typeof value === 'string') return value.trim() === '' ? null : value;
+    if (typeof value === 'number') return String(value);
+    return null;
+  };
+
+  return [...rows].sort((a, b) => {
+    const left = sortKey(a);
+    const right = sortKey(b);
+    // Missing keys go last in *both* directions: "not filled in yet" is not a value to be ordered
+    // among the ones that are, so reversing the sort must not float blank rows to the top.
+    if (left === null && right === null) return 0;
+    if (left === null) return 1;
+    if (right === null) return -1;
+    const result = collator.compare(left, right);
+    return descending ? -result : result;
+  });
 }
 
 /**
@@ -1204,15 +1226,6 @@ function validateBlocks(
      * `data` is dropped rather than preserved so the stored shape cannot imply otherwise.
      */
     if (block.ref) {
-      // A book refuses library content outright — see `ValidateItemOptions.allowSharedContent`.
-      // Refused rather than dereferenced into a copy: two copies of one block raises the question
-      // of which is authoritative, which is the objection reusable blocks exist to answer.
-      if (options.allowSharedContent === false) {
-        errors.push(
-          `${position}: a reusable block cannot be placed in a book, because editing it later would change every published edition. Build the block here, or put shared text on the book's own fields.`,
-        );
-        return;
-      }
       value.push({ id: block.id, type: block.type, data: {}, ref: block.ref });
       return;
     }
@@ -1303,13 +1316,12 @@ export const contentTypeInputSchema = z.object({
    */
   item_pages: z.boolean().optional(),
   /**
-   * Whether items of this type are the root of a book. Defaults to no.
+   * Whether this type is left out of the admin sidebar. Defaults to no.
    *
    * `optional` rather than `nullish` with a default, matching `item_pages`: absent means "keep what
-   * is stored" on a PATCH, and there is no third state for `null` to mean. Only a `page` may turn it
-   * on — the write paths force it off for every other kind rather than trusting the input.
+   * is stored" on a PATCH and there is no third state for `null` to mean.
    */
-  book_root: z.boolean().optional(),
+  hide_from_nav: z.boolean().optional(),
   /**
    * Length-bounded, and otherwise unvalidated on purpose.
    *

@@ -212,7 +212,7 @@ describe('duplicateSubtree', () => {
     });
 
     /**
-     * A link *forward* in the book — to a page copied after its referrer.
+     * A link *forward* in the subtree — to a page copied after its referrer.
      *
      * The copy loop cannot remap against an id it has not minted yet, which is what the repair pass
      * exists for. Without it this test finds the referrer still pointing at last year.
@@ -302,7 +302,7 @@ describe('duplicateSubtree', () => {
 
     /**
      * Resuming needs no bookkeeping table: an item is already copied when something exists at its
-     * mapped path. So a second full run adds nothing rather than doubling the book.
+     * mapped path. So a second full run adds nothing rather than doubling the subtree.
      */
     it('is idempotent — running it again creates nothing new', async () => {
       const root = await page('2026-27', null);

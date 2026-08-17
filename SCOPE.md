@@ -415,75 +415,35 @@ Worth knowing before it is designed: `fields.localized` already exists in the sc
 **Phase 10 — Form builder & handling (far future, not near-term scope)**
 Just capturing it so it's not forgotten: a form builder (fields, validation, conditional logic) plus submission handling/storage and notification routing. Nowhere near the start — revisit once Phases 0–6 are stable. Note that 5B's conditional visibility is the same shape as this phase's "conditional logic" and should be reused rather than rebuilt.
 
-**Phase 11 — Books** *(complete)*
-Numbered last and **built next**, ahead of 7–10: the numbering records dependency and insertion
-order rather than priority, and this phase depends on nothing 7–10 add. It arrived as a requirements
-brief from a consuming site — a college wanting to move a 400-page annual catalog off PDF — and the
-first decision was to refuse its shape. Seven capability asks, five of which are what *any* book-like
-document needs: a catalog, a student handbook, a policy manual. Built as one switchable feature
-rather than seven catalog features.
+**Phase 11 — Books** *(built, then removed)*
+Built ahead of 7–10 and later taken out. It arrived as a requirements brief from a consuming site — a
+college wanting to move a 400-page annual catalog off PDF — and was built as one switchable feature: a
+content type setting (`book_root`) that made a `page` subtree a *document*, with an outline screen, a
+reading order, previous/next, a `/delivery/book` endpoint, and a duplicate-forward that produced next
+year's edition.
 
-**A book is a subtree, and the marker is a content type setting.** Taproot already stores everything
-a book needs: a `page` tree *is* an outline, `path` is materialised, `depth` and `position` give the
-ordering. A `books` table would create a second place for a section's position to live — the
-objection that killed regions in Phase 2, a departments entity in Phase 3, and a separate table for
-block types. `content_types.book_root` follows `item_pages` and `preview_path` exactly: forced off
-for every kind with no tree.
+It was removed because the site it was built for no longer wants it, not because the model was wrong.
+Two things are worth carrying forward if anything like it is ever wanted again:
 
-**Editions are deliberately not modelled.** An edition is a sibling subtree produced by copying;
-the "Catalog" owning them is their shared parent, an ordinary page whose children `resolveDelivery`
-already returns — so a year switcher and an archived-year banner need no new delivery surface, and
-`year_label`/`is_current` stay user-defined fields. Freezing a published year falls out of the copies
-being different rows, which is the property the whole feature exists to give.
+- **The model held up.** A book was a subtree and nothing else — no `books` table, no fifth `kind` —
+  because a `page` tree already *is* an outline, with `path` materialised and `position` ordering
+  siblings. Editions were sibling subtrees under an ordinary parent, so a year switcher needed no new
+  delivery surface. That is the same objection that killed regions in Phase 2, a departments entity in
+  Phase 3, and a separate table for block types, and it was right again here.
+- **Its one genuinely hard constraint was shared content.** Copy-forward freezes *items*, because the
+  copies are different rows — and does not freeze anything resolved at read time from a central row.
+  A reusable block or a text snippet therefore leaked straight through a copy: editing `{{ tuition }}`
+  once silently rewrote every archived year with no revision recording it. The feature refused both
+  outright rather than papering over it. Media stayed allowed, and the asymmetry was principled: a
+  media row's *bytes* are immutable by construction, where a snippet's mutability is its whole point.
 
-Six decisions worth keeping, each with a plausible wrong answer:
-
-- **A book refuses reusable blocks and text snippets, and that is the load-bearing decision.** The
-  brief claimed freezing "falls out" of copy-forward. True of items, false of three things they
-  reference: reusable blocks, snippets and media are global rows resolved at read time, so editing
-  `{{ tuition }}` once silently rewrites every archived year with no revision recording it. Refusal
-  beats warning or copying — the move this repo already makes for raw HTML fields and empty library
-  entries. **Media stays allowed**, and the asymmetry is principled: a media row's *bytes* are
-  immutable by construction, while a snippet's mutability is its entire purpose. The obvious
-  objection has a better answer than the feature it refuses — page-wide shared wording belongs on
-  the **book root's own fields**, which is per-edition by construction. Do not add a per-book
-  "allow shared content" toggle; it changes meaning the moment somebody presses Duplicate.
-- **A snippet token naming no snippet still counts.** It renders as itself today, so refusing it
-  reads as a false positive — until somebody creates that snippet next year and every archived
-  edition starts substituting it. Checking whether it currently exists would also put a query on the
-  write path, which is the cost the data-driven gate exists to avoid.
-- **Previous/next costs no query.** A materialised reading-order integer was the obvious alternative
-  and renumbers every later section on an ordinary insert. Unnecessary: a book page already fetches
-  its outline for the contents sidebar, so `bookNavigation` is arithmetic over an array it holds —
-  importless, in `pure.ts`, shared with the consumer. The outline is **its own endpoint** rather
-  than a key on `resolve`, or 188 entries would be stored on all 188 cached page responses.
-- **The subtree filter is a range comparison, never `like`.** Measured: `like '/catalog/2026-27/%'`
-  plans as `SCAN content_items`, the range form as `SEARCH … USING INDEX`. SQLite's LIKE
-  optimisation needs a `NOCASE` index or `case_sensitive_like`, and **D1 refuses PRAGMA**, so
-  neither escape exists. Descendants only, so the predicate needs no `or` — which `0020_perf_indexes`
-  already showed SQLite refusing to spend indexes across. `queryPlans.test.ts` asserts the plan *and*
-  keeps a negative control proving the `like` form scans.
-- **Duplication remaps five reference-carrying field types, not one.** The brief named relations. A
-  `link` field's button, a rich-text `taproot:item:` marker, and either nested inside a block or a
-  repeater row all point back into last year otherwise — and none of it breaks visibly, because
-  every link works and lands on a real page that looks almost identical. Proven by mutation: the
-  tempting "relations only" implementation fails exactly three tests. Chunked and resumable with no
-  bookkeeping table, since an item counts as copied when something exists at its mapped path.
-- **Bulk subtree changes go through `updateItem`, and permission is a callback.** Core owns legality
-  — `archived → published` is an arrow that does not exist, refused for an admin too — and the studio
-  owns the role half, handed down the way `resolveMenu` takes `termHref`. Refusals are reported per
-  item rather than sinking the batch.
-
-Two things fell out that the plan did not have. The ancestor walk in `bookNavigation` originally
-decremented depth by exactly one, so a branch hidden by the consumer's filter stalled it and a page
-three levels down reported no ancestors — caught by the test written for that case, fixed to a
-falling ceiling. And relation hydration turned out to have **two independent visibility gates**, so
-removing either alone left the suite green; the redundancy is documented as deliberate and the test
-now asserts the property a visitor cares about rather than one mechanism.
-
-The seventh ask — a structured import — is **not built**. It needs the first content-write API-key
-scope, which the MCP note above already flags as a real decision rather than a default, and it
-should be taken with that rather than bolted onto this.
+What survived the removal, because none of it needs a book: `ItemFilters.pathPrefix` (branch-scoped
+listings and search, a range comparison and never a `like` — see `0020_perf_indexes`),
+`duplicateSubtree` with its five-field-type reference remapping, `bulkSubtree`, a relation carrying
+its target's field values, `content_types.hide_from_nav`, a repeater that sorts its own rows, and
+`reorderSiblings` — which fixed a real defect that had nothing to do with books: `position` had no
+write path at all, so the order a site was handed a page's children was permanently the order somebody
+happened to create them in.
 
 ## Decisions already made (no longer open)
 

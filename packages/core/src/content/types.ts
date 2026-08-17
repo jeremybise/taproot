@@ -157,6 +157,30 @@ export async function listFields(db: Kysely<Database>, contentTypeId: string): P
     .execute();
 }
 
+/**
+ * Whether this type gets its own entry in the admin sidebar.
+ *
+ * Asked as a question rather than read off the column, for the reason `typeHasItemPages` exists: the
+ * interesting part is what it must *not* be used for. This governs navigation and nothing else — a
+ * hidden type keeps its list screen, its create screen, its items, and its place in "All content"
+ * and in search.
+ *
+ * Filtering a listing by it would be a delete that does not delete, and would strand every item of
+ * that type in a deployment whose own UI could not reach them. That is the rule
+ * `assertNotLastAdmin` and the singleton write path already protect from other directions, and this
+ * is the cheapest place to break it: one extra `.filter` on a query, in a file nobody would think to
+ * check, with no error and no visible failure until somebody goes looking for a page they wrote.
+ *
+ * Blocks are excluded because a block type has no list screen to link to — `listContentTypes`
+ * already leaves them out by default for that reason, and a caller passing `includeBlocks` and then
+ * building a sidebar would otherwise get entries that 404.
+ */
+export function isNavigable(
+  contentType: Pick<ContentTypeRow, 'kind' | 'hide_from_nav'>,
+): boolean {
+  return contentType.kind !== 'block' && contentType.hide_from_nav !== 1;
+}
+
 export async function createContentType(
   db: Kysely<Database>,
   input: ContentTypeInput,
@@ -212,15 +236,9 @@ export async function createContentType(
      * `typeHasItemPages` will not read.
      */
     item_pages: input.kind === 'collection' && input.item_pages === false ? 0 : 1,
-    /**
-     * Only a `page` can be a book root; every other kind is forced off.
-     *
-     * A book is a subtree, and a collection is flat under a `url_prefix` while a singleton has one
-     * item — neither has a tree to outline. Forced here rather than trusted from the input, matching
-     * `url_prefix`, `preview_path` and `item_pages`, so changing a type's kind cannot leave the
-     * column saying something `typeIsBookRoot` will not read.
-     */
-    book_root: input.kind === 'page' && input.book_root === true ? 1 : 0,
+    // Meaningful for every kind, unlike `url_prefix` and `preview_path`: a singleton is exactly as
+    // clutterable as a collection, so this is taken as sent rather than forced by kind.
+    hide_from_nav: input.hide_from_nav === true ? 1 : 0,
     summary_template: input.summary_template ?? null,
     list_columns: input.list_columns ? stringifyJson(input.list_columns) : null,
     list_sort: input.list_sort ?? null,
@@ -277,15 +295,6 @@ export async function updateContentType(
   const itemPages =
     kind === 'collection' ? (input.item_pages ?? existing.item_pages === 1) : true;
 
-  /**
-   * Absent keeps what is stored; a boolean sets it. Only a page may be a book root.
-   *
-   * Forced off for every other kind for `itemPages`' reason: a page switched to a collection must
-   * not leave a 1 behind for whoever switches it back, since the subtree that made it a book is not
-   * addressable from a collection at all.
-   */
-  const bookRoot = kind === 'page' ? (input.book_root ?? existing.book_root === 1) : false;
-
   const patch = {
     name: input.name ?? existing.name,
     name_plural: input.name_plural ?? existing.name_plural,
@@ -313,7 +322,9 @@ export async function updateContentType(
           : (input.preview_path ?? null)
         : null,
     item_pages: itemPages ? 1 : 0,
-    book_root: bookRoot ? 1 : 0,
+    // Absent keeps what is stored; a boolean sets it. No kind check, because every kind can clutter.
+    hide_from_nav:
+      input.hide_from_nav === undefined ? existing.hide_from_nav : input.hide_from_nav ? 1 : 0,
     summary_template:
       input.summary_template === undefined
         ? existing.summary_template

@@ -109,8 +109,8 @@ export function ancestorPaths(path: string): string[] {
  * already paid for one: indexing both sides of `purgeStaleResetTokens`' `or` changed its plan by
  * nothing at all and the delete had to be split in two to spend the indexes. Every caller wants
  * descendants anyway — `resolveDelivery` fetches the root separately. `>` rather than `>=` so a
- * book rooted at `/` excludes the home page; no other root can equal its own prefix, which carries
- * a trailing separator no stored path has.
+ * branch rooted at `/` excludes the home page; no other root can equal its own prefix, which
+ * carries a trailing separator no stored path has.
  */
 export function descendantPathRange(rootPath: string): { start: string; end: string } {
   const normalized = normalizePath(rootPath);

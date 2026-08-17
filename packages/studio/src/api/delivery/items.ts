@@ -157,11 +157,10 @@ export const GET = handleScoped(
     /**
      * `under` scopes the listing to a branch; `parent` scopes it to one level.
      *
-     * The pair a book needs and a versioned section needs generally: with five live catalog years,
-     * every content type is over this endpoint's 200-row cap on its own while any single year sits
-     * comfortably inside it. Without `under`, a consumer either pages through four superseded
-     * editions to reach the current one or invents a taxonomy that restates what `path` already
-     * says.
+     * What a versioned section of a site needs: with several copies live, a content type can be over
+     * this endpoint's 200-row cap on its own while any single copy sits comfortably inside it.
+     * Without `under`, a consumer either pages through the superseded ones to reach the current one
+     * or invents a taxonomy that restates what `path` already says.
      *
      * `under` is normalised rather than validated, matching `resolve`: a path is a path, and a
      * caller sending a trailing slash or a missing leading one means the same thing. It answers an

@@ -621,11 +621,11 @@ export interface DeliverItemsOptions extends DeliveryOptions {
   /** Direct children of one item. `null` for the top level. See `ItemFilters.parentId`. */
   parentId?: string | null;
   /**
-   * Everything below a path — one book, one section, one catalog year.
+   * Everything below a path — one whole branch of the site tree.
    *
-   * The branch rather than one level, which is what a year-scoped listing needs: with several live
-   * editions a content type crosses this endpoint's 200-row cap on its own, while any one edition is
-   * comfortably inside it. See `ItemFilters.pathPrefix` for why it is a range and not a `like`.
+   * The branch rather than one level, which is what a section-scoped listing needs: a large branch
+   * can cross this endpoint's 200-row cap on its own while any one part of it is comfortably inside
+   * it. See `ItemFilters.pathPrefix` for why it is a range and not a `like`.
    */
   pathPrefix?: string;
   /**
@@ -1471,7 +1471,7 @@ function toDeliveryMedia(row: MediaRow, options: DeliveryOptions): DeliveryMedia
  * A bound rather than a budget: a single `catalog_entry` is the case this exists for, and a
  * multi-relation that somebody ticked `includeData` on could otherwise put fifty page bodies on a
  * payload built to be one round trip. Generous enough that no deliberate use hits it, small enough
- * that a mistake is capped rather than fatal — the same shape as `MAX_BOOK_SECTIONS`.
+ * that a mistake is capped rather than fatal.
  */
 export const MAX_HYDRATED_RELATIONS = 50;
 

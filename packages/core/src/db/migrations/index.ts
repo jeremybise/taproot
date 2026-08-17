@@ -37,6 +37,9 @@ import * as m0031 from './0031_menu_no_follow.js';
 import * as m0032 from './0032_ai_assist.js';
 import * as m0033 from './0033_webhooks.js';
 import * as m0034 from './0034_books.js';
+import * as m0035 from './0035_book_child_types.js';
+import * as m0036 from './0036_hide_from_nav.js';
+import * as m0037 from './0037_drop_book_columns.js';
 
 /**
  * The migration registry.
@@ -84,6 +87,9 @@ export const migrations: Record<string, Migration> = {
   '0032_ai_assist': m0032,
   '0033_webhooks': m0033,
   '0034_books': m0034,
+  '0035_book_child_types': m0035,
+  '0036_hide_from_nav': m0036,
+  '0037_drop_book_columns': m0037,
 };
 
 export class StaticMigrationProvider implements MigrationProvider {
