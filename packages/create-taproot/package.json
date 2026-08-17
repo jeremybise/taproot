@@ -1,6 +1,6 @@
 {
   "name": "create-taproot",
-  "version": "0.1.51",
+  "version": "0.2.0",
   "description": "Scaffold a Taproot CMS server",
   "license": "MIT",
   "type": "module",
